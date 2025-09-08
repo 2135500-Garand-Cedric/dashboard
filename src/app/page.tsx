@@ -1,11 +1,10 @@
-import Image from "next/image";
 import TodoTile from "@/components/TodoTile";
 import MusicTile from "@/components/MusicTile";
 
 export default function Home() {
   return (
     <div
-      className="min-h-screen p-8"
+      className="p-8"
       style={{ background: "var(--background)", color: "var(--foreground)" }}
     >
       <h1
