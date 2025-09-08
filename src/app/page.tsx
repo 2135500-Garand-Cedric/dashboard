@@ -1,5 +1,6 @@
 import Image from "next/image";
 import TodoTile from "@/components/TodoTile";
+import MusicTile from "@/components/MusicTile";
 
 export default function Home() {
   return (
@@ -16,6 +17,7 @@ export default function Home() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         <TodoTile />
+        <MusicTile />
         {/* Add more tiles here later */}
       </div>
     </div>
