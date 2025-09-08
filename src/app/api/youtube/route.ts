@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
 export async function GET() {
-  // TODO: Replace with actual YouTube channel ID and API key
   const channelId = "UCn1icliVp7N5EcLosJ-zJXg";
   const apiKey = process.env.YOUTUBE_API_KEY;
 
