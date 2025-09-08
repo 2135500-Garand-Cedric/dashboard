@@ -1,26 +1,62 @@
 @import "tailwindcss";
 
+/* --- Base colors --- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f3f4f6;       /* light gray background */
+  --foreground: #111827;       /* dark text */
+  --card-bg: #ffffff;          /* tile background */
+  --card-border: #e5e7eb;      /* subtle border for tiles */
+  --accent: #3b82f6;           /* blue accent for buttons or highlights */
+  --success: #10b981;          /* green for done tasks */
+  --warning: #f59e0b;          /* yellow for alerts */
+  --error: #ef4444;            /* red for errors */
 }
 
+/* --- Tailwind v4 CSS-first theming --- */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card-bg: var(--card-bg);
+  --color-card-border: var(--card-border);
+  --color-accent: var(--accent);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
+/* --- Dark mode --- */
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #0f172a;       /* dark navy */
+    --foreground: #f1f5f9;       /* light text */
+    --card-bg: #1e293b;          /* dark card background */
+    --card-border: #334155;      /* subtle dark border */
+    --accent: #60a5fa;           /* lighter blue */
+    --success: #34d399;          /* green for done tasks */
+    --warning: #fbbf24;          /* yellow */
+    --error: #f87171;            /* red */
   }
 }
 
+/* --- Body styles --- */
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+/* --- Cards / tiles --- */
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 0.75rem; /* rounded-xl */
+  padding: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  transition: background 0.2s ease;
+}
+
+.card:hover {
+  background: var(--accent)/10; /* slight highlight on hover */
 }
