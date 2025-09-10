@@ -14,9 +14,33 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum TodoStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
 model Todo {
-  id        Int      @id @default(autoincrement())
-  text      String
-  done      Boolean  @default(false)
+  id           Int        @id @default(autoincrement())
+  title        String
+  description  String?    
+  status       TodoStatus @default(TODO)
+  priority     Int?
+
+  dependsOnId  Int?
+  dependsOn    Todo?      @relation("TodoDependencies", fields: [dependsOnId], references: [id])
+  blockedBy Todo[] @relation("TodoDependencies")
+  
+  subtasks     Subtask[]
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model Subtask {
+  id       Int   @id @default(autoincrement())
+  title    String
+  done     Boolean @default(false)
+  todo     Todo   @relation(fields: [todoId], references: [id])
+  todoId   Int
   createdAt DateTime @default(now())
 }
