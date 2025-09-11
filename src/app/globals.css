@@ -57,6 +57,32 @@ body {
   transition: background 0.2s ease;
 }
 
-.card:hover {
-  background: var(--accent)/10; /* slight highlight on hover */
+/* FullCalendar theming to match bg-card and text-foreground */
+.fullcalendar-theme .fc {
+  background-color: var(--card-bg);
+  color: var(--foreground);
+  border-radius: 0.75rem; /* rounded-xl */
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Day-of-week header */
+.fullcalendar-theme .fc-col-header {
+  background-color: var(--card-bg);
+  color: var(--foreground);
+  border-bottom: 1px solid var(--card-border);
+}
+
+/* Individual day cells */
+.fullcalendar-theme .fc-daygrid-day {
+  background-color: var(--card-bg);
+  border: 1px solid var(--card-border);
+}
+
+/* Event styling */
+.fullcalendar-theme .fc-event {
+  color: white; /* text inside events */
+  border-radius: 0.5rem;
+  padding: 2px 4px;
+  font-size: 0.875rem;
+  cursor: pointer;
 }

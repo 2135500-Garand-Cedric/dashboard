@@ -29,9 +29,10 @@ model Todo {
 
   dependsOnId  Int?
   dependsOn    Todo?      @relation("TodoDependencies", fields: [dependsOnId], references: [id])
-  blockedBy Todo[] @relation("TodoDependencies")
+  blockedBy    Todo[] @relation("TodoDependencies")
   
   subtasks     Subtask[]
+  events       Event[] 
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 }
@@ -43,4 +44,16 @@ model Subtask {
   todo     Todo   @relation(fields: [todoId], references: [id])
   todoId   Int
   createdAt DateTime @default(now())
+}
+
+model Event {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String?
+  date        DateTime
+  type        String?  // used for color/type (exam, personal, task...)
+  linkedTodo  Todo?    @relation(fields: [linkedTodoId], references: [id])
+  linkedTodoId Int? 
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

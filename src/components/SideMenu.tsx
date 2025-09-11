@@ -10,7 +10,7 @@ export default function SideMenu() {
   const menuItems = [
     { name: "Main Dashboard", href: "/", icon: HomeIcon },
     { name: "Todos", href: "/todos", icon: DocumentTextIcon },
-    { name: "Page 2", href: "/page2", icon: FolderIcon },
+    { name: "Calendar", href: "/events", icon: FolderIcon },
   ];
 
   return (

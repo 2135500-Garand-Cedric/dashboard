@@ -18,7 +18,7 @@ export async function POST(request: Request) {
   const todo = await prisma.todo.create({
     data: {
       title: title ?? "no title",
-      description: description ?? "no",
+      description: description ?? "",
       priority: priority ?? 1,
       dependsOnId: dependsOnId ?? undefined,
     },
