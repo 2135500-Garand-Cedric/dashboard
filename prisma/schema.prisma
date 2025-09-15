@@ -50,7 +50,7 @@ model Event {
   id          Int      @id @default(autoincrement())
   title       String
   description String?
-  date        DateTime
+  date        DateTime?
   type        String?  // used for color/type (exam, personal, task...)
   linkedTodo  Todo?    @relation(fields: [linkedTodoId], references: [id])
   linkedTodoId Int? 

@@ -1,5 +1,6 @@
 import TodoTile from "@/components/TodoTile";
 import MusicTile from "@/components/MusicTile";
+import EventTile from "@/components/EventTile";
 
 export default function Home() {
   return (
@@ -15,9 +16,9 @@ export default function Home() {
       </h1>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <EventTile />
         <TodoTile />
         <MusicTile />
-        {/* Add more tiles here later */}
       </div>
     </div>
   );

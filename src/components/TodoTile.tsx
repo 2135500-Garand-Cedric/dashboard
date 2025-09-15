@@ -11,7 +11,7 @@ type Todo = {
   subtasks?: Subtask[];
 };
 
-export default function TodoDashboardCard() {
+export default function TodoDashboardTile() {
   const [todos, setTodos] = useState<Todo[]>([]);
 
   const loadTodos = async () => {

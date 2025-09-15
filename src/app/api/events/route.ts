@@ -14,14 +14,16 @@ export async function GET() {
 export async function POST(request: Request) {
   const body = await request.json();
   const { title, description, date, type } = body;
+
   const created = await prisma.event.create({
     data: {
       title,
       description,
-      date: new Date(date),
+      date: date ? new Date(date) : null, // ✅ allow null
       type,
     },
     include: { linkedTodo: true },
   });
+
   return NextResponse.json(created, { status: 201 });
 }

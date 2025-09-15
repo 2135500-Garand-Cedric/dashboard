@@ -14,7 +14,7 @@ type EventItem = {
   id: number;
   title: string;
   description?: string | null;
-  date: string;
+  date?: string | null;
   type?: string | null;
   linkedTodo?: Todo | null;
 };
@@ -32,22 +32,48 @@ export default function EventPage() {
   const [dateDraft, setDateDraft] = useState("");
   const [timeDraft, setTimeDraft] = useState("");
 
+  const getColorForType = (type?: string | null) => {
+    switch (type) {
+      case "CSI2110":
+        return "red";
+      case "MAT2377":
+        return "blue";
+      case "JPN2901":
+        return "orange";
+      case "SEG2105":
+        return "purple";
+      case "CEG2136":
+        return "cyan"
+      case "personal":
+        return "green";
+      default:
+        return "gray";
+    }
+  };
+
   const loadEvent = async () => {
     const res = await fetch(`/api/events/${eventId}`);
     const data = await res.json();
-    const eventDate = new Date(data.date);
+
     setEvent(data);
     setTitleDraft(data.title);
     setDescDraft(data.description || "");
     setTypeDraft(data.type || "");
-    setDateDraft(eventDate.toISOString().slice(0, 10)); // YYYY-MM-DD
-    setTimeDraft(
-      eventDate.toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      })
-    );
+
+    if (data.date) {
+      const eventDate = new Date(data.date);
+      setDateDraft(eventDate.toISOString().slice(0, 10));
+      setTimeDraft(
+        eventDate.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        })
+      );
+    } else {
+      setDateDraft("");
+      setTimeDraft("");
+    }
   };
 
   useEffect(() => {
@@ -57,7 +83,13 @@ export default function EventPage() {
   if (!event) return <div className="text-center py-10">Loading...</div>;
 
   const saveEvent = async () => {
-    const combinedDate = new Date(`${dateDraft}T${timeDraft}`);
+    let dateValue: string | null = null;
+
+    if (dateDraft && timeDraft) {
+      const combinedDate = new Date(`${dateDraft}T${timeDraft}`);
+      dateValue = combinedDate.toISOString();
+    }
+
     await fetch(`/api/events/${eventId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -65,7 +97,7 @@ export default function EventPage() {
         title: titleDraft,
         description: descDraft,
         type: typeDraft,
-        date: combinedDate.toISOString(),
+        date: dateValue,
       }),
     });
     setEditMode(false);
@@ -116,7 +148,6 @@ export default function EventPage() {
           </div>
 
           <div className="flex gap-2 ml-4">
-            {/* Edit/Save button */}
             <button
               onClick={async () => {
                 if (editMode) await saveEvent();
@@ -137,7 +168,6 @@ export default function EventPage() {
               )}
             </button>
 
-            {/* Delete button */}
             {!editMode && (
               <button
                 onClick={deleteEvent}
@@ -177,16 +207,25 @@ export default function EventPage() {
                 className="w-full border rounded px-3 py-2 bg-white text-gray-900 cursor-pointer"
               >
                 <option value="">None</option>
-                <option value="exam">Exam</option>
-                <option value="meeting">Meeting</option>
+                <option value="CSI2110">CSI 2110</option>
+                <option value="MAT2377">MAT 2377</option>
+                <option value="JPN2901">JPN 2901</option>
+                <option value="SEG2105">SEG 2105</option>
+                <option value="CEG2136">CEG 2136</option>
                 <option value="personal">Personal</option>
               </select>
             ) : (
-              <span className="text-gray-700">{event.type || "None"}</span>
+              <div className="flex items-center gap-2">
+                <span
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: getColorForType(event.type) }}
+                />
+                <span className="text-gray-700">{event.type || "None"}</span>
+              </div>
             )}
           </div>
 
-          {/* Date & Time separated */}
+          {/* Date & Time */}
           <div className="flex gap-2">
             <div className="flex-1">
               <label className="block text-sm text-gray-500 mb-1">Date</label>
@@ -197,10 +236,12 @@ export default function EventPage() {
                   onChange={(e) => setDateDraft(e.target.value)}
                   className="w-full border rounded px-3 py-2"
                 />
-              ) : (
+              ) : event.date ? (
                 <span className="text-gray-700">
                   {new Date(event.date).toLocaleDateString()}
                 </span>
+              ) : (
+                <span className="text-gray-400">TBD</span>
               )}
             </div>
             <div className="flex-1">
@@ -212,18 +253,20 @@ export default function EventPage() {
                   onChange={(e) => setTimeDraft(e.target.value)}
                   className="w-full border rounded px-3 py-2"
                 />
-              ) : (
+              ) : event.date ? (
                 <span className="text-gray-700">
                   {new Date(event.date).toLocaleTimeString([], {
                     hour: "2-digit",
                     minute: "2-digit",
                   })}
                 </span>
+              ) : (
+                <span className="text-gray-400">TBD</span>
               )}
             </div>
           </div>
 
-          {/* Linked todo */}
+          {/* Linked Todo */}
           <div>
             <label className="block text-sm text-gray-500 mb-1">Linked Todo</label>
             {event.linkedTodo ? (

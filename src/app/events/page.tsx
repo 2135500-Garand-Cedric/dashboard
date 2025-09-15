@@ -11,7 +11,7 @@ type EventItem = {
   id: number;
   title: string;
   description?: string | null;
-  date: string;
+  date: string | null;
   type?: string | null;
   linkedTodo?: Todo | null;
 };
@@ -21,7 +21,6 @@ export default function EventsPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
 
-  // Draft state for new event
   const [newTitle, setNewTitle] = useState("");
   const [newDesc, setNewDesc] = useState("");
   const [newDate, setNewDate] = useState("");
@@ -36,7 +35,7 @@ export default function EventsPage() {
     const data = await res.json();
     const normalized = data.map((e: any) => ({
       ...e,
-      date: new Date(e.date).toISOString(),
+      date: e.date ? new Date(e.date).toISOString() : null,
     }));
     setEvents(normalized);
     setLoading(false);
@@ -53,10 +52,16 @@ export default function EventsPage() {
 
   const getColorForType = (type?: string | null) => {
     switch (type) {
-      case "exam":
+      case "CSI2110":
         return "red";
-      case "meeting":
+      case "MAT2377":
         return "blue";
+      case "JPN2901":
+        return "orange";
+      case "SEG2105":
+        return "purple";
+      case "CEG2136":
+        return "cyan"
       case "personal":
         return "green";
       default:
@@ -65,14 +70,22 @@ export default function EventsPage() {
   };
 
   const createEvent = async () => {
-    const combinedDate = new Date(`${newDate}T${newTime}`);
+    let dateValue: string | null = null;
+
+    if (newDate && newTime) {
+      const combinedDate = new Date(`${newDate}T${newTime}`);
+      if (!isNaN(combinedDate.getTime())) {
+        dateValue = combinedDate.toISOString();
+      }
+    }
+
     const res = await fetch("/api/events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: newTitle,
         description: newDesc,
-        date: combinedDate.toISOString(),
+        date: dateValue,
         type: newType,
       }),
     });
@@ -88,13 +101,24 @@ export default function EventsPage() {
     }
   };
 
-  const fcEvents = events.map((e) => ({
-    id: String(e.id),
-    title: e.title,
-    start: e.date,
-    backgroundColor: getColorForType(e.type),
-    borderColor: getColorForType(e.type),
-  }));
+  const fcEvents = events
+    .filter((e) => e.date) // FullCalendar only accepts real dates
+    .map((e) => ({
+      id: String(e.id),
+      title: e.title,
+      start: e.date!,
+      backgroundColor: getColorForType(e.type),
+      borderColor: getColorForType(e.type),
+    }));
+
+  // Split events into upcoming and TBD
+  const now = new Date();
+    
+  const upcomingEvents = events
+    .filter((e) => e.date && new Date(e.date) >= now) // ✅ only keep future or today
+    .sort((a, b) => new Date(a.date!).getTime() - new Date(b.date!).getTime());
+    
+  const tbdEvents = events.filter((e) => !e.date);
 
   return (
     <div className="flex gap-6 p-6">
@@ -113,9 +137,9 @@ export default function EventsPage() {
       </div>
 
       {/* Sidebar */}
-      <aside className="w-96 bg-card rounded-xl shadow p-4 card">
+      <aside className="w-96 bg-card rounded-xl shadow p-4 card flex flex-col">
         <div className="flex justify-between items-center mb-3">
-          <h3 className="text-lg font-semibold">Upcoming events</h3>
+          <h3 className="text-lg font-semibold">Events</h3>
           <button
             onClick={() => setCreating(!creating)}
             className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
@@ -123,9 +147,8 @@ export default function EventsPage() {
             {creating ? "Cancel" : "New"}
           </button>
         </div>
-        
+
         {creating ? (
-          // Show only the create form when adding a new event
           <div className="space-y-2 mb-4 border rounded p-3 bg-accent/5">
             <input
               placeholder="Title"
@@ -160,8 +183,11 @@ export default function EventsPage() {
               className="w-full border rounded px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">Type (optional)</option>
-              <option value="exam">Exam</option>
-              <option value="meeting">Meeting</option>
+              <option value="CSI2110">CSI 2110</option>
+              <option value="MAT2377">MAT 2377</option>
+              <option value="JPN2901">JPN 2901</option>
+              <option value="SEG2105">SEG 2105</option>
+              <option value="CEG2136">CEG 2136</option>
               <option value="personal">Personal</option>
             </select>
             <button
@@ -171,44 +197,72 @@ export default function EventsPage() {
               Save Event
             </button>
           </div>
+        ) : loading ? (
+          <div>Loading...</div>
         ) : (
-          // Show upcoming events list only if not creating
-          loading ? (
-            <div>Loading...</div>
-          ) : (
-            <ul className="space-y-3">
-              {events.slice(0, 10).map((ev) => (
-                <li
-                  key={ev.id}
-                  className="p-2 border rounded hover:bg-accent/10 cursor-pointer transition"
-                  onClick={() => router.push(`/events/${ev.id}`)}
-                >
-                  <div className="flex justify-between">
+          <>
+            {/* Upcoming events */}
+            <div className="mb-4">
+              <h3 className="text-medium mb-2">Upcoming</h3>
+              <ul className="space-y-2 max-h-70 overflow-y-auto pr-1">
+                {upcomingEvents.length === 0 && (
+                  <li className="text-sm text-gray-500">No upcoming events</li>
+                )}
+                {upcomingEvents.map((ev) => (
+                  <li
+                    key={ev.id}
+                    className="p-2 border rounded hover:bg-accent/10 cursor-pointer transition flex items-center gap-2"
+                    onClick={() => router.push(`/events/${ev.id}`)}
+                  >
+                    <span
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: getColorForType(ev.type) }}
+                    />
                     <div>
                       <div className="font-medium">{ev.title}</div>
                       <div className="text-sm text-gray-500">
-                        {new Date(ev.date).toLocaleDateString()}{" "}
-                        {new Date(ev.date).toLocaleTimeString([], {
+                        {new Date(ev.date!).toLocaleDateString()}{" "}
+                        {new Date(ev.date!).toLocaleTimeString([], {
                           hour: "2-digit",
                           minute: "2-digit",
                         })}
                       </div>
                     </div>
-                    <div className="text-sm">
-                      {ev.linkedTodo
-                        ? ev.linkedTodo.done
-                          ? "✅"
-                          : "🟡"
-                        : "—"}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* TBD events */}
+            <div>
+              <h3 className="text-medium mb-2">TBD</h3>
+              <ul className="space-y-2 max-h-70 overflow-y-auto pr-1">
+                {tbdEvents.length === 0 && (
+                  <li className="text-sm text-gray-500">No TBD events</li>
+                )}
+                {tbdEvents.map((ev) => (
+                  <li
+                    key={ev.id}
+                    className="p-2 border rounded hover:bg-accent/10 cursor-pointer transition flex items-center gap-2"
+                    onClick={() => router.push(`/events/${ev.id}`)}
+                  >
+                    <span
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: getColorForType(ev.type) }}
+                    />
+                    <div>
+                      <div className="font-medium">{ev.title}</div>
+                      <div className="text-sm text-gray-500 italic">
+                        No date set
+                      </div>
                     </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </>
         )}
       </aside>
-
     </div>
   );
 }
