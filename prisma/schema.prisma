@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
   output   = "../src/generated/prisma"
@@ -20,6 +14,48 @@ enum TodoStatus {
   DONE
 }
 
+model User {
+  id        Int       @id @default(autoincrement())
+  email     String    @unique
+  name      String?
+  
+  // Gamification
+  totalXp    Int       @default(0)     // total XP accumulated
+  coins     Int       @default(0)     // current coin balance
+  
+  todos     Todo[]
+  events    Event[]
+
+  userQuests UserQuest[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Quest {
+  id        Int      @id @default(autoincrement())
+  title     String
+  type      String   // "daily" or "weekly"
+  xp        Int
+  coins     Int
+
+  userQuests UserQuest[]
+}
+
+model UserQuest {
+  id           Int       @id @default(autoincrement())
+  userId       Int
+  questId      Int
+  completed    Boolean   @default(false)
+  lastCompleted DateTime?
+
+  user  User  @relation(fields: [userId], references: [id])
+  quest Quest @relation(fields: [questId], references: [id])
+
+  @@unique([userId, questId])
+}
+
+
 model Todo {
   id           Int        @id @default(autoincrement())
   title        String
@@ -27,33 +63,48 @@ model Todo {
   status       TodoStatus @default(TODO)
   priority     Int?
 
+  // XP & coin rewards for completing this todo
+  rewardXp     Int        @default(0)
+  rewardCoins  Int        @default(0)
+
+  // Relations
+  userId       Int
+  user         User       @relation(fields: [userId], references: [id])
+
   dependsOnId  Int?
   dependsOn    Todo?      @relation("TodoDependencies", fields: [dependsOnId], references: [id])
-  blockedBy    Todo[] @relation("TodoDependencies")
+  blockedBy    Todo[]     @relation("TodoDependencies")
   
   subtasks     Subtask[]
   events       Event[] 
+
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 }
 
 model Subtask {
-  id       Int   @id @default(autoincrement())
-  title    String
-  done     Boolean @default(false)
-  todo     Todo   @relation(fields: [todoId], references: [id])
-  todoId   Int
+  id        Int      @id @default(autoincrement())
+  title     String
+  done      Boolean  @default(false)
+  todo      Todo     @relation(fields: [todoId], references: [id])
+  todoId    Int
   createdAt DateTime @default(now())
 }
 
 model Event {
-  id          Int      @id @default(autoincrement())
-  title       String
-  description String?
-  date        DateTime?
-  type        String?  // used for color/type (exam, personal, task...)
-  linkedTodo  Todo?    @relation(fields: [linkedTodoId], references: [id])
-  linkedTodoId Int? 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           Int      @id @default(autoincrement())
+  title        String
+  description  String?
+  date         DateTime?
+  type         String?  // used for color/type (exam, personal, task...)
+  
+  // Relations
+  linkedTodoId Int?
+  linkedTodo   Todo?    @relation(fields: [linkedTodoId], references: [id])
+
+  userId       Int
+  user         User     @relation(fields: [userId], references: [id])
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }

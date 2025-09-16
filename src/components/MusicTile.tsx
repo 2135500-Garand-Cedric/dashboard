@@ -8,7 +8,7 @@ interface Video {
   thumbnail: string;
 }
 
-export default function MusicTile() {
+export default function MusicDashboardTile() {
   const [video, setVideo] = useState<Video | null>(null);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0); // 0-100%
@@ -22,11 +22,11 @@ export default function MusicTile() {
       .then((data) => {
         if (data.items && data.items.length > 0) {
           const item = data.items[0];
-          setVideo({
-            videoId: item.id.videoId,
-            title: item.snippet.title,
-            thumbnail: item.snippet.thumbnails.medium.url,
-          });
+          // setVideo({
+          //   videoId: item.id.videoId,
+          //   title: item.snippet.title,
+          //   thumbnail: item.snippet.thumbnails.medium.url,
+          // });
         }
       });
   }, []);

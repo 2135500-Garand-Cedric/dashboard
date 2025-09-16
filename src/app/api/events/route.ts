@@ -19,11 +19,13 @@ export async function POST(request: Request) {
     data: {
       title,
       description,
-      date: date ? new Date(date) : null, // ✅ allow null
+      date: date ? new Date(date) : null, 
       type,
+      user: { connect: { id: 1 } }, 
     },
     include: { linkedTodo: true },
   });
 
   return NextResponse.json(created, { status: 201 });
 }
+

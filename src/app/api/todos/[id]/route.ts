@@ -59,6 +59,8 @@ export async function PATCH(
       status: body.status,
       priority: body.priority,
       dependsOnId: body.dependsOnId ?? null,
+      rewardXp: body.rewardXp,
+      rewardCoins: body.rewardCoins,
     },
   });
 

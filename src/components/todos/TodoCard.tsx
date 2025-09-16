@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { ChevronRightIcon, FlagIcon } from "@heroicons/react/24/solid";
+import { ChevronRightIcon, FlagIcon, CurrencyDollarIcon } from "@heroicons/react/24/solid";
 
 type Subtask = { id: number; title: string; done: boolean; todoId: number };
 type Todo = {
@@ -12,6 +12,8 @@ type Todo = {
   subtasks?: Subtask[];
   dependsOn?: { id: number; title: string } | null;
   priority?: number; // 1 = low, 2 = medium, 3 = high
+  rewardXp?: number;
+  rewardCoins?: number;
 };
 
 export default function TodoCard({ todo, onOpen }: { todo: Todo; onOpen: () => void }) {
@@ -24,7 +26,8 @@ export default function TodoCard({ todo, onOpen }: { todo: Todo; onOpen: () => v
   };
 
   // Priority color mapping
-  const priorityColor = todo.priority === 3 ? "text-red-500" : todo.priority === 2 ? "text-yellow-500" : "text-green-500";
+  const priorityColor =
+    todo.priority === 3 ? "text-red-500" : todo.priority === 2 ? "text-yellow-500" : "text-green-500";
 
   return (
     <div
@@ -35,9 +38,21 @@ export default function TodoCard({ todo, onOpen }: { todo: Todo; onOpen: () => v
     >
       <div className="flex justify-between items-start">
         <div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             {todo.priority && <FlagIcon className={`w-4 h-4 ${priorityColor}`} />}
-            <div className="font-medium" style={{ color: "var(--color-foreground)" }}>{todo.title}</div>
+            <div className="font-medium" style={{ color: "var(--color-foreground)" }}>
+              {todo.title}
+            </div>
+            {(todo.rewardXp || todo.rewardCoins) && (
+              <div className="text-xs text-gray-600 flex items-center gap-1">
+                {todo.rewardXp ? <span>+{todo.rewardXp} XP</span> : null}
+                {todo.rewardCoins ? (
+                  <span className="flex items-center gap-0.5">
+                    +{todo.rewardCoins} <CurrencyDollarIcon className="w-3 h-3 text-yellow-600" />
+                  </span>
+                ) : null}
+              </div>
+            )}
           </div>
           {todo.dependsOn && (
             <div className="text-xs text-gray-500">Depends on: {todo.dependsOn.title}</div>
@@ -50,9 +65,16 @@ export default function TodoCard({ todo, onOpen }: { todo: Todo; onOpen: () => v
 
       <div className="mt-2">
         <div className="w-full h-2 bg-gray-200 rounded">
-          <div style={{ width: `${pct}%` }} className="h-2 bg-[var(--color-accent)] rounded" />
+          <div
+            style={{ width: `${pct}%` }}
+            className="h-2 bg-[var(--color-accent)] rounded"
+          />
         </div>
-        {total > 0 && <div className="text-xs text-gray-500 mt-1">{completed}/{total} subtasks</div>}
+        {total > 0 && (
+          <div className="text-xs text-gray-500 mt-1">
+            {completed}/{total} subtasks
+          </div>
+        )}
       </div>
     </div>
   );

@@ -6,6 +6,7 @@ import TodoColumn from "./TodoColumn";
 import { useRouter } from "next/navigation";
 
 type Subtask = { id: number; title: string; done: boolean; todoId: number };
+
 type Todo = {
   id: number;
   title: string;
@@ -15,9 +16,17 @@ type Todo = {
   dependsOnId?: number | null;
   dependsOn?: { id: number; title: string } | null;
   subtasks?: Subtask[];
+  rewardXp?: number;
+  rewardCoins?: number;
 };
 
-export default function TodoBoard() {
+export default function TodoBoard({
+  setUserXp,
+  setUserCoins,
+}: {
+  setUserXp: React.Dispatch<React.SetStateAction<number>>;
+  setUserCoins: React.Dispatch<React.SetStateAction<number>>;
+}) {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -46,8 +55,45 @@ export default function TodoBoard() {
   const onDropTo = async (status: Todo["status"], e: React.DragEvent) => {
     e.preventDefault();
     const id = Number(e.dataTransfer.getData("text/plain"));
-    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, status } : t)));
 
+    const todo = todos.find((t) => t.id === id);
+    if (!todo) return;
+
+    const prevStatus = todo.status;
+    const rewards = {
+      xp: todo.rewardXp ?? 0,
+      coins: todo.rewardCoins ?? 0,
+    };
+
+    // Optimistically update UI
+    setTodos((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, status } : t))
+    );
+
+    // Rewards logic
+    if (prevStatus !== "DONE" && status === "DONE") {
+      setUserXp((xp) => xp + rewards.xp);
+      setUserCoins((coins) => coins + rewards.coins);
+
+      await fetch("/api/users/rewards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ xp: rewards.xp, coins: rewards.coins }),
+      });
+    }
+
+    if (prevStatus === "DONE" && status !== "DONE") {
+      setUserXp((xp) => xp - rewards.xp);
+      setUserCoins((coins) => coins - rewards.coins);
+
+      await fetch("/api/users/rewards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ xp: -rewards.xp, coins: -rewards.coins }),
+      });
+    }
+
+    // Update todo status in DB
     await fetch(`/api/todos/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -56,6 +102,7 @@ export default function TodoBoard() {
 
     await load();
   };
+
   const onDragOver = (e: React.DragEvent) => e.preventDefault();
 
   // Create a new todo
@@ -131,7 +178,7 @@ export default function TodoBoard() {
                     : "var(--success)"
                 }
                 items={todosByStatus(status as Todo["status"])}
-                onOpen={(todo) => router.push(`/todos/${todo.id}`)} // Navigate to page
+                onOpen={(todo) => router.push(`/todos/${todo.id}`)}
               />
             </div>
           ))}

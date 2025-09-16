@@ -19,6 +19,8 @@ type Todo = {
   priority?: number;
   dependsOn?: { id: number; title: string } | null;
   subtasks?: Subtask[];
+  rewardXp?: number;
+  rewardCoins?: number;
 };
 
 export default function TodoPage() {
@@ -29,15 +31,17 @@ export default function TodoPage() {
   const [todo, setTodo] = useState<Todo | null>(null);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [editMode, setEditMode] = useState(false);
+
+  // Draft fields
   const [titleDraft, setTitleDraft] = useState("");
   const [descDraft, setDescDraft] = useState("");
   const [priorityDraft, setPriorityDraft] = useState<number | null>(null);
   const [dependsOnId, setDependsOnId] = useState<number | null>(null);
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+  const [xpDraft, setXpDraft] = useState<number>(0);
+  const [coinsDraft, setCoinsDraft] = useState<number>(0);
   const [canDelete, setCanDelete] = useState(false);
-
-
 
   const load = async () => {
     // Load the todo
@@ -49,6 +53,8 @@ export default function TodoPage() {
     setPriorityDraft(data.priority ?? null);
     setDependsOnId(data.dependsOn?.id ?? null);
     setSubtasks(data.subtasks || []);
+    setXpDraft(data.rewardXp ?? 0);
+    setCoinsDraft(data.rewardCoins ?? 0);
 
     // Load all todos for "depends on" select and delete check
     const allRes = await fetch("/api/todos");
@@ -58,7 +64,6 @@ export default function TodoPage() {
   };
 
   const dependentTasks = todos.filter((t) => t.dependsOn?.id === todoId);
-
 
   useEffect(() => {
     load();
@@ -83,6 +88,8 @@ export default function TodoPage() {
         description: descDraft,
         priority: priorityDraft,
         dependsOnId,
+        rewardXp: xpDraft,
+        rewardCoins: coinsDraft,
       }),
     });
     await load();
@@ -90,7 +97,6 @@ export default function TodoPage() {
 
   // Delete todo (only allowed if no other todo depends on it)
   const deleteTodo = async () => {
-    // Check if any other todo depends on this one
     const hasDependents = todos.some((t) => t.dependsOn?.id === todoId);
     if (hasDependents) {
       alert("Cannot delete this task because another task depends on it.");
@@ -135,7 +141,7 @@ export default function TodoPage() {
       setSubtasks(subtasks.filter((s) => s.id !== id));
     }
   };
-  
+
   return (
     <div className="flex justify-center px-4 py-8">
       <div className="w-full max-w-3xl bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-6 shadow">
@@ -185,16 +191,17 @@ export default function TodoPage() {
                 </>
               )}
             </button>
-            
-            {/* Delete button (hidden in edit mode) */}
+
+            {/* Delete button */}
             {!editMode && (
               <button
                 onClick={deleteTodo}
                 disabled={!canDelete}
                 className={`flex items-center gap-1 border rounded px-3 py-1 transition
-                  ${!canDelete
-                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                    : "hover:bg-red-100 hover:text-red-600 cursor-pointer"
+                  ${
+                    !canDelete
+                      ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                      : "hover:bg-red-100 hover:text-red-600 cursor-pointer"
                   }`}
               >
                 <TrashIcon className="w-5 h-5" />
@@ -217,6 +224,36 @@ export default function TodoPage() {
           ) : (
             <p className="text-gray-700">{todo.description || "No description"}</p>
           )}
+        </div>
+
+        {/* XP / Coins */}
+        <div className="mb-6 flex gap-6">
+          <div className="flex-1">
+            <label className="block text-sm text-gray-500 mb-1">XP Reward:</label>
+            {editMode ? (
+              <input
+                type="number"
+                value={xpDraft}
+                onChange={(e) => setXpDraft(Number(e.target.value))}
+                className="w-full border rounded px-3 py-2"
+              />
+            ) : (
+              <span className="text-gray-700">{todo.rewardXp ?? 0} XP</span>
+            )}
+          </div>
+          <div className="flex-1">
+            <label className="block text-sm text-gray-500 mb-1">Coins Reward:</label>
+            {editMode ? (
+              <input
+                type="number"
+                value={coinsDraft}
+                onChange={(e) => setCoinsDraft(Number(e.target.value))}
+                className="w-full border rounded px-3 py-2"
+              />
+            ) : (
+              <span className="text-gray-700">{todo.rewardCoins ?? 0} 💰</span>
+            )}
+          </div>
         </div>
 
         {/* Depends On */}
@@ -264,7 +301,7 @@ export default function TodoPage() {
               ))}
             </ul>
           </div>
-        )}        
+        )}
 
         {/* Priority selector */}
         {editMode && (
