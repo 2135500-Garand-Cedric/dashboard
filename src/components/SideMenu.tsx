@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { HomeIcon, DocumentTextIcon, FolderIcon, XMarkIcon, Bars3Icon } from "@heroicons/react/24/solid";
+import {
+  HomeIcon,
+  DocumentTextIcon,
+  FolderIcon,
+  ChartPieIcon,
+  XMarkIcon,
+  Bars3Icon,
+} from "@heroicons/react/24/solid";
 
 export default function SideMenu() {
   const [isOpen, setIsOpen] = useState(false);
@@ -11,6 +18,7 @@ export default function SideMenu() {
     { name: "Main Dashboard", href: "/", icon: HomeIcon },
     { name: "Todos", href: "/todos", icon: DocumentTextIcon },
     { name: "Calendar", href: "/events", icon: FolderIcon },
+    { name: "Time Manager", href: "/timemanager", icon: ChartPieIcon }, // ✅ New page
   ];
 
   return (
