@@ -15,6 +15,7 @@ type Todo = {
   priority?: number;
   dependsOnId?: number | null;
   dependsOn?: { id: number; title: string } | null;
+  updatedAt: string;
   subtasks?: Subtask[];
   rewardXp?: number;
   rewardCoins?: number;
@@ -154,13 +155,15 @@ export default function TodoBoard({
       {loading ? (
         <div>Loading...</div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div
+          className="grid grid-cols-1 md:grid-cols-3 gap-4"
+        >
           {["TODO", "IN_PROGRESS", "DONE"].map((status) => (
             <div
               key={status}
               onDragOver={onDragOver}
               onDrop={(e) => onDropTo(status as Todo["status"], e)}
-              className="cursor-pointer"
+              className="cursor-pointer h-full"
             >
               <TodoColumn
                 title={
@@ -184,6 +187,7 @@ export default function TodoBoard({
           ))}
         </div>
       )}
+
     </div>
   );
 }

@@ -9,6 +9,7 @@ type Todo = {
   status: "TODO" | "IN_PROGRESS" | "DONE";
   priority?: 1 | 2 | 3;
   subtasks?: Subtask[];
+  updatedAt: string; // ensure updatedAt is included from API
 };
 
 export default function TodoDashboardTile() {
@@ -17,8 +18,12 @@ export default function TodoDashboardTile() {
   const loadTodos = async () => {
     const res = await fetch("/api/todos");
     const data: Todo[] = await res.json();
-    // Only show incomplete todos
-    setTodos(data.filter((t) => t.status !== "DONE"));
+    // Only show "IN_PROGRESS" todos and sort by updatedAt descending
+    const inProgressTodos = data
+      .filter((t) => t.status === "IN_PROGRESS")
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+
+    setTodos(inProgressTodos);
   };
 
   useEffect(() => {
@@ -41,22 +46,32 @@ export default function TodoDashboardTile() {
   if (todos.length === 0) {
     return (
       <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 shadow max-w-md">
-        <h2 className="text-lg font-semibold" style={{ color: "var(--color-foreground)" }}>
-          Active Todos
+        <h2
+          className="text-lg font-semibold"
+          style={{ color: "var(--color-foreground)" }}
+        >
+          In Progress Todos
         </h2>
-        <p className="text-sm text-gray-500 mt-2">No active todos.</p>
+        <p className="text-sm text-gray-500 mt-2">No tasks in progress.</p>
       </div>
     );
   }
 
   return (
     <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow p-4 max-w-md">
-      <h2 className="text-lg font-semibold mb-3" style={{ color: "var(--color-foreground)" }}>
-        Active Todos
+      <h2
+        className="text-lg font-semibold mb-3"
+        style={{ color: "var(--color-foreground)" }}
+      >
+        In Progress Todos
       </h2>
 
-      <ul className="space-y-3">
-        {todos.slice(0, 5).map((todo) => {
+      <ul
+        className={`space-y-3 ${
+          todos.length > 4 ? "max-h-[18rem] overflow-y-auto" : ""
+        }`}
+      >
+        {todos.map((todo) => {
           const completed = todo.subtasks?.filter((s) => s.done).length ?? 0;
           const total = todo.subtasks?.length ?? 0;
           const progress = total === 0 ? 0 : Math.round((completed / total) * 100);
@@ -71,7 +86,9 @@ export default function TodoDashboardTile() {
                 <h3 className="font-medium text-[var(--color-foreground)]">{todo.title}</h3>
                 {todo.priority && (
                   <span
-                    className={`inline-block w-3 h-3 rounded-full ${getPriorityColor(todo.priority)}`}
+                    className={`inline-block w-3 h-3 rounded-full ${getPriorityColor(
+                      todo.priority
+                    )}`}
                     title={`Priority: ${["Low", "Medium", "High"][todo.priority - 1]}`}
                   />
                 )}
@@ -91,12 +108,6 @@ export default function TodoDashboardTile() {
           );
         })}
       </ul>
-
-      {todos.length > 5 && (
-        <div className="mt-3 text-xs text-gray-500 text-center">
-          +{todos.length - 5} more todos
-        </div>
-      )}
     </div>
   );
 }

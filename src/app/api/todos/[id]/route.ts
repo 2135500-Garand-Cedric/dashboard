@@ -4,7 +4,6 @@ export const runtime = "nodejs";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
-// ✅ Fix: Await context.params instead of destructuring directly
 export async function GET(
   _request: Request,
   context: { params: Promise<{ id: string }> }

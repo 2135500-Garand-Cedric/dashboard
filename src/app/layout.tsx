@@ -8,16 +8,18 @@ import "./globals.css";
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
+export const metadata = {
+  title: "Dashboard",
+};
+
+
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  // Check if user is authenticated
   const session = await getServerSession(authOptions);
 
   if (!session) {
-    // Automatically redirect to GitHub sign-in
     redirect("/api/auth/signin");
   }
 
-  // If authenticated, render the app
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>

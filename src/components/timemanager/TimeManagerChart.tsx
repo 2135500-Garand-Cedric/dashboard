@@ -4,7 +4,11 @@ import { PieChart, Pie, Cell, Tooltip } from "recharts";
 import { useEffect, useState } from "react";
 import { CalendarIcon } from "@heroicons/react/24/outline";
 
-const COLORS = ["#3B82F6", "#F97316", "#10B981", "#F43F5E", "#8B5CF6"];
+const COLORS = [
+  "#3B82F6", "#F97316", "#10B981", "#F43F5E", "#8B5CF6",
+  "#FACC15", "#14B8A6", "#EC4899", "#6366F1", "#22D3EE",
+  "#F87171", "#A78BFA", "#34D399", "#FCD34D", "#E879F9"
+];
 
 export default function TimeManagerChart() {
   const [timeframe, setTimeframe] = useState<"week" | "month" | "year">("week");
@@ -18,7 +22,6 @@ export default function TimeManagerChart() {
         const res = await fetch("/api/time-manager");
         if (!res.ok) throw new Error("Failed to fetch data");
         const data = await res.json();
-        console.log("Fetched records:", data);
         setRecords(data);
       } catch (err) {
         console.error("Error fetching time manager data:", err);
@@ -27,7 +30,6 @@ export default function TimeManagerChart() {
     fetchData();
   }, []);
 
-  // Calculate date threshold based on timeframe
   const now = new Date();
   const getThresholdDate = () => {
     const date = new Date(now);
@@ -38,12 +40,11 @@ export default function TimeManagerChart() {
   };
   const threshold = getThresholdDate();
 
-  // Filter by timeframe
   const filteredRecords = records.filter(
     (r) => new Date(r.start_time) >= threshold && new Date(r.start_time) <= now
   );
 
-  // Aggregate by activity_name (ensure numbers)
+  // Aggregate activities
   const activityMap: Record<string, number> = {};
   filteredRecords.forEach((r) => {
     const seconds = Number(r.duration_seconds) || 0;
@@ -51,17 +52,18 @@ export default function TimeManagerChart() {
       (activityMap[r.activity_name] || 0) + seconds;
   });
 
-  const data = Object.entries(activityMap).map(([name, seconds]) => ({
+  let data = Object.entries(activityMap).map(([name, seconds]) => ({
     name,
     seconds,
   }));
 
+  // Sort by hours descending
+  data = data.sort((a, b) => b.seconds - a.seconds);
+
   const totalSeconds = data.reduce((a, b) => a + Number(b.seconds), 0);
   const formattedData = data.map((d) => ({
     ...d,
-    percent: totalSeconds
-      ? ((Number(d.seconds) / totalSeconds) * 100).toFixed(1)
-      : "0",
+    percent: totalSeconds ? ((Number(d.seconds) / totalSeconds) * 100).toFixed(1) : "0",
   }));
 
   const CustomTooltip = ({ payload }: any) => {
@@ -70,9 +72,7 @@ export default function TimeManagerChart() {
     return (
       <div className="bg-white text-black p-3 rounded shadow border text-sm">
         <div className="font-medium">{item.name}</div>
-        <div>
-          {(Number(item.seconds) / 3600).toFixed(1)}h ({item.percent}%)
-        </div>
+        <div>{(Number(item.seconds) / 3600).toFixed(1)}h ({item.percent}%)</div>
       </div>
     );
   };
@@ -97,17 +97,17 @@ export default function TimeManagerChart() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
         {/* Pie Chart */}
         <div className="flex justify-center">
-          <PieChart width={320} height={320}>
+          <PieChart width={600} height={600}>
             <Pie
               data={formattedData}
               dataKey="seconds"
               nameKey="name"
               cx="50%"
               cy="50%"
-              outerRadius={120}
+              outerRadius={200}
               onMouseEnter={(_, index) => setActiveIndex(index)}
               onMouseLeave={() => setActiveIndex(null)}
             >
@@ -125,7 +125,7 @@ export default function TimeManagerChart() {
         </div>
 
         {/* Activity List */}
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-[600px] overflow-y-auto">
           {formattedData.map((a, index) => (
             <div
               key={a.name}
@@ -137,7 +137,13 @@ export default function TimeManagerChart() {
               onMouseEnter={() => setActiveIndex(index)}
               onMouseLeave={() => setActiveIndex(null)}
             >
-              <span className="font-medium">{a.name}</span>
+              <div className="flex items-center gap-2">
+                <span
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                />
+                <span className="font-medium">{a.name}</span>
+              </div>
               <span className="font-semibold">
                 {(Number(a.seconds) / 3600).toFixed(1)}h ({a.percent}%)
               </span>

@@ -1,11 +1,34 @@
 import { prisma } from "@/lib/prisma";
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
+// DELETE subtask
+export async function DELETE(
+  request: Request,
+  context: { params: { subtaskId: string } }
+) {
+  const subtaskId = Number(context.params.subtaskId);
+
+  if (isNaN(subtaskId)) {
+    return NextResponse.json({ error: "Invalid subtaskId" }, { status: 400 });
+  }
+
+  try {
+    await prisma.subtask.delete({
+      where: { id: subtaskId },
+    });
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error(error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// PATCH subtask
 export async function PATCH(
-  request: NextRequest,
-  context: any
+  request: Request,
+  context: { params: { subtaskId: string } }
 ) {
   const subtaskId = Number(context.params.subtaskId);
 
@@ -16,17 +39,26 @@ export async function PATCH(
   try {
     const body = await request.json();
 
-    const updated = await prisma.subtask.update({
+    // Update subtask
+    const updatedSubtask = await prisma.subtask.update({
       where: { id: subtaskId },
       data: {
         done: body.done ?? undefined,
         title: body.title ?? undefined,
       },
+      include: { todo: true }, // include parent todo
     });
 
-    return NextResponse.json(updated);
+    // Update parent todo's updatedAt
+    await prisma.todo.update({
+      where: { id: updatedSubtask.todoId },
+      data: { updatedAt: new Date() }, // force updatedAt to now
+    });
+
+    return NextResponse.json(updatedSubtask);
   } catch (error: any) {
     console.error(error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
