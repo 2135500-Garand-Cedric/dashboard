@@ -21,6 +21,7 @@ export async function POST(request: Request) {
       description: description ?? "",
       priority: priority ?? 1,
       dependsOnId: dependsOnId ?? undefined,
+      user: { connect: { id: 1 } }, 
     },
   });
 

@@ -8,7 +8,7 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await context.params; // ✅ Await params
+  const { id } = await context.params;
   const todoId = Number(id);
 
   const { title } = await request.json();

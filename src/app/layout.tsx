@@ -1,6 +1,6 @@
 import { getServerSession } from "next-auth/next";
 import { redirect } from "next/navigation";
-import { authOptions } from "./api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/auth";
 import SideMenu from "@/components/SideMenu";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";

@@ -1,16 +1,13 @@
-// src/app/api/todos/subtasks/[subtaskId]/route.ts
+import { prisma } from "@/lib/prisma";
+import { NextRequest, NextResponse } from "next/server";
+
 export const runtime = "nodejs";
 
-import { prisma } from "@/lib/prisma";
-import { NextResponse } from "next/server";
-
 export async function PATCH(
-  request: Request,
-  context: { params: { subtaskId: string } }
+  request: NextRequest,
+  context: any
 ) {
-  // Use `await context.params` if needed
-  const { params } = context;
-  const subtaskId = Number(params.subtaskId);
+  const subtaskId = Number(context.params.subtaskId);
 
   if (isNaN(subtaskId)) {
     return NextResponse.json({ error: "Invalid subtaskId" }, { status: 400 });
