@@ -18,7 +18,8 @@ export default function SideMenu() {
     { name: "Main Dashboard", href: "/", icon: HomeIcon },
     { name: "Todos", href: "/todos", icon: DocumentTextIcon },
     { name: "Calendar", href: "/events", icon: FolderIcon },
-    { name: "Time Manager", href: "/timemanager", icon: ChartPieIcon }, // ✅ New page
+    { name: "Time Manager", href: "/timemanager", icon: ChartPieIcon },
+    { name: "Japanese Practice", href: "/japanese/practice", icon: DocumentTextIcon },
   ];
 
   return (

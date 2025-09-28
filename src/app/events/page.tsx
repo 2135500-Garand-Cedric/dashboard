@@ -142,7 +142,7 @@ export default function EventsPage() {
           <h3 className="text-lg font-semibold">Events</h3>
           <button
             onClick={() => setCreating(!creating)}
-            className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+            className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
           >
             {creating ? "Cancel" : "New"}
           </button>

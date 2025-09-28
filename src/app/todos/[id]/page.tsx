@@ -9,6 +9,7 @@ import {
   ArrowLeftIcon,
   TrashIcon,
 } from "@heroicons/react/24/solid";
+import { useSnackbar } from "@/context/SnackbarContext";
 
 type Subtask = { id: number; title: string; done: boolean };
 type Todo = {
@@ -42,6 +43,8 @@ export default function TodoPage() {
   const [xpDraft, setXpDraft] = useState<number>(0);
   const [coinsDraft, setCoinsDraft] = useState<number>(0);
   const [canDelete, setCanDelete] = useState(false);
+
+  const { showMessage } = useSnackbar();
 
   const load = async () => {
     // Load the todo
@@ -99,7 +102,7 @@ export default function TodoPage() {
   const deleteTodo = async () => {
     const hasDependents = todos.some((t) => t.dependsOn?.id === todoId);
     if (hasDependents) {
-      alert("Cannot delete this task because another task depends on it.");
+      showMessage("Cannot delete this task because another task depends on it.");
       return;
     }
 

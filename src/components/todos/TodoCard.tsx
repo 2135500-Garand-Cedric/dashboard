@@ -43,16 +43,12 @@ export default function TodoCard({ todo, onOpen }: { todo: Todo; onOpen: () => v
             <div className="font-medium" style={{ color: "var(--color-foreground)" }}>
               {todo.title}
             </div>
-            {(todo.rewardXp || todo.rewardCoins) && (
-              <div className="text-xs text-gray-600 flex items-center gap-1">
-                {todo.rewardXp ? <span>+{todo.rewardXp} XP</span> : null}
-                {todo.rewardCoins ? (
-                  <span className="flex items-center gap-0.5">
-                    +{todo.rewardCoins} <CurrencyDollarIcon className="w-3 h-3 text-yellow-600" />
-                  </span>
-                ) : null}
-              </div>
-            )}
+            <div className="text-xs text-gray-600 flex items-center gap-1">
+              <span>+{todo.rewardXp ?? 0} XP</span>
+              <span className="flex items-center gap-0.5">
+                +{todo.rewardCoins ?? 0} <CurrencyDollarIcon className="w-3 h-3 text-yellow-600" />
+              </span>
+            </div>
           </div>
           {todo.dependsOn && (
             <div className="text-xs text-gray-500">Depends on: {todo.dependsOn.title}</div>
