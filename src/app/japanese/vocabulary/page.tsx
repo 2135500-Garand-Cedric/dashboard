@@ -3,6 +3,8 @@
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { useSnackbar } from "@/context/SnackbarContext";
+import { StarIcon as SolidStarIcon } from "@heroicons/react/24/solid";
+import { StarIcon as OutlineStarIcon } from "@heroicons/react/24/outline";
 
 interface Category {
   id: number;
@@ -17,16 +19,18 @@ interface Vocabulary {
   worst_status: string;
   percentage: string;
   category_name: string;
+  starred: boolean;
 }
 
 export default function VocabularyPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [vocabulary, setVocabulary] = useState<Vocabulary[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
+  const [starredSort, setStarredSort] = useState<boolean>(false);
   const [search, setSearch] = useState<string>("");
   const { showMessage } = useSnackbar();
 
-  // Fetch categories and vocabulary once
+  // Fetch categories and vocabulary
   useEffect(() => {
     async function fetchData() {
       const [vocabRes] = await Promise.all([
@@ -34,7 +38,6 @@ export default function VocabularyPage() {
       ]);
 
       const vocab: Vocabulary[] = await vocabRes.json();
-
       setVocabulary(vocab);
     }
 
@@ -47,8 +50,6 @@ export default function VocabularyPage() {
         }
 
         const data = await res.json();
-
-        // Check for success before setting state
         if (!data.success || !data.categories) {
           showMessage("Failed to load categories: Invalid response");
           return;
@@ -58,14 +59,11 @@ export default function VocabularyPage() {
       } catch (err: any) {
         showMessage(`Failed to load categories: ${err.message || err}`);
       }
-    };
+    }
 
     fetchData();
     loadCategories();
   }, []);
-
-  
-
 
   const handleCheckbox = (id: number) => {
     setSelectedCategories((prev) =>
@@ -73,18 +71,15 @@ export default function VocabularyPage() {
     );
   };
 
-  // Filter vocab by search and categories
   const filteredVocab = useMemo(() => {
     const lowerSearch = search.toLowerCase().trim();
 
-    return vocabulary.filter((v) => {
-      // Check if the search matches any of the 3 fields
+    let filtered = vocabulary.filter((v) => {
       const matchesSearch =
         v.english.toLowerCase().includes(lowerSearch) ||
         v.japanese.toLowerCase().includes(lowerSearch) ||
         v.hiragana.toLowerCase().includes(lowerSearch);
 
-      // Check category filter
       const matchesCategory =
         selectedCategories.length === 0 ||
         selectedCategories.includes(
@@ -93,10 +88,16 @@ export default function VocabularyPage() {
 
       return matchesSearch && matchesCategory;
     });
-  }, [vocabulary, search, selectedCategories, categories]);
 
+    if (starredSort) {
+      filtered.sort((a, b) => Number(b.starred) - Number(a.starred));
+    } else {
+      filtered.sort((a, b) => a.english.localeCompare(b.english));
+    }
 
-  // Compute average percentage dynamically based on filtered results
+    return filtered;
+  }, [vocabulary, search, selectedCategories, categories, starredSort]);
+
   const averagePercentage = useMemo(() => {
     if (!filteredVocab.length) return "0.0%";
     const total = filteredVocab.reduce((sum, v) => sum + parseFloat(v.percentage), 0);
@@ -105,7 +106,6 @@ export default function VocabularyPage() {
 
   return (
     <div className="p-6" style={{ background: "var(--background)", color: "var(--foreground)" }}>
-      {/* Top-right buttons */}
       <div className="flex justify-end space-x-2 mb-4">
         <Link
           href="/japanese/practice"
@@ -127,7 +127,6 @@ export default function VocabularyPage() {
         </Link>
       </div>
 
-      {/* Header */}
       <h1 className="text-3xl font-bold mb-2" style={{ color: "var(--color-foreground)" }}>
         Vocabulary List
       </h1>
@@ -135,7 +134,6 @@ export default function VocabularyPage() {
         Average: {averagePercentage}
       </h2>
 
-      {/* Search & category filters */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 mb-4 gap-2">
         <input
           type="text"
@@ -151,6 +149,7 @@ export default function VocabularyPage() {
         />
 
         <div className="flex flex-wrap gap-2">
+          {/* ✅ Categories checkboxes */}
           {categories.map((cat) => (
             <label
               key={cat.id}
@@ -166,17 +165,30 @@ export default function VocabularyPage() {
               <span>{cat.name}</span>
             </label>
           ))}
+
+          {/* ✅ Starred sort checkbox */}
+          <label
+            className="flex items-center space-x-1 px-2 py-1 border rounded cursor-pointer"
+            style={{ borderColor: "var(--color-card-border)" }}
+          >
+            <input
+              type="checkbox"
+              checked={starredSort}
+              onChange={() => setStarredSort((prev) => !prev)}
+              className="accent-yellow-500"
+            />
+            <span>Starred</span>
+          </label>
         </div>
       </div>
 
-      {/* Vocabulary Table */}
       <div className={`overflow-x-auto ${filteredVocab.length > 15 ? "overflow-y-auto max-h-[650px]" : ""}`}>
         <table className="w-full text-left border-collapse">
           <thead>
             <tr>
-              {["English", "Japanese", "Hiragana", "Status", "Percentage", "Category"].map((head) => (
+              {["", "English", "Japanese", "Hiragana", "Status", "Percentage", "Category"].map((head, idx) => (
                 <th
-                  key={head}
+                  key={idx}
                   className="border-b px-4 py-2"
                   style={{ borderColor: "var(--color-card-border)" }}
                 >
@@ -187,19 +199,26 @@ export default function VocabularyPage() {
           </thead>
           <tbody>
             {filteredVocab.map((v, i) => {
-              // Determine status color
               let statusColor = "bg-gray-400";
               if (v.worst_status.toLowerCase() === "perfect") statusColor = "bg-green-500";
               else if (v.worst_status.toLowerCase() === "good") statusColor = "bg-yellow-400";
               else if (v.worst_status.toLowerCase() === "weak") statusColor = "bg-red-500";
-          
+
               return (
                 <tr
                   key={i}
-                  className="hover:bg-gray-100"
+                  className="hover:bg-gray-100 cursor-pointer"
                   style={{ backgroundColor: "var(--color-card-bg)" }}
                   onClick={() => window.location.href = `/japanese/vocabulary/${v.id}`}
                 >
+                  {/* ✅ Star column */}
+                  <td className="px-2 py-2">
+                    {v.starred ? (
+                      <SolidStarIcon className="w-5 h-5 text-yellow-400 inline-block" />
+                    ) : (
+                      <OutlineStarIcon className="w-5 h-5 text-gray-400 inline-block" />
+                    )}
+                  </td>
                   <td className="px-4 py-2">{v.english}</td>
                   <td className="px-4 py-2">{v.japanese}</td>
                   <td className="px-4 py-2">{v.hiragana}</td>

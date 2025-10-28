@@ -149,6 +149,7 @@ model Vocabulary {
   userId       Int
   categoryId   Int?
   readHiragana Boolean  @default(false)
+  starred      Boolean  @default(false)
 
   user     User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
   category Category?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)

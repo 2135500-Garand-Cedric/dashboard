@@ -1,0 +1,5 @@
+migrate new schema to database
+
+docker compose exec -it dashboard npx prisma migrate dev --name add_starred_to_vocabulary
+docker compose exec -it dashboard npx prisma generate
+

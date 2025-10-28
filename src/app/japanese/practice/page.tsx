@@ -21,6 +21,8 @@ export default function PracticePage() {
   const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
   const [selectedActivity, setSelectedActivity] = useState<number>(1);
   const [nbWords, setNbWords] = useState<number>(10);
+  const [starredOnly, setStarredOnly] = useState(false);
+
 
   const [words, setWords] = useState<Word[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -65,12 +67,17 @@ export default function PracticePage() {
   };
 
   const handleStart = async () => {
-    if (!selectedCategories.length) return showMessage("Select at least one category.");
+    let categoriesToSend = selectedCategories;
+
+    // If no categories selected, use all category IDs
+    if (!selectedCategories.length) {
+      categoriesToSend = categories.map(c => c.id);
+    }
 
     const res = await fetch("/api/japanese-practice/vocabulary", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ categories: selectedCategories, nbWords, activity: selectedActivity })
+      body: JSON.stringify({ categories: categoriesToSend, nbWords, activity: selectedActivity, starredOnly })
     });
 
     const data = await res.json();
@@ -219,6 +226,17 @@ export default function PracticePage() {
                     <span>{cat.name}</span>
                   </label>
                 ))}
+                <label
+                    className="flex items-center space-x-2 p-2 border rounded cursor-pointer hover:bg-gray-700"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={starredOnly}
+                      onChange={() => setStarredOnly(prev => !prev)}
+                      className="accent-yellow-400"
+                    />
+                    <span>Starred only</span>
+                  </label>
               </div>
             </div>
 

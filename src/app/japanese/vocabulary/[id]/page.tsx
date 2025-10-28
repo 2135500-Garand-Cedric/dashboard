@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { PencilSquareIcon, CheckIcon, TrashIcon, ArrowLeftIcon } from "@heroicons/react/24/solid";
+import { StarIcon as StarSolidIcon } from "@heroicons/react/24/solid";
+import { StarIcon as StarOutlineIcon } from "@heroicons/react/24/outline";
 import { useSnackbar } from "@/context/SnackbarContext";
 
 type Vocabulary = {
@@ -12,7 +14,8 @@ type Vocabulary = {
   hiragana: string;
   worst_status: string;
   percentage: string;
-  category_id: number;
+  categoryId: number;
+  starred: boolean;
 };
 
 type Category = {
@@ -33,6 +36,7 @@ export default function VocabularyEditPage() {
   const [japaneseDraft, setJapaneseDraft] = useState("");
   const [hiraganaDraft, setHiraganaDraft] = useState("");
   const [categoryDraft, setCategoryDraft] = useState<number | "">("");
+  const [starredDraft, setStarredDraft] = useState(false);
 
   const loadVocabulary = async () => {
     try {
@@ -54,7 +58,8 @@ export default function VocabularyEditPage() {
       setEnglishDraft(vocabData.english);
       setJapaneseDraft(vocabData.japanese);
       setHiraganaDraft(vocabData.hiragana);
-      setCategoryDraft(vocabData.category_id);
+      setCategoryDraft(vocabData.categoryId);
+      setStarredDraft(vocabData.starred);
     } catch (err: any) {
       showMessage(`Failed to load vocabulary: ${err.message || err}`);
     }
@@ -64,22 +69,18 @@ export default function VocabularyEditPage() {
     try {
       const res = await fetch(`/api/japanese-practice/categories`);
       const data = await res.json().catch(() => ({}));
-    
       if (!res.ok || !data.success) {
         const errorMsg = data?.error || res.statusText || "Unknown error";
         console.error("Load categories error:", errorMsg);
         showMessage(`Failed to load categories: ${errorMsg}`);
         return;
       }
-    
-      // ✅ Successful fetch
       setCategories(data.categories || []);
     } catch (err: any) {
       console.error("Unexpected error loading categories:", err);
       showMessage(`Failed to load categories: ${err.message || err}`);
     }
   };
-
 
   useEffect(() => {
     loadVocabulary();
@@ -97,7 +98,8 @@ export default function VocabularyEditPage() {
           english: englishDraft,
           japanese: japaneseDraft,
           hiragana: hiraganaDraft,
-          category_id: categoryDraft,
+          categoryId: categoryDraft,
+          starred: starredDraft,
         }),
       });
 
@@ -139,13 +141,29 @@ export default function VocabularyEditPage() {
 
           <div className="flex-1 flex justify-center items-center gap-2">
             {editMode ? (
-              <input
-                value={englishDraft}
-                onChange={(e) => setEnglishDraft(e.target.value)}
-                className="text-lg font-semibold border rounded px-3 py-1 flex-1 text-center"
-              />
+              <>
+                <input
+                  value={englishDraft}
+                  onChange={(e) => setEnglishDraft(e.target.value)}
+                  className="text-lg font-semibold border rounded px-3 py-1 flex-1 text-center"
+                />
+                <button onClick={() => setStarredDraft(!starredDraft)} className="ml-2">
+                  {starredDraft ? (
+                    <StarSolidIcon className="w-6 h-6 text-yellow-400" />
+                  ) : (
+                    <StarOutlineIcon className="w-6 h-6 text-gray-400" />
+                  )}
+                </button>
+              </>
             ) : (
-              <h1 className="text-xl font-semibold">{vocab.english}</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-semibold">{vocab.english}</h1>
+                {vocab.starred ? (
+                  <StarSolidIcon className="w-6 h-6 text-yellow-400" />
+                ) : (
+                  <StarOutlineIcon className="w-6 h-6 text-gray-400" />
+                )}
+              </div>
             )}
           </div>
 
@@ -240,7 +258,7 @@ export default function VocabularyEditPage() {
                 ))}
               </select>
             ) : (
-              <p>{categories.find((c) => c.id === vocab.category_id)?.name || "Unknown"}</p>
+              <p>{categories.find((c) => c.id === vocab.categoryId)?.name || "Unknown"}</p>
             )}
           </div>
         </div>

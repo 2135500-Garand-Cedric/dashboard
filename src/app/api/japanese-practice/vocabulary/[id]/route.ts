@@ -40,9 +40,10 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       english: vocab.english,
       japanese: vocab.japanese,
       hiragana: vocab.hiragana,
-      category_id: vocab.category?.id,
+      categoryId: vocab.category?.id,
       worst_status: worstStatus,
       percentage,
+      starred: vocab.starred,
     };
 
     return NextResponse.json({ success: true, vocabulary: result });
@@ -62,8 +63,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
     const body = await req.json();
 
-    const { english, japanese, hiragana, category_id } = body;
-    if (!english || !japanese || !hiragana || !category_id) {
+    const { english, japanese, hiragana, categoryId, starred } = body;
+    if (!english || !japanese || !hiragana || !categoryId) {
       return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 });
     }
 
@@ -73,7 +74,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         english,
         japanese,
         hiragana,
-        categoryId: category_id,
+        starred,
+        category: { connect: { id: categoryId } },
       },
     });
 

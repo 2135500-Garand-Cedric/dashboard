@@ -5,7 +5,7 @@ import { ActivityVocabStatus } from "@/generated/prisma";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { english, japanese, hiragana, categoryId } = body;
+    const { english, japanese, hiragana, categoryId, starred } = body; // ✅ include starred
 
     // TODO: Replace with session/userId logic
     const userId = 1;
@@ -26,6 +26,7 @@ export async function POST(req: Request) {
           hiragana,
           categoryId,
           userId,
+          starred,
         },
       });
 

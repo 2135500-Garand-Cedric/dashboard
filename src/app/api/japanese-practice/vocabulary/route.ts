@@ -43,6 +43,7 @@ export async function GET() {
       category_name: v.category?.name,
       worst_status: worstStatus,
       percentage,
+      starred: v.starred,
     };
   });
 
@@ -101,6 +102,7 @@ export async function POST(req: Request) {
     const categories: number[] = body.categories || [];
     const nbWords: number = body.nbWords || 10;
     const activityId: number = body.activity || 1;
+    const starredOnly: boolean = body.starredOnly || false;
 
     if (!categories.length) {
       return NextResponse.json({ success: false, error: "You must choose at least one category." }, { status: 400 });
@@ -112,6 +114,7 @@ export async function POST(req: Request) {
         userId,
         categoryId: { in: categories },
         activityVocab: { some: { activityId } },
+        ...(starredOnly ? { starred: true } : {})
       },
       include: {
         category: true,
@@ -123,7 +126,7 @@ export async function POST(req: Request) {
       orderBy: [
         {
           activityVocab: {
-            _count: "asc", // This is a workaround for ordering; we'll sort manually next
+            _count: "asc",
           },
         },
       ],
@@ -141,10 +144,18 @@ export async function POST(req: Request) {
         status: v.activityVocab[0]?.status || "WEAK",
         read_hiragana: v.readHiragana,
       }))
-      .sort((a, b) => statusOrder[a.status] - statusOrder[b.status])
-      .slice(0, nbWords);
+      .sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
 
-    return NextResponse.json({ success: true, words: sortedWords });
+    // Slice first nbWords
+    const selectedWords = sortedWords.slice(0, nbWords);
+
+    // Shuffle the selected words using Fisher-Yates
+    for (let i = selectedWords.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [selectedWords[i], selectedWords[j]] = [selectedWords[j], selectedWords[i]];
+    }
+
+    return NextResponse.json({ success: true, words: selectedWords });
   } catch (error: any) {
     console.error(error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
