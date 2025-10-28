@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
+import { useSnackbar } from "@/context/SnackbarContext";
 
 interface Category {
   id: number;
@@ -9,6 +10,7 @@ interface Category {
 }
 
 interface Vocabulary {
+  id: number;
   english: string;
   japanese: string;
   hiragana: string;
@@ -22,24 +24,48 @@ export default function VocabularyPage() {
   const [vocabulary, setVocabulary] = useState<Vocabulary[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
   const [search, setSearch] = useState<string>("");
+  const { showMessage } = useSnackbar();
 
   // Fetch categories and vocabulary once
   useEffect(() => {
     async function fetchData() {
-      const [catRes, vocabRes] = await Promise.all([
-        fetch("/api/japanese-practice/categories"),
+      const [vocabRes] = await Promise.all([
         fetch("/api/japanese-practice/vocabulary"),
       ]);
 
-      const cats: Category[] = await catRes.json();
       const vocab: Vocabulary[] = await vocabRes.json();
 
-      setCategories(cats);
       setVocabulary(vocab);
     }
 
+    async function loadCategories() {
+      try {
+        const res = await fetch("/api/japanese-practice/categories");
+        if (!res.ok) {
+          showMessage(`Failed to fetch categories: ${res.statusText}`);
+          return;
+        }
+
+        const data = await res.json();
+
+        // Check for success before setting state
+        if (!data.success || !data.categories) {
+          showMessage("Failed to load categories: Invalid response");
+          return;
+        }
+
+        setCategories(data.categories);
+      } catch (err: any) {
+        showMessage(`Failed to load categories: ${err.message || err}`);
+      }
+    };
+
     fetchData();
+    loadCategories();
   }, []);
+
+  
+
 
   const handleCheckbox = (id: number) => {
     setSelectedCategories((prev) =>
@@ -49,15 +75,26 @@ export default function VocabularyPage() {
 
   // Filter vocab by search and categories
   const filteredVocab = useMemo(() => {
+    const lowerSearch = search.toLowerCase().trim();
+
     return vocabulary.filter((v) => {
-      const matchesSearch = v.english.toLowerCase().includes(search.toLowerCase());
+      // Check if the search matches any of the 3 fields
+      const matchesSearch =
+        v.english.toLowerCase().includes(lowerSearch) ||
+        v.japanese.toLowerCase().includes(lowerSearch) ||
+        v.hiragana.toLowerCase().includes(lowerSearch);
+
+      // Check category filter
       const matchesCategory =
-        selectedCategories.length === 0 || selectedCategories.includes(
+        selectedCategories.length === 0 ||
+        selectedCategories.includes(
           categories.find((c) => c.name === v.category_name)?.id || -1
         );
+
       return matchesSearch && matchesCategory;
     });
   }, [vocabulary, search, selectedCategories, categories]);
+
 
   // Compute average percentage dynamically based on filtered results
   const averagePercentage = useMemo(() => {
@@ -75,6 +112,12 @@ export default function VocabularyPage() {
           className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
         >
           Start Practice
+        </Link>
+        <Link
+          href="/japanese/categories"
+          className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
+        >
+          Manage Categories
         </Link>
         <Link
           href="/japanese/add-vocabulary"
@@ -155,6 +198,7 @@ export default function VocabularyPage() {
                   key={i}
                   className="hover:bg-gray-100"
                   style={{ backgroundColor: "var(--color-card-bg)" }}
+                  onClick={() => window.location.href = `/japanese/vocabulary/${v.id}`}
                 >
                   <td className="px-4 py-2">{v.english}</td>
                   <td className="px-4 py-2">{v.japanese}</td>

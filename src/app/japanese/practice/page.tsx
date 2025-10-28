@@ -31,12 +31,33 @@ export default function PracticePage() {
 
   useEffect(() => {
     async function fetchData() {
-      const catRes = await fetch("/api/japanese-practice/categories");
-      setCategories(await catRes.json());
       const actRes = await fetch("/api/japanese-practice/activities");
       setActivities(await actRes.json());
     }
+
+    async function loadCategories() {
+      try {
+        const res = await fetch("/api/japanese-practice/categories");
+        if (!res.ok) {
+          showMessage(`Failed to fetch categories: ${res.statusText}`);
+          return;
+        }
+
+        const data = await res.json();
+
+        // Check for success before setting state
+        if (!data.success || !data.categories) {
+          showMessage("Failed to load categories: Invalid response");
+          return;
+        }
+
+        setCategories(data.categories);
+      } catch (err: any) {
+        showMessage(`Failed to load categories: ${err.message || err}`);
+      }
+    };
     fetchData();
+    loadCategories();
   }, []);
 
   const handleCheckbox = (id: number) => {

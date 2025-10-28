@@ -36,6 +36,7 @@ export async function GET() {
     const percentage = ((sum / activityCount) * 100).toFixed(2);
 
     return {
+      id: v.id,
       english: v.english,
       japanese: v.japanese,
       hiragana: v.hiragana,
