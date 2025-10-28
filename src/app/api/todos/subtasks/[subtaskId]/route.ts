@@ -6,17 +6,18 @@ export const runtime = "nodejs";
 // DELETE subtask
 export async function DELETE(
   request: Request,
-  context: { params: { subtaskId: string } }
+  context: { params: Promise<{ subtaskId: string }> }
 ) {
-  const subtaskId = Number(context.params.subtaskId);
+  const { subtaskId } = await context.params;
+  const subtaskIdNumber = Number(subtaskId);
 
-  if (isNaN(subtaskId)) {
+  if (isNaN(subtaskIdNumber)) {
     return NextResponse.json({ error: "Invalid subtaskId" }, { status: 400 });
   }
 
   try {
     await prisma.subtask.delete({
-      where: { id: subtaskId },
+      where: { id: subtaskIdNumber },
     });
     return NextResponse.json({ success: true });
   } catch (error: any) {
@@ -28,11 +29,12 @@ export async function DELETE(
 // PATCH subtask
 export async function PATCH(
   request: Request,
-  context: { params: { subtaskId: string } }
+  context: { params: Promise<{ subtaskId: string }> }
 ) {
-  const subtaskId = Number(context.params.subtaskId);
+  const { subtaskId } = await context.params;
+  const subtaskIdNumber = Number(subtaskId);
 
-  if (isNaN(subtaskId)) {
+  if (isNaN(subtaskIdNumber)) {
     return NextResponse.json({ error: "Invalid subtaskId" }, { status: 400 });
   }
 
@@ -41,7 +43,7 @@ export async function PATCH(
 
     // Update subtask
     const updatedSubtask = await prisma.subtask.update({
-      where: { id: subtaskId },
+      where: { id: subtaskIdNumber },
       data: {
         done: body.done ?? undefined,
         title: body.title ?? undefined,

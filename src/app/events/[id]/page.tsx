@@ -8,6 +8,7 @@ import {
   ArrowLeftIcon,
   TrashIcon,
 } from "@heroicons/react/24/solid";
+import { useSnackbar } from "@/context/SnackbarContext";
 
 type Todo = { id: number; title: string; done: boolean };
 type EventItem = {
@@ -31,6 +32,7 @@ export default function EventPage() {
   const [typeDraft, setTypeDraft] = useState<string | null>("");
   const [dateDraft, setDateDraft] = useState("");
   const [timeDraft, setTimeDraft] = useState("");
+  const { showMessage } = useSnackbar();
 
   const getColorForType = (type?: string | null) => {
     switch (type) {
@@ -108,6 +110,7 @@ export default function EventPage() {
     if (confirm("Are you sure you want to delete this event?")) {
       const res = await fetch(`/api/events/${eventId}`, { method: "DELETE" });
       if (res.ok) {
+        showMessage("Event deleted successfully");
         router.push("/events");
       }
     }

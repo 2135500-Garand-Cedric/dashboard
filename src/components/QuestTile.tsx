@@ -75,7 +75,7 @@ export default function QuestTile({
       )
     );
 
-    // Update parent XP/coins state for real-time level bar
+    // Update parent XP/coins state
     if (data.totalXp !== undefined && data.coins !== undefined) {
       setUserXp(data.totalXp);
       setUserCoins(data.coins);
@@ -84,9 +84,19 @@ export default function QuestTile({
 
   const displayedQuests = quests.filter(q => (showWeekly ? q.type === "weekly" : q.type === "daily"));
 
+  // 🔹 Compute next weekly reset date (next Sunday)
+  const nextSunday = (() => {
+    const d = new Date();
+    const day = d.getDay();
+    const diff = 7 - day; // days until Sunday
+    d.setDate(d.getDate() + diff);
+    d.setHours(0, 0, 0, 0);
+    return d.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+  })();
+
   return (
     <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow p-4 max-w-md">
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center mb-2">
         <h2 className="text-lg font-semibold flex items-center gap-2">
           <StarIcon className="w-5 h-5 text-yellow-500" /> Quests
         </h2>
@@ -97,6 +107,13 @@ export default function QuestTile({
           {showWeekly ? "Show Daily" : "Show Weekly"}
         </button>
       </div>
+
+      {/* 🔹 Only show reset info in Weekly mode */}
+      {showWeekly && (
+        <p className="text-sm text-gray-500 mb-3">
+          Weekly quests reset on <span className="font-medium">{nextSunday}</span>
+        </p>
+      )}
 
       <div className={`space-y-3 ${displayedQuests.length > 5 ? "max-h-75 overflow-y-auto pr-1" : ""}`}>
         {displayedQuests.length === 0 && (

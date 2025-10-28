@@ -16,6 +16,7 @@ export async function POST(
   const todo = await prisma.todo.create({
     data: { 
       title: title,
+      priority: 1,
       user: { connect: { id: 1 } }
     },
     

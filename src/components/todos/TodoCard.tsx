@@ -43,7 +43,7 @@ export default function TodoCard({ todo, onOpen }: { todo: Todo; onOpen: () => v
             <div className="font-medium" style={{ color: "var(--color-foreground)" }}>
               {todo.title}
             </div>
-            <div className="text-xs text-gray-600 flex items-center gap-1">
+            <div className="text-xs text-gray-600 flex items-center gap-1 flex-nowrap whitespace-nowrap">
               <span>+{todo.rewardXp ?? 0} XP</span>
               <span className="flex items-center gap-0.5">
                 +{todo.rewardCoins ?? 0} <CurrencyDollarIcon className="w-3 h-3 text-yellow-600" />

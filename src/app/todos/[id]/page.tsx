@@ -108,6 +108,7 @@ export default function TodoPage() {
 
     const res = await fetch(`/api/todos/${todoId}`, { method: "DELETE" });
     if (res.ok) {
+      showMessage("Todo deleted successfully");
       router.push("/todos");
     }
   };
