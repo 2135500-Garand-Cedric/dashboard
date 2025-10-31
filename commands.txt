@@ -3,3 +3,14 @@ migrate new schema to database
 docker compose exec -it dashboard npx prisma migrate dev --name add_starred_to_vocabulary
 docker compose exec -it dashboard npx prisma generate
 
+
+
+// Online migration steps
+
+1. Stop all containers in project in container manager
+2. Delete dashboard container and image
+3. Copy all new files in /src (not layout.tsx)
+4. Build project
+5. Correct errors
+6. Connect in ssh to the NAS
+7. Run the command: sudo docker exec -it dashboard npx prisma migrate deploy

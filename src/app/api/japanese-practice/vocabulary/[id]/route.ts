@@ -2,9 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 // GET /api/japanese-practice/vocabulary/[id]
-export async function GET(req: Request, { params }: { params: { id: string } }) {
+export async function GET(
+  req: Request, 
+  context: { params: Promise<{ id: string }> }
+) {
   try {
-    const vocabId = Number(params.id);
+    const { id } = await context.params;
+    const vocabId = Number(id);
     if (isNaN(vocabId)) {
       return NextResponse.json({ success: false, error: "Invalid vocabulary ID" }, { status: 400 });
     }
@@ -54,9 +58,13 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 }
 
 // PATCH /api/japanese-practice/vocabulary/[id]
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(
+  req: Request, 
+  context: { params: Promise<{ id: string }> }
+) {
   try {
-    const vocabId = Number(params.id);
+    const { id } = await context.params;
+    const vocabId = Number(id);
     if (isNaN(vocabId)) {
       return NextResponse.json({ success: false, error: "Invalid vocabulary ID" }, { status: 400 });
     }
@@ -87,9 +95,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 }
 
 // DELETE /api/japanese-practice/vocabulary/[id]
-export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(
+  req: Request, 
+  context: { params: Promise<{ id: string }> }
+) {
   try {
-    const vocabId = Number(params.id);
+    const { id } = await context.params;
+    const vocabId = Number(id);
     if (isNaN(vocabId)) {
       return NextResponse.json({ success: false, error: "Invalid vocabulary ID" }, { status: 400 });
     }

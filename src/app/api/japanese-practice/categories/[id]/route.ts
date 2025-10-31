@@ -4,10 +4,11 @@ import { prisma } from "@/lib/prisma";
 // ✅ PATCH /api/categories/[id] — Update category name
 export async function PATCH(
   req: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const categoryId = Number(params.id);
+    const { id } = await context.params;
+    const categoryId = Number(id);
     const { name } = await req.json();
 
     if (isNaN(categoryId)) {
@@ -42,10 +43,11 @@ export async function PATCH(
 // ✅ DELETE /api/categories/[id] — Delete category only if no vocab is linked
 export async function DELETE(
   req: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const categoryId = Number(params.id);
+    const { id } = await context.params;
+    const categoryId = Number(id);
 
     if (isNaN(categoryId)) {
       return NextResponse.json(

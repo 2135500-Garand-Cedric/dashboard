@@ -20,13 +20,30 @@ export default function AddVocabularyPage() {
 
   // Fetch categories from API
   useEffect(() => {
-    async function fetchCategories() {
-      const res = await fetch("/api/japanese-practice/categories");
-      const data = await res.json();
-      setCategories(data);
-      if (data.length > 0) setCategoryId(data[0].id);
-    }
-    fetchCategories();
+    async function loadCategories() {
+      try {
+        const res = await fetch("/api/japanese-practice/categories");
+        if (!res.ok) {
+          showMessage(`Failed to fetch categories: ${res.statusText}`);
+          return;
+        }
+
+        const data = await res.json();
+
+        // Check for success before setting state
+        if (!data.success || !data.categories) {
+          showMessage("Failed to load categories: Invalid response");
+          return;
+        }
+
+        setCategories(data.categories);
+        if (data.length > 0) setCategoryId(data[0].id);
+      } catch (err: any) {
+        showMessage(`Failed to load categories: ${err.message || err}`);
+      }
+    };
+    
+    loadCategories();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
