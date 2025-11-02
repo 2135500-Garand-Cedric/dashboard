@@ -59,7 +59,7 @@ export async function GET(
 
 // PATCH /api/japanese-practice/vocabulary/[id]
 export async function PATCH(
-  req: Request, 
+  req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -70,21 +70,19 @@ export async function PATCH(
     }
 
     const body = await req.json();
-
     const { english, japanese, hiragana, categoryId, starred } = body;
-    if (!english || !japanese || !hiragana || !categoryId) {
-      return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 });
-    }
+
+    // Build update object dynamically
+    const data: any = {};
+    if (english !== undefined) data.english = english;
+    if (japanese !== undefined) data.japanese = japanese;
+    if (hiragana !== undefined) data.hiragana = hiragana;
+    if (starred !== undefined) data.starred = starred;
+    if (categoryId !== undefined) data.category = { connect: { id: categoryId } };
 
     const updatedVocab = await prisma.vocabulary.update({
       where: { id: vocabId },
-      data: {
-        english,
-        japanese,
-        hiragana,
-        starred,
-        category: { connect: { id: categoryId } },
-      },
+      data,
     });
 
     return NextResponse.json({ success: true, vocabulary: updatedVocab });

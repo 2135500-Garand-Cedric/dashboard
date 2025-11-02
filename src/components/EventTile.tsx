@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CalendarDaysIcon } from "@heroicons/react/24/outline";
+import { useMemory } from "@/context/MemoryContext";
 
 type Event = {
   id: number;
@@ -10,6 +11,7 @@ type Event = {
 };
 
 export default function EventDashboardTile() {
+  const { pageRouter } = useMemory();
   const [events, setEvents] = useState<Event[]>([]);
 
   const loadEvents = async () => {
@@ -66,7 +68,7 @@ export default function EventDashboardTile() {
             return (
               <li
                 key={event.id}
-                onClick={() => (window.location.href = `/events/${event.id}`)}
+                onClick={() => pageRouter('/', `/events/${event.id}`)}
                 className="flex flex-col p-3 rounded hover:bg-[var(--hover-bg)] transition border border-[var(--card-border)] cursor-pointer"
               >
                 <div className="flex justify-between items-center">

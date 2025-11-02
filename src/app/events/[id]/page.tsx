@@ -9,6 +9,7 @@ import {
   TrashIcon,
 } from "@heroicons/react/24/solid";
 import { useSnackbar } from "@/context/SnackbarContext";
+import { useMemory } from "@/context/MemoryContext";
 
 type Todo = { id: number; title: string; done: boolean };
 type EventItem = {
@@ -24,6 +25,7 @@ export default function EventPage() {
   const params = useParams();
   const eventId = Number(params.id);
   const router = useRouter();
+  const { get } = useMemory();
 
   const [event, setEvent] = useState<EventItem | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -132,7 +134,7 @@ export default function EventPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <button
-            onClick={() => router.push("/events")}
+            onClick={() => router.push(get("prev_page", "/events"))}
             className="flex items-center gap-1 text-gray-500 hover:text-gray-700 cursor-pointer mr-4"
           >
             <ArrowLeftIcon className="w-5 h-5" /> Back

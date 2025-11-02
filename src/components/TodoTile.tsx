@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useMemory } from "@/context/MemoryContext";
 
 type Subtask = { id: number; title: string; done: boolean };
 type Todo = {
@@ -13,6 +14,7 @@ type Todo = {
 };
 
 export default function TodoDashboardTile() {
+  const { pageRouter } = useMemory();
   const [todos, setTodos] = useState<Todo[]>([]);
 
   const loadTodos = async () => {
@@ -79,7 +81,7 @@ export default function TodoDashboardTile() {
           return (
             <li
               key={todo.id}
-              onClick={() => (window.location.href = `/todos/${todo.id}`)}
+              onClick={() => pageRouter('/', `/todos/${todo.id}`)}
               className="flex flex-col p-3 rounded hover:bg-[var(--hover-bg)] transition border border-[var(--card-border)] cursor-pointer"
             >
               <div className="flex justify-between items-center">

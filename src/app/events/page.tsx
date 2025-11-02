@@ -5,6 +5,7 @@ import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import { useRouter } from "next/navigation";
+import { useMemory } from "@/context/MemoryContext";
 
 type Todo = { id: number; title: string; done: boolean };
 type EventItem = {
@@ -28,6 +29,7 @@ export default function EventsPage() {
   const [newType, setNewType] = useState("");
 
   const router = useRouter();
+  const { pageRouter, get, set } = useMemory();
 
   const load = async () => {
     setLoading(true);
@@ -47,8 +49,19 @@ export default function EventsPage() {
 
   const handleEventClick = (clickInfo: any) => {
     const id = Number(clickInfo.event.id);
-    router.push(`/events/${id}`);
+    pageRouter('/events', `/events/${id}`);
   };
+
+  const handleMonthChange = (info: any) => {
+    const start = new Date(info.startStr);
+    start.setDate(start.getDate() + 14);
+    const month = start.getMonth() + 1;
+    const year = start.getFullYear();
+
+    set("calendar_currentMonth", month);
+    set("calendar_currentYear", year);
+  };
+
 
   const getColorForType = (type?: string | null) => {
     switch (type) {
@@ -128,10 +141,12 @@ export default function EventsPage() {
           <FullCalendar
             plugins={[dayGridPlugin, interactionPlugin]}
             initialView="dayGridMonth"
+            initialDate={`${get("calendar_currentYear", new Date().getFullYear())}-${String(get("calendar_currentMonth", new Date().getMonth() + 1)).padStart(2, "0")}-01`}
             events={fcEvents}
             eventClick={handleEventClick}
             height="auto"
             displayEventTime={false}
+            datesSet={handleMonthChange}
           />
         </div>
       </div>
@@ -212,7 +227,7 @@ export default function EventsPage() {
                   <li
                     key={ev.id}
                     className="p-2 border rounded hover:bg-accent/10 cursor-pointer transition flex items-center gap-2"
-                    onClick={() => router.push(`/events/${ev.id}`)}
+                    onClick={() => pageRouter('/events', `/events/${ev.id}`)}
                   >
                     <span
                       className="w-3 h-3 rounded-full"
@@ -244,7 +259,7 @@ export default function EventsPage() {
                   <li
                     key={ev.id}
                     className="p-2 border rounded hover:bg-accent/10 cursor-pointer transition flex items-center gap-2"
-                    onClick={() => router.push(`/events/${ev.id}`)}
+                    onClick={() => pageRouter('/events', `/events/${ev.id}`)}
                   >
                     <span
                       className="w-3 h-3 rounded-full"

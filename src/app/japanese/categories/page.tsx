@@ -25,6 +25,21 @@ export default function CategoriesPage() {
   const [newCategoryName, setNewCategoryName] = useState("");
   const [editId, setEditId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState("");
+  const [starredCount, setStarredCount] = useState<number>(0);
+
+  const loadStarredCount = async () => {
+    try {
+      const res = await fetch("/api/japanese-practice/vocabulary/starred");
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setStarredCount(data.count);
+      } else {
+        showMessage(`Failed to load starred count: ${data.error || res.statusText}`);
+      }
+    } catch (err: any) {
+      showMessage(`Failed to load starred count: ${err.message || err}`);
+    }
+  };
 
   // Load categories with vocabulary count
   const loadCategories = async () => {
@@ -55,6 +70,7 @@ export default function CategoriesPage() {
 
   useEffect(() => {
     loadCategories();
+    loadStarredCount();
   }, []);
 
   // Add new category
@@ -156,7 +172,9 @@ export default function CategoriesPage() {
           >
             <ArrowLeftIcon className="w-5 h-5" /> Back
           </button>
-          <h1 className="text-xl font-semibold">Categories</h1>
+          <h1 className="text-xl font-semibold">
+            Categories ({categories.reduce((sum, cat) => sum + cat.vocabularyCount, 0)}) 
+          </h1>
         </div>
 
         {/* Add new category */}
@@ -234,6 +252,9 @@ export default function CategoriesPage() {
             ))}
           </ul>
         )}
+        <div className="text-white-700 font-medium mt-6">
+          Starred words: {starredCount}
+        </div>
       </div>
     </div>
   );

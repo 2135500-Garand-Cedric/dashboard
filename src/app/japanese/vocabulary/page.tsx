@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSnackbar } from "@/context/SnackbarContext";
+import { useMemory } from "@/context/MemoryContext";
 import { StarIcon as SolidStarIcon } from "@heroicons/react/24/solid";
 import { StarIcon as OutlineStarIcon } from "@heroicons/react/24/outline";
 
@@ -23,12 +25,14 @@ interface Vocabulary {
 }
 
 export default function VocabularyPage() {
+  const { get, set } = useMemory();
+  const { showMessage } = useSnackbar();
+  const router = useRouter();
+  const search = get("vocab_search", "") as string;
+  const selectedCategories = get("vocab_selectedCategories", []) as number[];
+  const starredSort = get("vocab_starredSort", false) as boolean;
   const [categories, setCategories] = useState<Category[]>([]);
   const [vocabulary, setVocabulary] = useState<Vocabulary[]>([]);
-  const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
-  const [starredSort, setStarredSort] = useState<boolean>(false);
-  const [search, setSearch] = useState<string>("");
-  const { showMessage } = useSnackbar();
 
   // Fetch categories and vocabulary
   useEffect(() => {
@@ -65,10 +69,36 @@ export default function VocabularyPage() {
     loadCategories();
   }, []);
 
+
+  const toggleStar = async (vocabId: number, currentStarred: boolean) => {
+    try {
+      const res = await fetch(`/api/japanese-practice/vocabulary/${vocabId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ starred: !currentStarred }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showMessage(`Failed to update starred: ${data.error || res.statusText}`);
+        return;
+      }
+
+      // Update the local state so the UI updates immediately
+      setVocabulary((prev) =>
+        prev.map((v) => (v.id === vocabId ? { ...v, starred: !currentStarred } : v))
+      );
+    } catch (err: any) {
+      showMessage(`Failed to update starred: ${err.message || err}`);
+    }
+  };
+
   const handleCheckbox = (id: number) => {
-    setSelectedCategories((prev) =>
-      prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]
-    );
+    const updated = selectedCategories.includes(id)
+      ? selectedCategories.filter((c) => c !== id)
+      : [...selectedCategories, id];
+
+    set("vocab_selectedCategories", updated);
   };
 
   const filteredVocab = useMemo(() => {
@@ -139,7 +169,8 @@ export default function VocabularyPage() {
           type="text"
           placeholder="Search English word..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => set("vocab_search", e.target.value)}
+          autoFocus
           className="border rounded px-3 py-2 w-full sm:w-1/3 focus:outline-none"
           style={{
             borderColor: "var(--color-card-border)",
@@ -174,7 +205,7 @@ export default function VocabularyPage() {
             <input
               type="checkbox"
               checked={starredSort}
-              onChange={() => setStarredSort((prev) => !prev)}
+              onChange={() => set("vocab_starredSort", !starredSort)}
               className="accent-yellow-500"
             />
             <span>Starred</span>
@@ -209,10 +240,10 @@ export default function VocabularyPage() {
                   key={i}
                   className="hover:bg-gray-100 cursor-pointer"
                   style={{ backgroundColor: "var(--color-card-bg)" }}
-                  onClick={() => window.location.href = `/japanese/vocabulary/${v.id}`}
+                  onClick={() => router.push(`/japanese/vocabulary/${v.id}`)}
                 >
-                  {/* ✅ Star column */}
-                  <td className="px-2 py-2">
+                  {/* Star column */}
+                  <td className="px-2 py-2" onClick={(e) => { e.stopPropagation(); toggleStar(v.id, v.starred); }}>
                     {v.starred ? (
                       <SolidStarIcon className="w-5 h-5 text-yellow-400 inline-block" />
                     ) : (

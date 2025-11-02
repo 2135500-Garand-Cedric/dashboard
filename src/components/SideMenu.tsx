@@ -10,9 +10,11 @@ import {
   XMarkIcon,
   Bars3Icon,
 } from "@heroicons/react/24/solid";
+import { useMemory } from "@/context/MemoryContext";
 
 export default function SideMenu() {
   const [isOpen, setIsOpen] = useState(false);
+  const { clear } = useMemory();
 
   const menuItems = [
     { name: "Main Dashboard", href: "/", icon: HomeIcon },
@@ -21,6 +23,11 @@ export default function SideMenu() {
     { name: "Time Manager", href: "/timemanager", icon: ChartPieIcon },
     { name: "Japanese Practice", href: "/japanese/practice", icon: DocumentTextIcon },
   ];
+
+  const onMenuClick = () => {
+    clear();
+    setIsOpen(false);
+  }
 
   return (
     <>
@@ -77,7 +84,7 @@ export default function SideMenu() {
                   onMouseOut={(e) =>
                     (e.currentTarget.style.backgroundColor = "transparent")
                   }
-                  onClick={() => setIsOpen(false)}
+                  onClick={() => onMenuClick()}
                 >
                   <Icon className="w-5 h-5" />
                   <span>{item.name}</span>

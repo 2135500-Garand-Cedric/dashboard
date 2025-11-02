@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { PlusIcon } from "@heroicons/react/24/outline";
 import TodoColumn from "./TodoColumn";
-import { useRouter } from "next/navigation";
+import { useMemory } from "@/context/MemoryContext";
+
 
 type Subtask = { id: number; title: string; done: boolean; todoId: number };
 
@@ -32,8 +33,7 @@ export default function TodoBoard({
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newTitle, setNewTitle] = useState("");
-
-  const router = useRouter();
+  const { pageRouter } = useMemory();
 
   // Load todos from API
   async function load() {
@@ -181,7 +181,7 @@ export default function TodoBoard({
                     : "var(--success)"
                 }
                 items={todosByStatus(status as Todo["status"])}
-                onOpen={(todo) => router.push(`/todos/${todo.id}`)}
+                onOpen={(todo) => pageRouter('/todos', `/todos/${todo.id}`)}
               />
             </div>
           ))}
