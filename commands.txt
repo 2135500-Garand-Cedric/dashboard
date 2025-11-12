@@ -13,4 +13,4 @@ docker compose exec -it dashboard npx prisma generate
 4. Build project
 5. Correct errors
 6. Connect in ssh to the NAS
-7. Run the command: sudo docker exec -it dashboard npx prisma migrate deploy
+7. Run the command: sudo docker exec -it dashboard npx prisma migrate deploy (only if there is some changes to the prisma schema)

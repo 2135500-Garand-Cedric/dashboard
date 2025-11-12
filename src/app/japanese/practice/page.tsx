@@ -29,6 +29,7 @@ export default function PracticePage() {
   const [showingTranslation, setShowingTranslation] = useState(false);
   const [statusArray, setStatusArray] = useState<{ vocabId:number,status:string,activity:number }[]>([]);
   const [userInput, setUserInput] = useState("");
+  const [inputColor, setInputColor] = useState("border-gray-300 focus:ring-blue-500");
   const { showMessage } = useSnackbar();
 
   useEffect(() => {
@@ -112,6 +113,7 @@ export default function PracticePage() {
     currentWord.status = status;
 
     const nextIndex = currentIndex + 1;
+    setInputColor("border-gray-300 focus:ring-blue-500");
     if (nextIndex < words.length) {
       setCurrentIndex(nextIndex);
       setShowingTranslation(false);
@@ -176,22 +178,34 @@ export default function PracticePage() {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      showTranslation();
-    } else if (showingTranslation) {
-      if (e.key === "1") {
+  // Global F1 / F2 / F3 keyboard shortcuts
+  useEffect(() => {
+    const handleFunctionKeys = (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
         e.preventDefault();
-        setStatus("PERFECT");
-      } else if (e.key === "2") {
-        e.preventDefault();
-        setStatus("GOOD");
-      } else if (e.key === "3") {
-        e.preventDefault();
-        setStatus("WEAK");
+        showTranslation();
+        if (userInput === currentWord?.hiragana || userInput === currentWord?.japanese) {
+          setInputColor("border-green-500 focus:ring-green-500");
+        } else {
+          setInputColor("border-red-500 focus:ring-red-500");
+        }
+      } else if (showingTranslation) {
+        if (e.key === "F1") {
+          e.preventDefault();
+          setStatus("PERFECT");
+        } else if (e.key === "F2") {
+          e.preventDefault();
+          setStatus("GOOD");
+        } else if (e.key === "F3") {
+          e.preventDefault();
+          setStatus("WEAK");
+        }
       }
-    }
-  };
+    };
+
+    window.addEventListener("keydown", handleFunctionKeys);
+    return () => window.removeEventListener("keydown", handleFunctionKeys);
+  }, [words, currentWord, userInput, showingTranslation]);
 
   // Auto-play sound for activity 4 when word changes
   useEffect(() => {
@@ -302,10 +316,9 @@ export default function PracticePage() {
                   type="text"
                   value={userInput}
                   onChange={e => setUserInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
                   autoFocus
                   placeholder="Type the Japanese word"
-                  className="w-full border rounded px-3 py-2 text-gray-900 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className={`w-full border rounded px-3 py-2 text-gray-900 bg-gray-100 focus:outline-none focus:ring-2 ${inputColor}`}
                 />
 
                 {!showingTranslation && (
