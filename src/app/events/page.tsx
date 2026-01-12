@@ -65,15 +65,15 @@ export default function EventsPage() {
 
   const getColorForType = (type?: string | null) => {
     switch (type) {
-      case "CSI2110":
+      case "CSI2101":
         return "red";
-      case "MAT2377":
+      case "CSI2120":
         return "blue";
-      case "JPN2901":
+      case "JPN2902":
         return "orange";
-      case "SEG2105":
+      case "CSI2132":
         return "purple";
-      case "CEG2136":
+      case "CSI2911":
         return "cyan"
       case "personal":
         return "green";
@@ -198,11 +198,11 @@ export default function EventsPage() {
               className="w-full border rounded px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">Type (optional)</option>
-              <option value="CSI2110">CSI 2110</option>
-              <option value="MAT2377">MAT 2377</option>
-              <option value="JPN2901">JPN 2901</option>
-              <option value="SEG2105">SEG 2105</option>
-              <option value="CEG2136">CEG 2136</option>
+              <option value="CSI2101">CSI 2101</option>
+              <option value="CSI2120">CSI 2120</option>
+              <option value="JPN2902">JPN 2902</option>
+              <option value="CSI2132">CSI 2132</option>
+              <option value="CSI2911">CSI 2911</option>
               <option value="personal">Personal</option>
             </select>
             <button
