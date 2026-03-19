@@ -25,6 +25,7 @@ type Vocabulary = {
   percentage: string;
   categoryId: number;
   starred: boolean;
+  verbType: string | null;
   verbForms?: VerbForm[];
 };
 
@@ -48,6 +49,7 @@ export default function VocabularyEditPage() {
   const [categoryDraft, setCategoryDraft] = useState<number | "">("");
   const [starredDraft, setStarredDraft] = useState(false);
   const [showVerbForms, setShowVerbForms] = useState(false);
+  const [selectedVerbType, setSelectedVerbType] = useState<string | null>(null);
 
   const loadVocabulary = async () => {
     try {
@@ -70,6 +72,7 @@ export default function VocabularyEditPage() {
       setHiraganaDraft(vocabData.hiragana);
       setCategoryDraft(vocabData.categoryId);
       setStarredDraft(vocabData.starred);
+      setSelectedVerbType(vocabData.verbType);
     } catch (err: any) {
       showMessage(`Failed to load vocabulary: ${err.message || err}`);
     }
@@ -110,6 +113,7 @@ export default function VocabularyEditPage() {
           hiragana: hiraganaDraft,
           categoryId: categoryDraft,
           starred: starredDraft,
+          verbType: selectedVerbType,
         }),
       });
 
@@ -285,6 +289,48 @@ export default function VocabularyEditPage() {
               <p>{categories.find((c) => c.id === vocab.categoryId)?.name || "Unknown"}</p>
             )}
           </div>
+          {/* Verb Type (only if category is verb) */}
+          {categories.find((cat) => cat.id === categoryDraft)?.name.toLowerCase() === "verb" && (
+            <div>
+              <label className="block text-sm text-gray-500 mb-1">Verb Type</label>
+
+              {editMode ? (
+                <div className="flex flex-wrap gap-4">
+                  {[
+                    { label: "U-verb", value: "u" },
+                    { label: "Ru-verb", value: "ru" },
+                    { label: "する-verb", value: "suru" },
+                    { label: "来る-verb", value: "kuru" },
+                  ].map((verb) => (
+                    <label key={verb.value} className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="verbType"
+                        value={verb.value}
+                        checked={selectedVerbType === verb.value}
+                        onChange={(e) => setSelectedVerbType(e.target.value)}
+                        className="accent-blue-500"
+                      />
+                      <span>{verb.label}</span>
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <p>
+                  {(() => {
+                    const mapping = {
+                      u: "U-verb",
+                      ru: "Ru-verb",
+                      suru: "する-verb",
+                      kuru: "来る-verb",
+                    };
+                    return vocab.verbType ? mapping[vocab.verbType as keyof typeof mapping] : "No verb type selected";
+                  })()}
+                </p>
+              )}
+            </div>
+          )}
+          {/* Kanji gif (only if category is Kanji) */}
           {typeof window !== "undefined" && categories.find((c) => c.id === vocab.categoryId)?.name === "Kanji" && (
             <div className="mt-2">
               <img

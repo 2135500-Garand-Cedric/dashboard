@@ -86,6 +86,7 @@ export async function GET(
       worst_status: worstStatus,
       percentage,
       starred: vocab.starred,
+      verbType: vocab.verbType,
       verbForms: verbFormsResult,
     };
 
