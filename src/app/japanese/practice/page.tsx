@@ -70,6 +70,10 @@ export default function PracticePage() {
   const handleStart = async () => {
     let categoriesToSend = selectedCategories;
 
+    if (selectedActivity === 5 && categories.find(c => c.name === 'Kanji')?.id) {
+      categoriesToSend.push(categories.find(c => c.name === 'Kanji')!.id);
+    }
+
     // If no categories selected, use all category IDs
     if (!selectedCategories.length) {
       categoriesToSend = categories.map(c => c.id);
@@ -150,20 +154,22 @@ export default function PracticePage() {
 
   const getWordDisplay = () => {
     switch(selectedActivity) {
-      case 1: return currentWord?.japanese;
-      case 2: return currentWord?.english;
-      case 3: return currentWord?.english;
-      case 4: return currentWord?.japanese;
+      case 1: return currentWord?.japanese; // kanji to english speaking
+      case 2: return currentWord?.english; // english to japanese speaking
+      case 3: return currentWord?.english; // english to japanese writing
+      case 4: return currentWord?.japanese; // japanese to english listening
+      case 5: return currentWord?.english; // kanji writing
       default: return currentWord?.english;
     }
   };
 
   const getTranslation = () => {
     switch(selectedActivity) {
-      case 1: return currentWord?.english;
-      case 2: return currentWord?.japanese;
-      case 3: return currentWord?.japanese;
-      case 4: return currentWord?.english;
+      case 1: return currentWord?.english; // kanji to english speaking
+      case 2: return currentWord?.japanese; // english to japanese speaking
+      case 3: return currentWord?.japanese; // english to japanese writing
+      case 4: return currentWord?.english; // japanese to english listening
+      case 5: return currentWord?.japanese; // kanji writing
       default: return currentWord?.japanese;
     }
   };
@@ -207,7 +213,7 @@ export default function PracticePage() {
     return () => window.removeEventListener("keydown", handleFunctionKeys);
   }, [words, currentWord, userInput, showingTranslation]);
 
-  // Auto-play sound for activity 4 when word changes
+  // Auto-play sound for japanese to english listening activity when word changes
   useEffect(() => {
     if (selectedActivity === 4 && words.length > 0 && !showingTranslation) {
       speak(currentWord.japanese);
@@ -304,12 +310,12 @@ export default function PracticePage() {
         {words.length > 0 && currentWord && (
           <div className="text-center space-y-4">
 
-            {/* Display word for activities other than activity 4 */}
+            {/* Display word for activities other than japanese to english listening */}
             {selectedActivity !== 4 && (
               <h3 className="text-xl font-bold">{getWordDisplay()}</h3>
             )}
 
-            {/* Input for English → Japanese writing */}
+            {/* Input box for English → Japanese writing */}
             {selectedActivity === 3 && (
               <>
                 <input
@@ -332,7 +338,7 @@ export default function PracticePage() {
               </>
             )}
 
-            {/* Show translation button for other activities including listening */}
+            {/* Show translation button for all activities except writing */}
             {!showingTranslation && selectedActivity !== 3 && (
               <button
                 onClick={showTranslation}
@@ -345,12 +351,39 @@ export default function PracticePage() {
             {/* Translation display */}
             {showingTranslation && (
               <div>
-                {selectedActivity === 4 ? (
+                {selectedActivity === 4 ? ( // For japanese to english listening
                   <>
                     <h3 className="text-xl">{currentWord.english}</h3>
                     <h3 className="text-xl">{currentWord.japanese}</h3>
                     <h3 className="text-xl">{currentWord.hiragana}</h3>
                   </>
+                ) : selectedActivity === 5 ? ( // For kanji writing
+                  <div className="flex justify-center items-center">
+                    <img
+                      src={`/kanji/${currentWord.japanese}.gif`}
+                      alt={currentWord.japanese}
+                      width={150}
+                      height={150}
+                      className="border rounded"
+                      onError={(e) => {
+                        const img = e.currentTarget as HTMLImageElement;
+                        // replace the image with a placeholder div
+                        const placeholder = document.createElement("div");
+                        placeholder.style.width = "150px";
+                        placeholder.style.height = "150px";
+                        placeholder.style.border = "1px solid #ccc";
+                        placeholder.style.borderRadius = "0.25rem"; // same as rounded
+                        placeholder.style.display = "flex";
+                        placeholder.style.alignItems = "center";
+                        placeholder.style.justifyContent = "center";
+                        placeholder.style.backgroundColor = "#f9f9f9";
+                        placeholder.style.color = "#888";
+                        placeholder.style.fontSize = "14px";
+                        placeholder.innerText = "Not Found";
+                        img.replaceWith(placeholder);
+                      }}
+                    />
+                  </div>
                 ) : (
                   <>
                     <h3 className="text-xl">{getTranslation()}</h3>
@@ -385,7 +418,7 @@ export default function PracticePage() {
                 </>
               )}
 
-              {/* Hear again button only for activity 4 */}
+              {/* Hear again button only for japanese to english listening activity */}
               {selectedActivity === 4 && (
                 <button
                   onClick={() => speak(currentWord.japanese)}

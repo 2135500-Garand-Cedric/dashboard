@@ -121,19 +121,38 @@ model Activity {
   activity String
 
   activityVocab ActivityVocab[]
+  practices     Practice[]
 }
 
 model ActivityVocab {
   id         Int                 @id @default(autoincrement())
   activityId Int
-  vocabId    Int
+
+  vocabId    Int?
+  verbFormId Int?
+
   status     ActivityVocabStatus @default(WEAK)
 
-  activity Activity   @relation(fields: [activityId], references: [id], onDelete: Cascade)
-  vocab    Vocabulary @relation(fields: [vocabId], references: [id], onDelete: Cascade)
+  activity Activity     @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  vocab    Vocabulary?  @relation(fields: [vocabId], references: [id], onDelete: Cascade)
+  verbForm VerbForm?    @relation(fields: [verbFormId], references: [id], onDelete: Cascade)
 
   @@unique([activityId, vocabId])
+  @@unique([activityId, verbFormId])
 }
+
+model Practice {
+  id            Int         @id @default(autoincrement())
+  activityId    Int
+  date          DateTime    @default(now())
+  wordCount     Int
+  perfectCount  Int
+  goodCount     Int
+  weakCount     Int
+
+  activity   Activity @relation(fields: [activityId], references: [id])
+}
+
 
 model Category {
   id         Int         @id @default(autoincrement())
@@ -142,18 +161,44 @@ model Category {
 }
 
 model Vocabulary {
-  id           Int      @id @default(autoincrement())
-  english      String
-  japanese     String?
-  hiragana     String
-  userId       Int
-  categoryId   Int?
-  readHiragana Boolean  @default(false)
-  starred      Boolean  @default(false)
+  id            Int      @id @default(autoincrement())
+  english       String
+  japanese      String?
+  hiragana      String
+  userId        Int
+  categoryId    Int?
+  readHiragana  Boolean  @default(false)
+  starred       Boolean  @default(false)
+  addedDate     DateTime @default(now())
+  lastPracticed DateTime?
+  verbType      String?
 
   user     User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
   category Category?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   activityVocab ActivityVocab[]
+  verbForms VerbForm[]
 
   @@unique([english, hiragana, userId])
 }
+
+model VerbFormType {
+  id        Int        @id @default(autoincrement())
+  name      String     @unique  // e.g., "dictionary", "past", "negative", "polite"
+  description String?           // optional: explain the form
+  verbForms VerbForm[]
+}
+
+model VerbForm {
+  id           Int        @id @default(autoincrement())
+  baseVocabId  Int
+  formTypeId   Int
+  form         String      // e.g., 書いた, 書きます, 書かない
+  reading      String
+
+  baseVocab    Vocabulary @relation(fields: [baseVocabId], references: [id], onDelete: Cascade)
+  formType     VerbFormType @relation(fields: [formTypeId], references: [id])
+  activityVocab ActivityVocab[]
+
+  @@unique([baseVocabId, formTypeId])
+}
+

@@ -15,6 +15,7 @@ export default function AddVocabularyPage() {
   const [english, setEnglish] = useState("");
   const [japanese, setJapanese] = useState("");
   const [hiragana, setHiragana] = useState("");
+  const [selectedVerbType, setSelectedVerbType] = useState<String | null>(null);
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const { showMessage } = useSnackbar();
 
@@ -53,7 +54,7 @@ export default function AddVocabularyPage() {
     const res = await fetch("/api/japanese-practice/vocabulary/add", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ english, japanese, hiragana, categoryId }),
+      body: JSON.stringify({ english, japanese, hiragana, categoryId, verbType: selectedVerbType }),
     });
 
     const data = await res.json();
@@ -63,6 +64,7 @@ export default function AddVocabularyPage() {
       setJapanese("");
       setHiragana("");
       setCategoryId(categories[0]?.id || null);
+      setSelectedVerbType(null);
     } else {
       showMessage("Error: " + data.message);
     }
@@ -154,7 +156,7 @@ export default function AddVocabularyPage() {
             <label className="block mb-1">Category:</label>
             <select
               value={categoryId ?? ""}
-              onChange={(e) => setCategoryId(Number(e.target.value))}
+              onChange={(e) => {setCategoryId(Number(e.target.value)); setSelectedVerbType(null);}}
               required
               className="w-full border rounded px-3 py-2 focus:outline-none"
               style={{
@@ -170,6 +172,32 @@ export default function AddVocabularyPage() {
               ))}
             </select>
           </div>
+
+          {(categories.find((cat) => cat.name === 'verb')?.id === categoryId) && (
+            <div className="mt-4">
+              <label className="block mb-2">Verb Ending Type:</label>
+              <div className="flex flex-wrap gap-4">
+                {[
+                  { label: "U-verb", value: "u" },
+                  { label: "Ru-verb", value: "ru" },
+                  { label: "する-verb", value: "suru" },
+                  { label: "来る-verb", value: "kuru" },
+                ].map((verbType) => (
+                  <label key={verbType.value} className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      name="verbType"
+                      value={verbType.value}
+                      checked={selectedVerbType === verbType.value}
+                      onChange={(e) => setSelectedVerbType(e.target.value)}
+                      className="accent-blue-500"
+                    />
+                    <span>{verbType.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Submit button */}
           <div className="flex justify-center mt-4">

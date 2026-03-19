@@ -24,16 +24,25 @@ export async function GET() {
 
   // Transform results
   const result = vocab.map((v) => {
-    const worstVal = Math.min(...v.activityVocab.map((av) => statusMap[av.status]));
+    let numActivities = activityCount;
+
+    let filteredActivityVocab = v.activityVocab;
+
+    if (v.category?.name !== 'Kanji') {
+      numActivities -= 1; // exclude kanji writing activity from total count
+      filteredActivityVocab = filteredActivityVocab.filter(av => av.activityId !== 5);
+    }
+    
+    const worstVal = Math.min(...filteredActivityVocab.map((av) => statusMap[av.status]));
     const worstStatus = reverseStatus[worstVal];
 
-    const sum = v.activityVocab.reduce((acc, av) => {
+    const sum = filteredActivityVocab.reduce((acc, av) => {
       if (av.status === "PERFECT") return acc + 1;
       if (av.status === "GOOD") return acc + 0.5;
       return acc;
     }, 0);
 
-    const percentage = ((sum / activityCount) * 100).toFixed(2);
+    const percentage = ((sum / numActivities) * 100).toFixed(2);
 
     return {
       id: v.id,
@@ -68,6 +77,10 @@ export async function PATCH(req: Request) {
 
     const userId = 1;
 
+    const activityCounts: Record<number, { wordCount: number; perfectCount: number; goodCount: number; weakCount: number }> = {};
+
+    const activityId = data[0].activity; // Assuming all items are for the same activity
+
     // Start transaction
     await prisma.$transaction(async (tx) => {
       for (const item of data) {
@@ -79,8 +92,31 @@ export async function PATCH(req: Request) {
             },
             data: { status: item.status },
           });
+
+          await tx.vocabulary.update({
+            where: { id: item.vocabId },
+            data: { lastPracticed: new Date() },
+          });
+
+          if (!activityCounts[item.activity]) {
+            activityCounts[item.activity] = { wordCount: 0, perfectCount: 0, goodCount: 0, weakCount: 0 };
+          }
+          activityCounts[item.activity].wordCount += 1;
+          if (item.status === "PERFECT") activityCounts[item.activity].perfectCount += 1;
+          else if (item.status === "GOOD") activityCounts[item.activity].goodCount += 1;
+          else activityCounts[item.activity].weakCount += 1;
         }
       }
+
+      await tx.practice.create({
+        data: {
+          activityId: Number(activityId),
+          wordCount: activityCounts[activityId].wordCount,
+          perfectCount: activityCounts[activityId].perfectCount,
+          goodCount: activityCounts[activityId].goodCount,
+          weakCount: activityCounts[activityId].weakCount,
+        },
+      });
     });
 
     return NextResponse.json({ success: true, message: "Statuses updated successfully" });

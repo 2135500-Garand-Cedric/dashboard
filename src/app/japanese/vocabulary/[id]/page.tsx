@@ -2,10 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { PencilSquareIcon, CheckIcon, TrashIcon, ArrowLeftIcon } from "@heroicons/react/24/solid";
+import { PencilSquareIcon, CheckIcon, TrashIcon, ArrowLeftIcon, Bars3Icon } from "@heroicons/react/24/solid";
 import { StarIcon as StarSolidIcon } from "@heroicons/react/24/solid";
 import { StarIcon as StarOutlineIcon } from "@heroicons/react/24/outline";
 import { useSnackbar } from "@/context/SnackbarContext";
+
+type VerbForm = {
+  id: number;
+  formType: string;
+  form: string;
+  reading: string;     
+  worst_status: string;
+  percentage: string;
+};
 
 type Vocabulary = {
   id: number;
@@ -16,6 +25,7 @@ type Vocabulary = {
   percentage: string;
   categoryId: number;
   starred: boolean;
+  verbForms?: VerbForm[];
 };
 
 type Category = {
@@ -37,6 +47,7 @@ export default function VocabularyEditPage() {
   const [hiraganaDraft, setHiraganaDraft] = useState("");
   const [categoryDraft, setCategoryDraft] = useState<number | "">("");
   const [starredDraft, setStarredDraft] = useState(false);
+  const [showVerbForms, setShowVerbForms] = useState(false);
 
   const loadVocabulary = async () => {
     try {
@@ -53,7 +64,6 @@ export default function VocabularyEditPage() {
       }
 
       const vocabData = data.vocabulary;
-      console.log(vocabData);
       setVocab(vocabData);
       setEnglishDraft(vocabData.english);
       setJapaneseDraft(vocabData.japanese);
@@ -131,7 +141,7 @@ export default function VocabularyEditPage() {
     <div className="flex justify-center px-4 py-8">
       <div className="w-full max-w-3xl bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-6 shadow">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-2">
           <button
             onClick={() => router.push("/japanese/vocabulary")}
             className="flex items-center gap-1 text-gray-500 hover:text-gray-700 cursor-pointer mr-4"
@@ -139,39 +149,12 @@ export default function VocabularyEditPage() {
             <ArrowLeftIcon className="w-5 h-5" /> Back
           </button>
 
-          <div className="flex-1 flex justify-center items-center gap-2">
-            {editMode ? (
-              <>
-                <input
-                  value={englishDraft}
-                  onChange={(e) => setEnglishDraft(e.target.value)}
-                  className="text-lg font-semibold border rounded px-3 py-1 flex-1 text-center"
-                />
-                <button onClick={() => setStarredDraft(!starredDraft)} className="ml-2">
-                  {starredDraft ? (
-                    <StarSolidIcon className="w-6 h-6 text-yellow-400" />
-                  ) : (
-                    <StarOutlineIcon className="w-6 h-6 text-gray-400" />
-                  )}
-                </button>
-              </>
-            ) : (
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-semibold">{vocab.english}</h1>
-                {vocab.starred ? (
-                  <StarSolidIcon className="w-6 h-6 text-yellow-400" />
-                ) : (
-                  <StarOutlineIcon className="w-6 h-6 text-gray-400" />
-                )}
-              </div>
-            )}
-          </div>
-
           <div className="flex gap-2 ml-4">
             <button
               onClick={async () => {
                 if (editMode) await saveVocabulary();
                 setEditMode(!editMode);
+                setShowVerbForms(false);
               }}
               className="flex items-center gap-1 border rounded px-3 py-1 hover:bg-gray-100 hover:text-black cursor-pointer"
             >
@@ -197,7 +180,48 @@ export default function VocabularyEditPage() {
                 Delete
               </button>
             )}
+
+            {!editMode && vocab.categoryId && categories.find(c => c.id === vocab.categoryId)?.name.toLowerCase() === "verb" && (
+              <button
+                onClick={() => setShowVerbForms(!showVerbForms)}
+                className="flex items-center gap-1 border rounded px-3 py-1 hover:bg-gray-100 hover:text-black cursor-pointer"
+              >
+                <Bars3Icon className="w-5 h-5" />
+                Forms
+              </button>
+            )}
           </div>
+        </div>
+
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex-1 flex justify-center items-center gap-2">
+          {editMode ? (
+            <>
+              <input
+                value={englishDraft}
+                onChange={(e) => setEnglishDraft(e.target.value)}
+                className="text-lg font-semibold border rounded px-3 py-1 flex-1 text-center"
+              />
+              <button onClick={() => setStarredDraft(!starredDraft)} className="ml-2">
+                {starredDraft ? (
+                  <StarSolidIcon className="w-6 h-6 text-yellow-400" />
+                ) : (
+                  <StarOutlineIcon className="w-6 h-6 text-gray-400" />
+                )}
+              </button>
+            </>
+          ) : (
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-semibold">{vocab.english}</h1>
+              {vocab.starred ? (
+                <StarSolidIcon className="w-6 h-6 text-yellow-400" />
+              ) : (
+                <StarOutlineIcon className="w-6 h-6 text-gray-400" />
+              )}
+            </div>
+          )}
+          </div>
+
         </div>
 
         {/* Details */}
@@ -261,8 +285,68 @@ export default function VocabularyEditPage() {
               <p>{categories.find((c) => c.id === vocab.categoryId)?.name || "Unknown"}</p>
             )}
           </div>
+          {typeof window !== "undefined" && categories.find((c) => c.id === vocab.categoryId)?.name === "Kanji" && (
+            <div className="mt-2">
+              <img
+                src={`/kanji/${vocab.japanese}.gif`}
+                alt={vocab.japanese}
+                width={150}
+                height={150}
+                className="border rounded"
+                onError={(e) => {
+                  const img = e.currentTarget as HTMLImageElement;
+                  // replace the image with a placeholder div
+                  const placeholder = document.createElement("div");
+                  placeholder.style.width = "150px";
+                  placeholder.style.height = "150px";
+                  placeholder.style.border = "1px solid #ccc";
+                  placeholder.style.borderRadius = "0.25rem"; // same as rounded
+                  placeholder.style.display = "flex";
+                  placeholder.style.alignItems = "center";
+                  placeholder.style.justifyContent = "center";
+                  placeholder.style.backgroundColor = "#f9f9f9";
+                  placeholder.style.color = "#888";
+                  placeholder.style.fontSize = "14px";
+                  placeholder.innerText = "Not Found";
+                  img.replaceWith(placeholder);
+                }}
+              />
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Verb Forms Modal */}
+      {showVerbForms && vocab.verbForms && vocab.verbForms.length > 0 && (
+        <div className="w-full max-w-3xl bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-6 shadow">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">Verb Forms</h2>
+          </div>
+
+          <table className="w-full table-auto border-collapse">
+            <thead>
+              <tr className="text-left border-b border-[var(--card-border)]">
+                <th className="px-2 py-1">Form Name</th>
+                <th className="px-2 py-1">Form</th>
+                <th className="px-2 py-1">Reading</th>
+                <th className="px-2 py-1">Status</th>
+                <th className="px-2 py-1">Percentage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {vocab.verbForms.map((vf) => (
+                <tr key={vf.id} className="border-b border-[var(--card-border)]">
+                  <td className="px-2 py-1">{vf.formType}</td>
+                  <td className="px-2 py-1">{vf.form}</td>
+                  <td className="px-2 py-1">{vf.reading}</td>
+                  <td className="px-2 py-1">{vf.worst_status}</td>
+                  <td className="px-2 py-1">{vf.percentage}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
