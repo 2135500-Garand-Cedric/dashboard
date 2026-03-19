@@ -96,3 +96,41 @@ export async function POST(req: Request) {
     );
   }
 }
+
+// GET: number of vocabulary added today
+export async function GET() {
+  try {
+    const userId = 1; // TODO: replace with session logic
+
+    // 1️⃣ Get start & end of today
+    const now = new Date();
+
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date(now);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    // 2️⃣ Count vocab added today
+    const count = await prisma.vocabulary.count({
+      where: {
+        userId,
+        addedDate: {
+          gte: startOfDay,
+          lte: endOfDay,
+        },
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      count,
+    });
+  } catch (error: any) {
+    console.error(error);
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    );
+  }
+}

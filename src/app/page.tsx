@@ -6,6 +6,7 @@ import EventTile from "@/components/EventTile";
 import QuestTile from "@/components/QuestTile";
 import LevelBar from "@/components/LevelBar";
 import { useState, useEffect } from "react";
+import JapaneseDashboardTile from "@/components/JapaneseStatsTile";
 
 export default function Home() {
   const [userXp, setUserXp] = useState(0);
@@ -47,6 +48,7 @@ export default function Home() {
         <TodoTile />
         <MusicTile />
         <QuestTile setUserXp={setUserXp} setUserCoins={setUserCoins} />
+        <JapaneseDashboardTile />
       </div>
     </div>
   );

@@ -1,0 +1,50 @@
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+
+// GET: fetch today's practice records
+export async function GET() {
+  try {
+    // 1️⃣ Get start & end of today
+    const now = new Date();
+
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date(now);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    // 2️⃣ Fetch only today's practices
+    const practices = await prisma.practice.findMany({
+      where: {
+        date: {
+          gte: startOfDay,
+          lte: endOfDay,
+        },
+      },
+      include: {
+        activity: true,
+      },
+      orderBy: { date: "desc" },
+    });
+
+    // 3️⃣ Transform result
+    const result = practices.map((p) => ({
+      id: p.id,
+      activityId: p.activityId,
+      date: p.date.toISOString(),
+      wordCount: p.wordCount,
+      perfectCount: p.perfectCount,
+      goodCount: p.goodCount,
+      weakCount: p.weakCount,
+      activityName: p.activity?.activity || null,
+    }));
+
+    return NextResponse.json({ success: true, practices: result });
+  } catch (error: any) {
+    console.error(error);
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 }
+    );
+  }
+}
