@@ -380,15 +380,32 @@ export default function VocabularyEditPage() {
               </tr>
             </thead>
             <tbody>
-              {vocab.verbForms.map((vf) => (
-                <tr key={vf.id} className="border-b border-[var(--card-border)]">
-                  <td className="px-2 py-1">{vf.formType}</td>
-                  <td className="px-2 py-1">{vf.form}</td>
-                  <td className="px-2 py-1">{vf.reading}</td>
-                  <td className="px-2 py-1">{vf.worst_status}</td>
-                  <td className="px-2 py-1">{vf.percentage}</td>
-                </tr>
-              ))}
+              {vocab.verbForms.map((vf) => {
+                let statusColor = "bg-gray-400";
+
+                if (vf.worst_status.toLowerCase() === "perfect") {
+                  statusColor = "bg-green-500";
+                } else if (vf.worst_status.toLowerCase() === "good") {
+                  statusColor = "bg-yellow-400";
+                } else if (vf.worst_status.toLowerCase() === "weak") {
+                  statusColor = "bg-red-500";
+                }
+
+                return (
+                  <tr key={vf.id} className="border-b border-[var(--card-border)]">
+                    <td className="px-2 py-1">{vf.formType}</td>
+                    <td className="px-2 py-1">{vf.form}</td>
+                    <td className="px-2 py-1">{vf.reading}</td>
+                    <td className="px-2 py-1">
+                      <span
+                        className={`inline-block w-3 h-3 rounded-full ${statusColor}`}
+                        title={vf.worst_status}
+                      ></span>
+                    </td>
+                    <td className="px-2 py-1">{vf.percentage}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

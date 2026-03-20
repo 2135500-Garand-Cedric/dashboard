@@ -12,7 +12,7 @@ interface Word {
   japanese: string;
   hiragana: string;
   read_hiragana: boolean;
-  status?: string;
+  status: string;
 }
 
 export default function PracticePage() {
@@ -27,7 +27,7 @@ export default function PracticePage() {
   const [words, setWords] = useState<Word[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showingTranslation, setShowingTranslation] = useState(false);
-  const [statusArray, setStatusArray] = useState<{ vocabId:number,status:string,activity:number }[]>([]);
+  const [statusArray, setStatusArray] = useState<{ activityVocabId:number, status:string }[]>([]);
   const [userInput, setUserInput] = useState("");
   const [inputColor, setInputColor] = useState("border-gray-300 focus:ring-blue-500");
   const { showMessage } = useSnackbar();
@@ -87,7 +87,7 @@ export default function PracticePage() {
 
     const data = await res.json();
     if (data.success) {
-      setWords(shuffleArray(data.words));
+      setWords(data.words);
       setCurrentIndex(0);
       setShowingTranslation(false);
       setStatusArray([]);
@@ -97,20 +97,11 @@ export default function PracticePage() {
     }
   };
 
-  const shuffleArray = (arr: Word[]) => {
-    const a = [...arr];
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
-  };
-
   const showTranslation = () => setShowingTranslation(true);
 
   const setStatus = (status: "PERFECT"|"GOOD"|"WEAK") => {
     const currentWord = words[currentIndex];
-    const newStatuses = [...statusArray, { vocabId: currentWord.id, status, activity: selectedActivity }];
+    const newStatuses = [...statusArray, { activityVocabId: currentWord.id, status }];
     setStatusArray(newStatuses);
 
     // Assign status to currentWord for border color
@@ -127,7 +118,7 @@ export default function PracticePage() {
       fetch("/api/japanese-practice/vocabulary", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newStatuses)
+        body: JSON.stringify({ updates: newStatuses, activity: selectedActivity })
       }).then(() => {
         setWords([]);
         setCurrentIndex(0);
