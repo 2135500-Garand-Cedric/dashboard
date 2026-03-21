@@ -12,7 +12,7 @@ export const SnackbarProvider = ({ children }: { children: ReactNode }) => {
   const [message, setMessage] = useState<string | null>(null);
   const [visible, setVisible] = useState(false);
 
-  const showMessage = (msg: string, duration = 3000) => {
+  const showMessage = (msg: string, duration = 10000) => {
     setMessage(msg);
     setVisible(true);
 

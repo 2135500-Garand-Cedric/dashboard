@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeftIcon } from "@heroicons/react/24/solid";
 import { useSnackbar } from "@/context/SnackbarContext";
+import { StarIcon as StarSolidIcon } from "@heroicons/react/24/solid";
+import { StarIcon as StarOutlineIcon } from "@heroicons/react/24/outline";
 
 interface Category {
   id: number;
@@ -17,6 +19,7 @@ export default function AddVocabularyPage() {
   const [hiragana, setHiragana] = useState("");
   const [selectedVerbType, setSelectedVerbType] = useState<String | null>(null);
   const [categoryId, setCategoryId] = useState<number | null>(null);
+  const [starred, setStarred] = useState(false);
   const { showMessage } = useSnackbar();
 
   // Fetch categories from API
@@ -38,7 +41,7 @@ export default function AddVocabularyPage() {
         }
 
         setCategories(data.categories);
-        if (data.length > 0) setCategoryId(data[0].id);
+        if (data.categories.length > 0) setCategoryId(data.categories[0]?.id || null);
       } catch (err: any) {
         showMessage(`Failed to load categories: ${err.message || err}`);
       }
@@ -54,7 +57,14 @@ export default function AddVocabularyPage() {
     const res = await fetch("/api/japanese-practice/vocabulary/add", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ english, japanese, hiragana, categoryId, verbType: selectedVerbType }),
+      body: JSON.stringify({
+        english,
+        japanese,
+        hiragana,
+        categoryId,
+        verbType: selectedVerbType,
+        starred: starred,
+      }),
     });
 
     const data = await res.json();
@@ -65,6 +75,7 @@ export default function AddVocabularyPage() {
       setHiragana("");
       setCategoryId(categories[0]?.id || null);
       setSelectedVerbType(null);
+      setStarred(false);
     } else {
       showMessage("Error: " + data.message);
     }
@@ -92,12 +103,22 @@ export default function AddVocabularyPage() {
           </Link>
         </div>
 
-        <h2
-          className="text-2xl font-bold text-center"
-          style={{ color: "var(--color-foreground)" }}
-        >
-          Add New Vocabulary
-        </h2>
+        <div className="flex items-center justify-center gap-2">
+          <h2
+            className="text-2xl font-bold"
+            style={{ color: "var(--color-foreground)" }}
+          >
+            Add New Vocabulary
+          </h2>
+
+          <button onClick={() => setStarred(!starred)}>
+            {starred ? (
+              <StarSolidIcon className="w-6 h-6 text-yellow-400" />
+            ) : (
+              <StarOutlineIcon className="w-6 h-6 text-gray-400" />
+            )}
+          </button>
+        </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           <div>

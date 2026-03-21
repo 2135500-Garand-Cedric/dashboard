@@ -14,6 +14,11 @@ export async function GET() {
     include: {
       category: true,
       activityVocab: true,
+      verbForms: {
+        include: {
+          activityVocab: true,
+        },
+      },
     },
     orderBy: { english: "asc" },
   });
@@ -28,21 +33,82 @@ export async function GET() {
 
     let filteredActivityVocab = v.activityVocab;
 
-    if (v.category?.name !== 'Kanji') {
-      numActivities -= 1; // exclude kanji writing activity from total count
-      filteredActivityVocab = filteredActivityVocab.filter(av => av.activityId !== 5);
+    if (v.category?.name.toLowerCase() !== "kanji") {
+      numActivities -= 1;
+      filteredActivityVocab = filteredActivityVocab.filter(
+        (av) => av.activityId !== 5
+      );
     }
-    
-    const worstVal = Math.min(...filteredActivityVocab.map((av) => statusMap[av.status]));
-    const worstStatus = reverseStatus[worstVal];
 
-    const sum = filteredActivityVocab.reduce((acc, av) => {
-      if (av.status === "PERFECT") return acc + 1;
-      if (av.status === "GOOD") return acc + 0.5;
-      return acc;
-    }, 0);
+    // Helper to compute percentage from activityVocab
+    const computePercentage = (avs: typeof v.activityVocab) => {
+      if (!avs.length) return 0;
 
-    const percentage = ((sum / numActivities) * 100).toFixed(2);
+      const sum = avs.reduce((acc, av) => {
+        if (av.status === "PERFECT") return acc + 1;
+        if (av.status === "GOOD") return acc + 0.5;
+        return acc;
+      }, 0);
+
+      return sum / numActivities;
+    };
+
+    // Helper to get worst status
+    const getWorstStatus = (avs: typeof v.activityVocab) => {
+      if (!avs.length) return "WEAK";
+      const worstVal = Math.min(...avs.map((av) => statusMap[av.status]));
+      return reverseStatus[worstVal];
+    };
+
+    // 🟢 NON-VERB (same as before)
+    if (v.category?.name.toLowerCase() !== "verb") {
+      const worstStatus = getWorstStatus(filteredActivityVocab);
+      const percentage = (computePercentage(filteredActivityVocab) * 100).toFixed(2);
+
+      return {
+        id: v.id,
+        english: v.english,
+        japanese: v.japanese,
+        hiragana: v.hiragana,
+        category_name: v.category?.name,
+        worst_status: worstStatus,
+        percentage,
+        starred: v.starred,
+      };
+    }
+
+    // 🔵 VERB LOGIC
+    const allPercentages: number[] = [];
+    const allStatuses: number[] = [];
+
+    // Base vocab
+    if (filteredActivityVocab.length) {
+      allPercentages.push(computePercentage(filteredActivityVocab));
+      allStatuses.push(
+        Math.min(...filteredActivityVocab.map((av) => statusMap[av.status]))
+      );
+    }
+
+    // Verb forms
+    for (const vf of v.verbForms) {
+      let vfActivities = vf.activityVocab;
+
+      allPercentages.push(computePercentage(vfActivities));
+      allStatuses.push(
+        Math.min(...vfActivities.map((av) => statusMap[av.status]))
+      );
+    }
+
+    // Final aggregation
+    const avg =
+      allPercentages.length > 0
+        ? allPercentages.reduce((a, b) => a + b, 0) / allPercentages.length
+        : 0;
+
+    const worstStatus =
+      allStatuses.length > 0
+        ? reverseStatus[Math.min(...allStatuses)]
+        : "WEAK";
 
     return {
       id: v.id,
@@ -51,7 +117,7 @@ export async function GET() {
       hiragana: v.hiragana,
       category_name: v.category?.name,
       worst_status: worstStatus,
-      percentage,
+      percentage: (avg * 100).toFixed(2),
       starred: v.starred,
     };
   });

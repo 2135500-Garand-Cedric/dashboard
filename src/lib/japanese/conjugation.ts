@@ -21,7 +21,7 @@ export function conjugateVerb(base: string, reading: string, type: VerbType) {
     forms["tai"] = { form: stem + "たい", reading: rStem + "たい" };
   }
 
-  // Godan (very simplified for now: assumes -ku ending like 書く)
+  // Godan (u)
   if (type === "u") {
     return conjugateGodan(base, reading);
   }
@@ -86,6 +86,9 @@ function conjugateGodan(base: string, reading: string) {
   const map = godanMap[ending];
   if (!map) throw new Error("Unsupported godan ending");
 
+  // Check for ある verb (last two characters are "ある")
+  const isAruVerb = base.slice(-2) === "ある" && reading.slice(-2) === "ある";
+
   return {
     masu: {
       form: stemKanji + map.i + "ます",
@@ -96,16 +99,16 @@ function conjugateGodan(base: string, reading: string) {
       reading: stemReading + map.i + "ません",
     },
     nai: {
-      form: stemKanji + map.a + "ない",
-      reading: stemReading + map.a + "ない",
+      form: isAruVerb ? base.slice(0, -2) + "ない" : stemKanji + map.a + "ない",
+      reading: isAruVerb ? reading.slice(0, -2) + "ない" : stemReading + map.a + "ない",
     },
     ta: {
-      form: stemKanji + getTaForm(ending),
-      reading: stemReading + getTaForm(ending),
+      form: stemKanji + getTaForm(ending, reading, base),
+      reading: stemReading + getTaForm(ending, reading, base),
     },
     nakatta: {
-      form: stemKanji + map.a + "なかった",
-      reading: stemReading + map.a + "なかった",
+      form: isAruVerb ? base.slice(0, -2) + "なかった" : stemKanji + map.a + "なかった",
+      reading: isAruVerb ? reading.slice(0, -2) + "なかった" : stemReading + map.a + "なかった",
     },
     mashita: {
       form: stemKanji + map.i + "ました",
@@ -116,8 +119,8 @@ function conjugateGodan(base: string, reading: string) {
       reading: stemReading + map.i + "ませんでした",
     },
     te: {
-      form: stemKanji + getTeForm(ending),
-      reading: stemReading + getTeForm(ending),
+      form: stemKanji + getTeForm(ending, reading, base),
+      reading: stemReading + getTeForm(ending, reading, base),
     },
     volitional: {
       form: stemKanji + map.o + "う",
@@ -134,7 +137,14 @@ function conjugateGodan(base: string, reading: string) {
   };
 }
 
-function getTeForm(ending: string) {
+function isIkuVerb(base: string, reading: string) {
+  return base === "行く" || base.endsWith("行く") || reading.endsWith("いく");
+}
+
+
+function getTeForm(ending: string, reading: string, base: string) {
+  if (isIkuVerb(base, reading)) return "って";
+
   switch (ending) {
     case "う":
     case "つ":
@@ -155,7 +165,9 @@ function getTeForm(ending: string) {
   }
 }
 
-function getTaForm(ending: string) {
+function getTaForm(ending: string, reading: string, base: string) {
+  if (isIkuVerb(base, reading)) return "った";
+
   switch (ending) {
     case "う":
     case "つ":
