@@ -7,11 +7,23 @@ export async function GET() {
     // 1️⃣ Get start & end of today
     const now = new Date();
 
-    const startOfDay = new Date(now);
-    startOfDay.setHours(0, 0, 0, 0);
+    // Get Toronto time as string
+    const torontoNow = new Date(
+      now.toLocaleString("en-US", { timeZone: "America/Toronto" })
+    );
 
-    const endOfDay = new Date(now);
-    endOfDay.setHours(23, 59, 59, 999);
+    // Start of Toronto day
+    const startOfDayToronto = new Date(torontoNow);
+    startOfDayToronto.setHours(0, 0, 0, 0);
+
+    // End of Toronto day
+    const endOfDayToronto = new Date(torontoNow);
+    endOfDayToronto.setHours(23, 59, 59, 999);
+
+    // Convert back to UTC
+    const startOfDay = new Date(startOfDayToronto.toISOString());
+    const endOfDay = new Date(endOfDayToronto.toISOString());
+
 
     // 2️⃣ Fetch only today's practices
     const practices = await prisma.practice.findMany({
