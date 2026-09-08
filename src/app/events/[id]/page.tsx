@@ -20,6 +20,7 @@ type EventItem = {
   type?: string | null;
   linkedTodo?: Todo | null;
 };
+type ActivityType = { id: number; name: string; color: string; active: boolean };
 
 export default function EventPage() {
   const params = useParams();
@@ -28,6 +29,7 @@ export default function EventPage() {
   const { get } = useMemory();
 
   const [event, setEvent] = useState<EventItem | null>(null);
+  const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
   const [editMode, setEditMode] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [descDraft, setDescDraft] = useState("");
@@ -37,27 +39,16 @@ export default function EventPage() {
   const { showMessage } = useSnackbar();
 
   const getColorForType = (type?: string | null) => {
-    switch (type) {
-      case "CSI2110":
-        return "red";
-      case "MAT2377":
-        return "blue";
-      case "JPN2901":
-        return "orange";
-      case "SEG2105":
-        return "purple";
-      case "CEG2136":
-        return "cyan"
-      case "personal":
-        return "green";
-      default:
-        return "gray";
-    }
+    return activityTypes.find((activityType) => activityType.name.toLowerCase() === type?.toLowerCase())?.color || "#9ca3af";
   };
 
   const loadEvent = async () => {
-    const res = await fetch(`/api/events/${eventId}`);
-    const data = await res.json();
+    const [eventRes, typesRes] = await Promise.all([
+      fetch(`/api/events/${eventId}`),
+      fetch("/api/activity-types"),
+    ]);
+    const data = await eventRes.json();
+    setActivityTypes(await typesRes.json());
 
     setEvent(data);
     setTitleDraft(data.title);
@@ -212,12 +203,11 @@ export default function EventPage() {
                 className="w-full border rounded px-3 py-2 bg-white text-gray-900 cursor-pointer"
               >
                 <option value="">None</option>
-                <option value="CSI2110">CSI 2110</option>
-                <option value="MAT2377">MAT 2377</option>
-                <option value="JPN2901">JPN 2901</option>
-                <option value="SEG2105">SEG 2105</option>
-                <option value="CEG2136">CEG 2136</option>
-                <option value="personal">Personal</option>
+                {activityTypes
+                  .filter((activityType) => activityType.active || activityType.name.toLowerCase() === typeDraft?.toLowerCase())
+                  .map((activityType) => (
+                    <option key={activityType.id} value={activityType.name}>{activityType.name}</option>
+                  ))}
               </select>
             ) : (
               <div className="flex items-center gap-2">

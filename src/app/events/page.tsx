@@ -5,6 +5,7 @@ import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import { useRouter } from "next/navigation";
+import { Cog6ToothIcon, PlusIcon, TrashIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { useMemory } from "@/context/MemoryContext";
 
 type Todo = { id: number; title: string; done: boolean };
@@ -16,11 +17,16 @@ type EventItem = {
   type?: string | null;
   linkedTodo?: Todo | null;
 };
+type ActivityType = { id: number; name: string; color: string; active: boolean };
 
 export default function EventsPage() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
+  const [typeName, setTypeName] = useState("");
+  const [typeColor, setTypeColor] = useState("#3b82f6");
 
   const [newTitle, setNewTitle] = useState("");
   const [newDesc, setNewDesc] = useState("");
@@ -33,13 +39,18 @@ export default function EventsPage() {
 
   const load = async () => {
     setLoading(true);
-    const res = await fetch("/api/events");
-    const data = await res.json();
+    const [eventsRes, typesRes] = await Promise.all([
+      fetch("/api/events"),
+      fetch("/api/activity-types"),
+    ]);
+    const data = await eventsRes.json();
+    const types = await typesRes.json();
     const normalized = data.map((e: any) => ({
       ...e,
       date: e.date ? new Date(e.date).toISOString() : null,
     }));
     setEvents(normalized);
+    setActivityTypes(types);
     setLoading(false);
   };
 
@@ -64,22 +75,38 @@ export default function EventsPage() {
 
 
   const getColorForType = (type?: string | null) => {
-    switch (type) {
-      case "CSI2101":
-        return "red";
-      case "CSI2120":
-        return "blue";
-      case "JPN2902":
-        return "orange";
-      case "CSI2132":
-        return "purple";
-      case "CSI2911":
-        return "cyan"
-      case "personal":
-        return "green";
-      default:
-        return "gray";
+    return activityTypes.find((activityType) => activityType.name.toLowerCase() === type?.toLowerCase())?.color || "#9ca3af";
+  };
+
+  const saveActivityType = async () => {
+    const res = await fetch("/api/activity-types", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: typeName, color: typeColor }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      alert(data.error || "Unable to create activity type");
+      return;
     }
+    setTypeName("");
+    setTypeColor("#3b82f6");
+    await load();
+  };
+
+  const updateActivityType = async (activityType: ActivityType, changes: Partial<ActivityType>) => {
+    const res = await fetch(`/api/activity-types/${activityType.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(changes),
+    });
+    if (res.ok) await load();
+  };
+
+  const deleteActivityType = async (activityType: ActivityType) => {
+    if (!confirm(`Delete activity type "${activityType.name}"? Existing events will keep their details but lose this type.`)) return;
+    const res = await fetch(`/api/activity-types/${activityType.id}`, { method: "DELETE" });
+    if (res.ok) await load();
   };
 
   const createEvent = async () => {
@@ -155,12 +182,22 @@ export default function EventsPage() {
       <aside className="w-96 bg-card rounded-xl shadow p-4 card flex flex-col">
         <div className="flex justify-between items-center mb-3">
           <h3 className="text-lg font-semibold">Events</h3>
-          <button
-            onClick={() => setCreating(!creating)}
-            className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
-          >
-            {creating ? "Cancel" : "New"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSettingsOpen(true)}
+              title="Activity type settings"
+              aria-label="Activity type settings"
+              className="p-2 rounded hover:bg-accent/10 cursor-pointer"
+            >
+              <Cog6ToothIcon className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setCreating(!creating)}
+              className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
+            >
+              {creating ? "Cancel" : "New"}
+            </button>
+          </div>
         </div>
 
         {creating ? (
@@ -198,12 +235,9 @@ export default function EventsPage() {
               className="w-full border rounded px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">Type (optional)</option>
-              <option value="CSI2101">CSI 2101</option>
-              <option value="CSI2120">CSI 2120</option>
-              <option value="JPN2902">JPN 2902</option>
-              <option value="CSI2132">CSI 2132</option>
-              <option value="CSI2911">CSI 2911</option>
-              <option value="personal">Personal</option>
+              {activityTypes.filter((activityType) => activityType.active).map((activityType) => (
+                <option key={activityType.id} value={activityType.name}>{activityType.name}</option>
+              ))}
             </select>
             <button
               onClick={createEvent}
@@ -278,6 +312,43 @@ export default function EventsPage() {
           </>
         )}
       </aside>
+
+      {settingsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-card rounded-xl shadow-xl p-6 card">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-xl font-semibold">Activity type settings</h2>
+              <button onClick={() => setSettingsOpen(false)} title="Close settings" aria-label="Close settings" className="p-1 rounded hover:bg-accent/10 cursor-pointer">
+                <XMarkIcon className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="flex gap-2 mb-5">
+              <input value={typeName} onChange={(e) => setTypeName(e.target.value)} placeholder="New activity type" className="flex-1 border rounded px-3 py-2" />
+              <input type="color" value={typeColor} onChange={(e) => setTypeColor(e.target.value)} title="Choose color" className="w-11 h-10 border rounded p-1 cursor-pointer" />
+              <button onClick={saveActivityType} title="Add activity type" aria-label="Add activity type" className="p-2 rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer">
+                <PlusIcon className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {activityTypes.map((activityType) => (
+                <div key={activityType.id} className="flex items-center gap-2 border rounded p-2">
+                  <input type="color" value={activityType.color} onChange={(e) => updateActivityType(activityType, { color: e.target.value })} title={`Color for ${activityType.name}`} className="w-9 h-9 border rounded p-1 cursor-pointer" />
+                  <input value={activityType.name} onChange={(e) => setActivityTypes((current) => current.map((item) => item.id === activityType.id ? { ...item, name: e.target.value } : item))} onBlur={(e) => updateActivityType(activityType, { name: e.target.value })} className="min-w-0 flex-1 border rounded px-2 py-1" />
+                  <label className="flex items-center gap-1 text-sm whitespace-nowrap">
+                    <input type="checkbox" checked={activityType.active} onChange={(e) => updateActivityType(activityType, { active: e.target.checked })} /> Active
+                  </label>
+                  <button onClick={() => deleteActivityType(activityType)} title={`Delete ${activityType.name}`} aria-label={`Delete ${activityType.name}`} className="p-2 rounded text-red-600 hover:bg-red-50 cursor-pointer">
+                    <TrashIcon className="w-5 h-5" />
+                  </button>
+                </div>
+              ))}
+              {!activityTypes.length && <p className="text-sm text-gray-500">No activity types yet.</p>}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
