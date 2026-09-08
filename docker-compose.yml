@@ -11,9 +11,10 @@ services:
       - .env
     environment:
       - NODE_ENV=development
-    command: npm run dev
+    command: sh -c "npx prisma migrate deploy && npm run seed && npm run dev"
     depends_on:
-      - dashboard-db
+      dashboard-db:
+        condition: service_healthy
 
   dashboard-db:
     image: postgres:15
@@ -26,6 +27,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
       TZ: America/Toronto
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     ports:
       - "5432:5432"
     volumes:
