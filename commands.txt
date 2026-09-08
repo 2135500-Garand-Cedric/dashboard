@@ -1,16 +1,62 @@
-migrate new schema to database
+GITHUB WORKFLOW
 
-docker compose exec -it dashboard npx prisma migrate dev --name add_starred_to_vocabulary
-docker compose exec -it dashboard npx prisma generate
+LOCAL: create and commit a migration after changing prisma/schema.prisma
+
+docker compose -f docker-compose.dev.yml up -d --build
+docker compose -f docker-compose.dev.yml exec dashboard-dev npx prisma migrate dev --name describe_the_change
+docker compose -f docker-compose.dev.yml exec dashboard-dev npx prisma generate
+
+git status
+git add prisma/schema.prisma prisma/migrations package.json package-lock.json Dockerfile.prod docker-compose.prod.yml src
+git commit -m "Describe the change"
+git push origin main
 
 
+NAS PRODUCTION: deploy code and apply a new migration
 
-// Online migration steps
+1. SSH into the NAS and move to the cloned repository:
 
-1. Stop all containers in project in container manager
-2. Delete dashboard container and image
-3. Copy all new files in /src (not layout.tsx)
-4. Build project
-5. Correct errors
-6. Connect in ssh to the NAS
-7. Run the command: sudo docker exec -it dashboard npx prisma migrate deploy (only if there is some changes to the prisma schema)
+	ssh <nas-user>@<nas-host>
+	cd /volume1/docker/dashboard
+
+2. Pull the release from GitHub:
+
+	git fetch origin
+	git checkout main
+	git pull --ff-only origin main
+
+3. Confirm the production `.env` remains on the NAS and contains the NAS values,
+	especially `NEXTAUTH_URL` and `DATABASE_URL`. Do not commit `.env` to GitHub.
+4. Confirm the production network exists:
+
+	sudo docker network inspect web-network
+
+5. Rebuild and recreate the application stack:
+
+	sudo docker compose -f docker-compose.prod.yml up -d --build
+
+6. The dashboard container automatically runs this before starting Next.js:
+
+	npx prisma migrate deploy
+
+7. Verify the migration and application logs:
+
+	sudo docker compose -f docker-compose.prod.yml logs --tail=100 dashboard
+	sudo docker compose -f docker-compose.prod.yml ps
+
+8. Open the production site and verify the changed feature.
+
+To install the repository on the NAS for the first time:
+
+	cd /volume1/docker
+	git clone <github-repository-url> dashboard
+	cd dashboard
+	sudo docker network inspect web-network
+	sudo docker compose -f docker-compose.prod.yml up -d --build
+
+IMPORTANT:
+
+- Do not run `docker compose down -v` in production. It can delete the PostgreSQL volume and database data.
+- Do not run `prisma migrate dev` against production. Use `prisma migrate deploy`.
+- Do not run the demo seed in production. The production Compose file intentionally runs migrations only.
+- If the migration fails, do not delete the database container or volume. Read the logs, fix the migration, and rerun the deployment.
