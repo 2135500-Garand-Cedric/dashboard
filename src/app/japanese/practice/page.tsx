@@ -347,11 +347,14 @@ export default function PracticePage() {
                     <h3 className="text-xl">{currentWord.hiragana}</h3>
                   </>
                 ) : selectedActivity === 5 ? ( // For kanji writing
-                  <div className="flex flex-wrap justify-center items-center gap-2">
-                    {Array.from(currentWord.japanese).map((character, index) => isKanji(character) ? (
-                      <KanjiStroke key={`${currentWord.id}-${index}`} character={character} />
-                    ) : <span key={`${currentWord.id}-${index}`} className="text-3xl">{character}</span>)}
-                  </div>
+                  <>
+                    <div className="flex flex-wrap justify-center items-center gap-2">
+                      {Array.from(currentWord.japanese).map((character, index) => isKanji(character) ? (
+                        <KanjiStroke key={`${currentWord.id}-${index}`} character={character} />
+                      ) : <span key={`${currentWord.id}-${index}`} className="text-3xl">{character}</span>)}
+                    </div>
+                    <h3 lang="ja" className="mt-3 text-xl">{currentWord.hiragana}</h3>
+                  </>
                 ) : (
                   <>
                     <h3 className="text-xl">{getTranslation()}</h3>
