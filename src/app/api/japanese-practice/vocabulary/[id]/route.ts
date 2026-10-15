@@ -4,7 +4,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { conjugateVerb } from "@/lib/japanese/conjugation";
 import { calculateActivityStats } from "@/lib/japanese/utils"; // import the util
-import { ActivityVocabStatus } from "@/generated/prisma";
+import { getKnownKanji, isKanjiWritingEligible, getApplicableActivityIds } from "@/lib/japanese/kanji-writing";
+import { ActivityVocabStatus, type Prisma } from "@/generated/prisma";
 
 export async function GET(
   req: Request,
@@ -23,7 +24,8 @@ export async function GET(
     const userId = 1; // TODO: replace with session logic
 
     // fetch total activities once
-    let activityCount = await prisma.activity.count();
+    const activities = await prisma.activity.findMany({ select: { id: true } });
+    const activityIds = activities.map((activity) => activity.id);
 
     const vocab = await prisma.vocabulary.findUnique({
       where: { id: vocabId },
@@ -46,24 +48,23 @@ export async function GET(
       );
     }
 
-    // Exclude Kanji writing activity if needed
-    const excludeActivityIds = vocab.category?.name !== "Kanji" ? [5] : [];
-
-    // Calculate stats for base vocab
+    const kanjiVocabulary = await prisma.vocabulary.findMany({
+      where: { userId, category: { name: { equals: "kanji", mode: "insensitive" } } },
+      include: { category: true },
+    });
+    const knownKanji = getKnownKanji(kanjiVocabulary);
     const { worstStatus, percentage } = calculateActivityStats(
       vocab.activityVocab,
-      activityCount,
-      excludeActivityIds
+      getApplicableActivityIds(activityIds, isKanjiWritingEligible(vocab.japanese, knownKanji)),
     );
 
     // Calculate stats for verb forms if category is Verb
-    let verbFormsResult: any[] = [];
+    let verbFormsResult: { id: number; formType: string; form: string; reading: string; worst_status: string; percentage: string }[] = [];
     if (vocab.category?.name.toLowerCase() === "verb") {
       verbFormsResult = vocab.verbForms.map((vf) => {
         const { worstStatus: worst_status, percentage: percentage } = calculateActivityStats(
           vf.activityVocab,
-          activityCount,
-          excludeActivityIds
+          getApplicableActivityIds(activityIds, false, true)
         );
 
         return {
@@ -91,10 +92,10 @@ export async function GET(
     };
 
     return NextResponse.json({ success: true, vocabulary: result });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(error);
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: error instanceof Error ? error.message : "An unexpected error occurred" },
       { status: 500 }
     );
   }
@@ -148,7 +149,7 @@ export async function PATCH(
       }
 
       // 4️⃣ Build update object ONLY with changed fields
-      const data: any = {};
+      const data: Prisma.VocabularyUpdateInput = {};
       if (changes.english) data.english = english;
       if (changes.japanese) data.japanese = japanese;
       if (changes.hiragana) data.hiragana = hiragana;
@@ -231,10 +232,10 @@ export async function PATCH(
     });
 
     return NextResponse.json({ success: true, vocabulary: result });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(error);
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: error instanceof Error ? error.message : "An unexpected error occurred" },
       { status: 500 }
     );
   }
@@ -254,8 +255,8 @@ export async function DELETE(
 
     await prisma.vocabulary.delete({ where: { id: vocabId } });
     return NextResponse.json({ success: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "An unexpected error occurred" }, { status: 500 });
   }
 }

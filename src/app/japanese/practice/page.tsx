@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { isKanji } from "@/lib/japanese/kanji-writing";
 import { useSnackbar } from "@/context/SnackbarContext";
 
 interface Category { id: number; name: string; }
@@ -13,6 +14,14 @@ interface Word {
   hiragana: string;
   read_hiragana: boolean;
   status: string;
+}
+
+function KanjiStroke({ character }: { character: string }) {
+  const [failed, setFailed] = useState(false);
+  return failed ? <span className="practice-kanji flex items-center justify-center border rounded text-5xl" title="Stroke animation unavailable">{character}</span> : (
+    <img src={`/kanji/${character}.gif`} alt={character} width={150} height={150}
+      className="practice-kanji border rounded" onError={() => setFailed(true)} />
+  );
 }
 
 export default function PracticePage() {
@@ -55,8 +64,8 @@ export default function PracticePage() {
         }
 
         setCategories(data.categories);
-      } catch (err: any) {
-        showMessage(`Failed to load categories: ${err.message || err}`);
+      } catch (err: unknown) {
+        showMessage(`Failed to load categories: ${err instanceof Error ? err.message : String(err)}`);
       }
     };
     fetchData();
@@ -68,21 +77,10 @@ export default function PracticePage() {
   };
 
   const handleStart = async () => {
-    let categoriesToSend = selectedCategories;
-
-    if (selectedActivity === 5 && categories.find(c => c.name === 'Kanji')?.id) {
-      categoriesToSend.push(categories.find(c => c.name === 'Kanji')!.id);
-    }
-
-    // If no categories selected, use all category IDs
-    if (!selectedCategories.length) {
-      categoriesToSend = categories.map(c => c.id);
-    }
-
     const res = await fetch("/api/japanese-practice/vocabulary", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ categories: categoriesToSend, nbWords, activity: selectedActivity, starredOnly })
+      body: JSON.stringify({ categories: selectedCategories, nbWords, activity: selectedActivity, starredOnly })
     });
 
     const data = await res.json();
@@ -213,16 +211,16 @@ export default function PracticePage() {
 
 
   return (
-    <div className="flex items-center justify-center mt-10 bg-gray-900 text-white">
-      <div className={`relative w-full max-w-lg rounded-xl p-8 space-y-6 bg-gray-800 border-4 ${getBorderColor()} shadow-lg`}>
+    <div className="practice-page flex items-center justify-center mt-10 text-white">
+      <div className={`practice-card relative w-full max-w-lg rounded-xl p-5 sm:p-8 space-y-6 bg-gray-800 border-4 ${getBorderColor()} shadow-lg`}>
         <h2 className="text-2xl font-bold text-center">{getTitle()}</h2>
 
         {!words.length && (
-          <>
+          <div className="practice-options space-y-6 min-[2240px]:grid min-[2240px]:grid-cols-[1.2fr_1fr] min-[2240px]:gap-6 min-[2240px]:space-y-0">
             {/* Categories */}
-            <div>
+            <div className="min-w-0 min-[2240px]:row-span-2">
               <h3 className="text-lg font-semibold mb-2">Categories</h3>
-              <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+              <div className="practice-categories grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
                 {categories.map(cat => (
                   <label
                     key={cat.id}
@@ -280,7 +278,7 @@ export default function PracticePage() {
             </div>
 
             {/* Buttons */}
-            <div className="flex justify-center gap-2 mt-4">
+            <div className="flex flex-wrap justify-center gap-2 mt-4 min-[2240px]:col-span-2">
               <button
                 onClick={handleStart}
                 className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
@@ -294,16 +292,16 @@ export default function PracticePage() {
                 Vocabulary
               </Link>
             </div>
-          </>
+          </div>
         )}
 
         {/* Practice Words */}
         {words.length > 0 && currentWord && (
-          <div className="text-center space-y-4">
+          <div className="practice-session text-center space-y-4">
 
             {/* Display word for activities other than japanese to english listening */}
             {selectedActivity !== 4 && (
-              <h3 className="text-xl font-bold">{getWordDisplay()}</h3>
+              <h3 className="practice-word text-xl font-bold">{getWordDisplay()}</h3>
             )}
 
             {/* Input box for English → Japanese writing */}
@@ -341,7 +339,7 @@ export default function PracticePage() {
 
             {/* Translation display */}
             {showingTranslation && (
-              <div>
+              <div className="practice-translation">
                 {selectedActivity === 4 ? ( // For japanese to english listening
                   <>
                     <h3 className="text-xl">{currentWord.english}</h3>
@@ -349,31 +347,10 @@ export default function PracticePage() {
                     <h3 className="text-xl">{currentWord.hiragana}</h3>
                   </>
                 ) : selectedActivity === 5 ? ( // For kanji writing
-                  <div className="flex justify-center items-center">
-                    <img
-                      src={`/kanji/${currentWord.japanese}.gif`}
-                      alt={currentWord.japanese}
-                      width={150}
-                      height={150}
-                      className="border rounded"
-                      onError={(e) => {
-                        const img = e.currentTarget as HTMLImageElement;
-                        // replace the image with a placeholder div
-                        const placeholder = document.createElement("div");
-                        placeholder.style.width = "150px";
-                        placeholder.style.height = "150px";
-                        placeholder.style.border = "1px solid #ccc";
-                        placeholder.style.borderRadius = "0.25rem"; // same as rounded
-                        placeholder.style.display = "flex";
-                        placeholder.style.alignItems = "center";
-                        placeholder.style.justifyContent = "center";
-                        placeholder.style.backgroundColor = "#f9f9f9";
-                        placeholder.style.color = "#888";
-                        placeholder.style.fontSize = "14px";
-                        placeholder.innerText = "Not Found";
-                        img.replaceWith(placeholder);
-                      }}
-                    />
+                  <div className="flex flex-wrap justify-center items-center gap-2">
+                    {Array.from(currentWord.japanese).map((character, index) => isKanji(character) ? (
+                      <KanjiStroke key={`${currentWord.id}-${index}`} character={character} />
+                    ) : <span key={`${currentWord.id}-${index}`} className="text-3xl">{character}</span>)}
                   </div>
                 ) : (
                   <>

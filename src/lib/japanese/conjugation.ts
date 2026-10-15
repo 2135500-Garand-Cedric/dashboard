@@ -19,6 +19,8 @@ export function conjugateVerb(base: string, reading: string, type: VerbType) {
     forms["volitional"] = { form: stem + "よう", reading: rStem + "よう" };
     forms["potential"] = { form: stem + "られる", reading: rStem + "られる" };
     forms["tai"] = { form: stem + "たい", reading: rStem + "たい" };
+    forms["ba"] = { form: stem + "れば", reading: rStem + "れば" };
+    forms["nakereba"] = { form: stem + "なければ", reading: rStem + "なければ" };
   }
 
   // Godan (u)
@@ -42,6 +44,8 @@ export function conjugateVerb(base: string, reading: string, type: VerbType) {
     forms["volitional"] = { form: stemKanji + "しよう", reading: stemReading + "しよう" };
     forms["potential"] = { form: stemKanji + "できる", reading: stemReading + "できる" };
     forms["tai"] = { form: stemKanji + "したい", reading: stemReading + "したい" };
+    forms["ba"] = { form: stemKanji + "すれば", reading: stemReading + "すれば" };
+    forms["nakereba"] = { form: stemKanji + "しなければ", reading: stemReading + "しなければ" };
   }
 
 
@@ -60,6 +64,14 @@ export function conjugateVerb(base: string, reading: string, type: VerbType) {
     forms["volitional"] = { form: stemKanji + "こよう", reading: stemReading + "こよう" };
     forms["potential"] = { form: stemKanji + "こられる", reading: stemReading + "こられる" };
     forms["tai"] = { form: stemKanji + "きたい", reading: stemReading + "きたい" };
+    forms["ba"] = {
+      form: stemKanji + (base.endsWith("来る") ? "来れば" : "くれば"),
+      reading: stemReading + "くれば",
+    };
+    forms["nakereba"] = {
+      form: stemKanji + (base.endsWith("来る") ? "来なければ" : "こなければ"),
+      reading: stemReading + "こなければ",
+    };
   }
 
 
@@ -133,6 +145,14 @@ function conjugateGodan(base: string, reading: string) {
     tai: {
       form: stemKanji + map.i + "たい",
       reading: stemReading + map.i + "たい",
+    },
+    ba: {
+      form: stemKanji + map.e + "ば",
+      reading: stemReading + map.e + "ば",
+    },
+    nakereba: {
+      form: isAruVerb ? base.slice(0, -2) + "なければ" : stemKanji + map.a + "なければ",
+      reading: isAruVerb ? reading.slice(0, -2) + "なければ" : stemReading + map.a + "なければ",
     },
   };
 }

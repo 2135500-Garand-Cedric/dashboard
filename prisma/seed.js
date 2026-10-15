@@ -271,6 +271,40 @@ async function main() {
     },
   ];
 
+  // Known characters and mixed-category words for testing kanji writing.
+  const knownKanjiExamples = [
+    ["学", "がく", "study"], ["校", "こう", "school kanji"],
+    ["食", "しょく", "food"], ["見", "けん", "seeing"],
+    ["読", "どく", "reading"], ["書", "しょ", "writing"],
+    ["本", "ほん", "book"], ["日", "にち", "day"],
+    ["友", "とも", "friend"], ["生", "せい", "life"],
+    ["勉", "べん", "effort"], ["強", "きょう", "strong"],
+  ];
+  for (const [japanese, hiragana, english] of knownKanjiExamples) {
+    vocabularyData.push({ english, japanese, hiragana, categoryId: categories.Kanji.id, starred: false });
+  }
+  const mixedExamples = [
+    ["school (compound)", "学校", "がっこう"],
+    ["Japan", "日本", "にほん"],
+    ["student", "学生", "がくせい"],
+    ["friend (mixed kana)", "友だち", "ともだち"],
+    ["friend (polite)", "お友だち", "おともだち"],
+    ["Japanese book", "日本の本", "にほんのほん"],
+    ["school book", "学校の本", "がっこうのほん"],
+    ["friend's book", "友だちの本", "ともだちのほん"],
+    ["book cover", "本のカバー", "ほんのかばー"],
+    ["reading a book", "本を読む", "ほんをよむ"],
+    ["looking at a book", "本を見る", "ほんをみる"],
+  ];
+  for (const [english, japanese, hiragana] of mixedExamples) {
+    vocabularyData.push({ english, japanese, hiragana, categoryId: categories.Vocabulary.id, starred: false });
+  }
+  for (const [english, japanese, hiragana] of [
+    ["to see", "見る", "みる"], ["to read", "読む", "よむ"], ["to write", "書く", "かく"],
+  ]) {
+    vocabularyData.push({ english, japanese, hiragana, categoryId: categories.Verb.id, verbType: japanese === "見る" ? "ru" : "u", starred: false });
+  }
+
   const vocabulary = {};
   for (const data of vocabularyData) {
     const word = await findOrCreate(
@@ -282,7 +316,7 @@ async function main() {
 
     const statuses = ["PERFECT", "GOOD", "WEAK", "GOOD", "PERFECT"];
     for (let index = 0; index < activities.length; index += 1) {
-      await ensureActivityVocab(index + 1, word.id, statuses[index]);
+      await ensureActivityVocab(index + 1, word.id, index === 4 && word.categoryId !== categories.Kanji.id ? "WEAK" : statuses[index]);
     }
   }
 
@@ -298,6 +332,8 @@ async function main() {
     ["volitional", "食べよう", "たべよう"],
     ["potential", "食べられる", "たべられる"],
     ["tai", "食べたい", "たべたい"],
+    ["ba", "食べれば", "たべれば"],
+    ["nakereba", "食べなければ", "たべなければ"],
   ];
 
   for (const [name, form, reading] of verbForms) {

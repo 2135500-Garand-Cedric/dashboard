@@ -17,7 +17,7 @@ export default function AddVocabularyPage() {
   const [english, setEnglish] = useState("");
   const [japanese, setJapanese] = useState("");
   const [hiragana, setHiragana] = useState("");
-  const [selectedVerbType, setSelectedVerbType] = useState<String | null>(null);
+  const [selectedVerbType, setSelectedVerbType] = useState<string | null>(null);
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [starred, setStarred] = useState(false);
   const { showMessage } = useSnackbar();
@@ -42,8 +42,8 @@ export default function AddVocabularyPage() {
 
         setCategories(data.categories);
         if (data.categories.length > 0) setCategoryId(data.categories[0]?.id || null);
-      } catch (err: any) {
-        showMessage(`Failed to load categories: ${err.message || err}`);
+      } catch (err: unknown) {
+        showMessage(`Failed to load categories: ${err instanceof Error ? err.message : String(err)}`);
       }
     };
     
@@ -194,7 +194,7 @@ export default function AddVocabularyPage() {
             </select>
           </div>
 
-          {(categories.find((cat) => cat.name === 'verb')?.id === categoryId) && (
+          {categories.find((cat) => cat.id === categoryId)?.name.trim().toLowerCase() === "verb" && (
             <div className="mt-4">
               <label className="block mb-2">Verb Ending Type:</label>
               <div className="flex flex-wrap gap-4">

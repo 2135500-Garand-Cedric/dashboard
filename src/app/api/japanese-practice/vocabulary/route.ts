@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getKnownKanji, isKanjiWritingEligible, getApplicableActivityIds } from "@/lib/japanese/kanji-writing";
+import { calculateActivityStats } from "@/lib/japanese/utils";
 
 // Get all the vocabulary for a user
 export async function GET() {
   const userId = "1"; // Replace with actual user session ID
 
   // Get total activities count for percentage calculation
-  const activityCount = await prisma.activity.count();
+  const activities = await prisma.activity.findMany({ select: { id: true } });
+  const activityIds = activities.map((activity) => activity.id);
 
   // Fetch all vocabulary for the user with category and activity info
   const vocab = await prisma.vocabulary.findMany({
@@ -23,102 +26,20 @@ export async function GET() {
     orderBy: { english: "asc" },
   });
 
-  // Map status enums for calculation
-  const statusMap: Record<string, number> = { WEAK: 1, GOOD: 2, PERFECT: 3 };
-  const reverseStatus: Record<number, string> = { 1: "WEAK", 2: "GOOD", 3: "PERFECT" };
-
-  // Transform results
+  const knownKanji = getKnownKanji(vocab);
+  const statusRank: Record<string, number> = { WEAK: 0, GOOD: 1, PERFECT: 2 };
   const result = vocab.map((v) => {
-    let numActivities = activityCount;
-
-    let filteredActivityVocab = v.activityVocab;
-
-    if (v.category?.name.toLowerCase() !== "kanji") {
-      numActivities -= 1;
-      filteredActivityVocab = filteredActivityVocab.filter(
-        (av) => av.activityId !== 5
-      );
+    const baseStats = calculateActivityStats(v.activityVocab, getApplicableActivityIds(activityIds, isKanjiWritingEligible(v.japanese, knownKanji)));
+    const stats = [baseStats];
+    if (v.category?.name.trim().toLowerCase() === "verb") {
+      stats.push(...v.verbForms.map((form) => calculateActivityStats(form.activityVocab, getApplicableActivityIds(activityIds, false, true))));
     }
-
-    // Helper to compute percentage from activityVocab
-    const computePercentage = (avs: typeof v.activityVocab) => {
-      if (!avs.length) return 0;
-
-      const sum = avs.reduce((acc, av) => {
-        if (av.status === "PERFECT") return acc + 1;
-        if (av.status === "GOOD") return acc + 0.5;
-        return acc;
-      }, 0);
-
-      return sum / numActivities;
-    };
-
-    // Helper to get worst status
-    const getWorstStatus = (avs: typeof v.activityVocab) => {
-      if (!avs.length) return "WEAK";
-      const worstVal = Math.min(...avs.map((av) => statusMap[av.status]));
-      return reverseStatus[worstVal];
-    };
-
-    // 🟢 NON-VERB (same as before)
-    if (v.category?.name.toLowerCase() !== "verb") {
-      const worstStatus = getWorstStatus(filteredActivityVocab);
-      const percentage = (computePercentage(filteredActivityVocab) * 100).toFixed(2);
-
-      return {
-        id: v.id,
-        english: v.english,
-        japanese: v.japanese,
-        hiragana: v.hiragana,
-        category_name: v.category?.name,
-        worst_status: worstStatus,
-        percentage,
-        starred: v.starred,
-      };
-    }
-
-    // 🔵 VERB LOGIC
-    const allPercentages: number[] = [];
-    const allStatuses: number[] = [];
-
-    // Base vocab
-    if (filteredActivityVocab.length) {
-      allPercentages.push(computePercentage(filteredActivityVocab));
-      allStatuses.push(
-        Math.min(...filteredActivityVocab.map((av) => statusMap[av.status]))
-      );
-    }
-
-    // Verb forms
-    for (const vf of v.verbForms) {
-      let vfActivities = vf.activityVocab;
-
-      allPercentages.push(computePercentage(vfActivities));
-      allStatuses.push(
-        Math.min(...vfActivities.map((av) => statusMap[av.status]))
-      );
-    }
-
-    // Final aggregation
-    const avg =
-      allPercentages.length > 0
-        ? allPercentages.reduce((a, b) => a + b, 0) / allPercentages.length
-        : 0;
-
-    const worstStatus =
-      allStatuses.length > 0
-        ? reverseStatus[Math.min(...allStatuses)]
-        : "WEAK";
-
+    const worstStatus = stats.reduce((worst, stat) => statusRank[stat.worstStatus] < statusRank[worst] ? stat.worstStatus : worst, baseStats.worstStatus);
     return {
-      id: v.id,
-      english: v.english,
-      japanese: v.japanese,
-      hiragana: v.hiragana,
-      category_name: v.category?.name,
+      id: v.id, english: v.english, japanese: v.japanese, hiragana: v.hiragana,
+      category_name: v.category?.name, starred: v.starred,
       worst_status: worstStatus,
-      percentage: (avg * 100).toFixed(2),
-      starred: v.starred,
+      percentage: (stats.reduce((sum, stat) => sum + Number(stat.percentage), 0) / stats.length).toFixed(2),
     };
   });
 
@@ -148,7 +69,6 @@ export async function PATCH(req: Request) {
       );
     }
 
-    const userId = 1;
     const activityId = data.activity;
 
     const counts = {
@@ -210,10 +130,10 @@ export async function PATCH(req: Request) {
       success: true,
       message: "Statuses updated successfully",
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(error);
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: error instanceof Error ? error.message : "An unexpected error occurred" },
       { status: 500 }
     );
   }
@@ -230,22 +150,34 @@ export async function POST(req: Request) {
     const activityId: number = body.activity || 1;
     const starredOnly: boolean = body.starredOnly || false;
 
-    if (!categories.length) {
-      return NextResponse.json(
-        { success: false, error: "You must choose at least one category." },
-        { status: 400 }
-      );
+    let eligibleIds: number[] | undefined;
+    if (activityId === 5) {
+      const vocabulary = await prisma.vocabulary.findMany({
+        where: { userId }, include: { category: true },
+      });
+      const knownKanji = getKnownKanji(vocabulary);
+      eligibleIds = vocabulary.filter((word) =>
+        (!categories.length || (word.categoryId !== null && categories.includes(word.categoryId))) &&
+        (!starredOnly || word.starred) &&
+        isKanjiWritingEligible(word.japanese, knownKanji)
+      ).map((word) => word.id);
+      // Older vocabulary may lack a writing link; add only missing records.
+      if (eligibleIds.length) await prisma.activityVocab.createMany({
+        data: eligibleIds.map((vocabId) => ({ activityId, vocabId, status: "WEAK" })),
+        skipDuplicates: true,
+      });
     }
 
     // Fetch all ActivityVocab entries for this user/activity, including both Vocabulary and VerbForm
     const activityVocabs = await prisma.activityVocab.findMany({
       where: {
         activityId,
+        ...(eligibleIds ? { vocabId: { in: eligibleIds }, verbFormId: null } : {}),
         OR: [
           {
             vocab: {
               userId,
-              categoryId: { in: categories },
+              ...(categories.length ? { categoryId: { in: categories } } : {}),
               ...(starredOnly ? { starred: true } : {}),
             },
           },
@@ -253,7 +185,7 @@ export async function POST(req: Request) {
             verbForm: {
               baseVocab: {
                 userId,
-                categoryId: { in: categories },
+                ...(categories.length ? { categoryId: { in: categories } } : {}),
                 ...(starredOnly ? { starred: true } : {}),
               },
             },
@@ -347,8 +279,8 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ success: true, words: selectedWords });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "An unexpected error occurred" }, { status: 500 });
   }
 }

@@ -22,7 +22,7 @@ export default function MusicDashboardTile() {
     >
       <div className="flex flex-col items-center">
         {/* Thumbnail */}
-        <div className="w-full h-48 rounded-lg overflow-hidden mb-3">
+        <div className="music-thumbnail w-full h-48 rounded-lg overflow-hidden mb-3">
           <img
             src={video.thumbnail}
             alt={video.title}

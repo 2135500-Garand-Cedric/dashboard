@@ -2,6 +2,7 @@ export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { validateEventDates } from "@/lib/event-dates";
 
 export async function GET(
   request: Request,
@@ -22,14 +23,22 @@ export async function PATCH(
 ) {
   const { id } = await context.params;
   const body = await request.json();
-  const { title, description, date, type, linkedTodoId } = body;
+  const { title, description, date, endDate, type, linkedTodoId } = body;
+  const existing = await prisma.event.findUnique({ where: { id: Number(id) } });
+  if (!existing) return NextResponse.json({ error: "Event not found" }, { status: 404 });
+  const error = validateEventDates(
+    date === undefined ? existing.date?.toISOString() ?? null : date,
+    endDate === undefined ? existing.endDate?.toISOString() ?? null : endDate,
+  );
+  if (error) return NextResponse.json({ error }, { status: 400 });
 
   const updated = await prisma.event.update({
     where: { id: Number(id) },
     data: {
       title,
       description,
-      date: date ? new Date(date) : undefined,
+      date: date === undefined ? undefined : date === null ? null : new Date(date),
+      endDate: endDate === undefined ? undefined : endDate === null ? null : new Date(endDate),
       type,
       linkedTodoId,
     },

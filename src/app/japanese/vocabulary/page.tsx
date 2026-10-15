@@ -24,6 +24,11 @@ interface Vocabulary {
   starred: boolean;
 }
 
+type VocabularySort = {
+  field: "english" | "percentage";
+  direction: "asc" | "desc";
+};
+
 export default function VocabularyPage() {
   const { get, set } = useMemory();
   const { showMessage } = useSnackbar();
@@ -31,6 +36,7 @@ export default function VocabularyPage() {
   const search = get("vocab_search", "") as string;
   const selectedCategories = get("vocab_selectedCategories", []) as number[];
   const starredSort = get("vocab_starredSort", false) as boolean;
+  const sort = get("vocab_sort", { field: "english", direction: "asc" }) as VocabularySort;
   const [categories, setCategories] = useState<Category[]>([]);
   const [vocabulary, setVocabulary] = useState<Vocabulary[]>([]);
 
@@ -60,8 +66,8 @@ export default function VocabularyPage() {
         }
 
         setCategories(data.categories);
-      } catch (err: any) {
-        showMessage(`Failed to load categories: ${err.message || err}`);
+      } catch (err: unknown) {
+        showMessage(`Failed to load categories: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
@@ -88,8 +94,8 @@ export default function VocabularyPage() {
       setVocabulary((prev) =>
         prev.map((v) => (v.id === vocabId ? { ...v, starred: !currentStarred } : v))
       );
-    } catch (err: any) {
-      showMessage(`Failed to update starred: ${err.message || err}`);
+    } catch (err: unknown) {
+      showMessage(`Failed to update starred: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -101,10 +107,17 @@ export default function VocabularyPage() {
     set("vocab_selectedCategories", updated);
   };
 
+  const changeSort = (field: VocabularySort["field"]) => {
+    set("vocab_sort", {
+      field,
+      direction: sort.field === field && sort.direction === "asc" ? "desc" : "asc",
+    });
+  };
+
   const filteredVocab = useMemo(() => {
     const lowerSearch = search.toLowerCase().trim();
 
-    let filtered = vocabulary.filter((v) => {
+    const filtered = vocabulary.filter((v) => {
       const matchesSearch =
         v.english.toLowerCase().includes(lowerSearch) ||
         v.japanese.toLowerCase().includes(lowerSearch) ||
@@ -119,14 +132,20 @@ export default function VocabularyPage() {
       return matchesSearch && matchesCategory;
     });
 
-    if (starredSort) {
-      filtered.sort((a, b) => Number(b.starred) - Number(a.starred));
-    } else {
-      filtered.sort((a, b) => a.english.localeCompare(b.english));
-    }
+    filtered.sort((a, b) => {
+      if (starredSort && a.starred !== b.starred) {
+        return Number(b.starred) - Number(a.starred);
+      }
+      const comparison = sort.field === "percentage"
+        ? (parseFloat(a.percentage) || 0) - (parseFloat(b.percentage) || 0)
+        : a.english.localeCompare(b.english);
+      return comparison === 0
+        ? a.english.localeCompare(b.english)
+        : sort.direction === "asc" ? comparison : -comparison;
+    });
 
     return filtered;
-  }, [vocabulary, search, selectedCategories, categories, starredSort]);
+  }, [vocabulary, search, selectedCategories, categories, starredSort, sort.field, sort.direction]);
 
   const averagePercentage = useMemo(() => {
     if (!filteredVocab.length) return "0.0%";
@@ -135,8 +154,8 @@ export default function VocabularyPage() {
   }, [filteredVocab]);
 
   return (
-    <div className="p-6" style={{ background: "var(--background)", color: "var(--foreground)" }}>
-      <div className="flex justify-end space-x-2 mb-4">
+    <div className="vocabulary-page p-2 md:p-6" style={{ background: "var(--background)", color: "var(--foreground)" }}>
+      <div className="flex flex-wrap justify-end gap-2 mb-4">
         <Link
           href="/japanese/practice"
           className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
@@ -171,7 +190,7 @@ export default function VocabularyPage() {
           value={search}
           onChange={(e) => set("vocab_search", e.target.value)}
           autoFocus
-          className="border rounded px-3 py-2 w-full sm:w-1/3 focus:outline-none"
+          className="border rounded px-3 py-2 w-full sm:w-1/3 sm:shrink-0 focus:outline-none"
           style={{
             borderColor: "var(--color-card-border)",
             backgroundColor: "var(--color-card-bg)",
@@ -208,28 +227,44 @@ export default function VocabularyPage() {
               onChange={() => set("vocab_starredSort", !starredSort)}
               className="accent-yellow-500"
             />
-            <span>Starred</span>
+            <span>Starred first</span>
           </label>
         </div>
       </div>
 
-      <div className={`overflow-x-auto ${filteredVocab.length > 15 ? "overflow-y-auto max-h-[650px]" : ""}`}>
+      <div className={`vocabulary-table overflow-x-auto ${filteredVocab.length > 15 ? "vocabulary-table-scroll overflow-y-auto max-h-[650px]" : ""}`}>
         <table className="w-full text-left border-collapse">
           <thead>
             <tr>
-              {["", "English", "Japanese", "Hiragana", "Status", "Percentage", "Category"].map((head, idx) => (
-                <th
-                  key={idx}
-                  className="border-b px-4 py-2"
-                  style={{ borderColor: "var(--color-card-border)" }}
-                >
-                  {head}
-                </th>
-              ))}
+              {["", "English", "Japanese", "Hiragana", "Status", "Percentage", "Category"].map((head, idx) => {
+                const field = head === "English" ? "english" : head === "Percentage" ? "percentage" : null;
+                const active = field === sort.field;
+                return (
+                  <th
+                    key={idx}
+                    scope="col"
+                    aria-sort={field ? active ? sort.direction === "asc" ? "ascending" : "descending" : "none" : undefined}
+                    className="sticky top-0 z-10 bg-card-bg border-b px-4 py-2"
+                    style={{ borderColor: "var(--color-card-border)" }}
+                  >
+                    {field ? (
+                      <button
+                        type="button"
+                        onClick={() => changeSort(field)}
+                        aria-label={`Sort by ${head}, ${active && sort.direction === "asc" ? "descending" : "ascending"}`}
+                        className={`inline-flex items-center gap-2 rounded px-2 py-1 cursor-pointer hover:bg-accent/10 focus-visible:outline-2 focus-visible:outline-accent ${active ? "bg-accent/10 text-accent" : ""}`}
+                      >
+                        {head}
+                        <span aria-hidden="true">{active ? sort.direction === "asc" ? "↑" : "↓" : "↕"}</span>
+                      </button>
+                    ) : head}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
-            {filteredVocab.map((v, i) => {
+            {filteredVocab.map((v) => {
               let statusColor = "bg-gray-400";
               if (v.worst_status.toLowerCase() === "perfect") statusColor = "bg-green-500";
               else if (v.worst_status.toLowerCase() === "good") statusColor = "bg-yellow-400";
@@ -237,7 +272,7 @@ export default function VocabularyPage() {
 
               return (
                 <tr
-                  key={i}
+                  key={v.id}
                   className="hover:bg-gray-100 cursor-pointer"
                   style={{ backgroundColor: "var(--color-card-bg)" }}
                   onClick={() => router.push(`/japanese/vocabulary/${v.id}`)}

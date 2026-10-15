@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
-import { useRouter } from "next/navigation";
+import type { DatesSetArg, EventClickArg } from "@fullcalendar/core";
+import { formatEventRange, validateEventDates } from "@/lib/event-dates";
 import { Cog6ToothIcon, PlusIcon, TrashIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { useMemory } from "@/context/MemoryContext";
 
@@ -14,6 +15,7 @@ type EventItem = {
   title: string;
   description?: string | null;
   date: string | null;
+  endDate: string | null;
   type?: string | null;
   linkedTodo?: Todo | null;
 };
@@ -31,10 +33,11 @@ export default function EventsPage() {
   const [newTitle, setNewTitle] = useState("");
   const [newDesc, setNewDesc] = useState("");
   const [newDate, setNewDate] = useState("");
-  const [newTime, setNewTime] = useState("");
+  const [newEndDate, setNewEndDate] = useState("");
+  const [createError, setCreateError] = useState("");
+  const [saving, setSaving] = useState(false);
   const [newType, setNewType] = useState("");
 
-  const router = useRouter();
   const { pageRouter, get, set } = useMemory();
 
   const load = async () => {
@@ -45,9 +48,10 @@ export default function EventsPage() {
     ]);
     const data = await eventsRes.json();
     const types = await typesRes.json();
-    const normalized = data.map((e: any) => ({
+    const normalized = data.map((e: EventItem) => ({
       ...e,
       date: e.date ? new Date(e.date).toISOString() : null,
+      endDate: e.endDate ? new Date(e.endDate).toISOString() : null,
     }));
     setEvents(normalized);
     setActivityTypes(types);
@@ -58,12 +62,12 @@ export default function EventsPage() {
     load();
   }, []);
 
-  const handleEventClick = (clickInfo: any) => {
+  const handleEventClick = (clickInfo: EventClickArg) => {
     const id = Number(clickInfo.event.id);
     pageRouter('/events', `/events/${id}`);
   };
 
-  const handleMonthChange = (info: any) => {
+  const handleMonthChange = (info: DatesSetArg) => {
     const start = new Date(info.startStr);
     start.setDate(start.getDate() + 14);
     const month = start.getMonth() + 1;
@@ -110,34 +114,43 @@ export default function EventsPage() {
   };
 
   const createEvent = async () => {
-    let dateValue: string | null = null;
-
-    if (newDate && newTime) {
-      const combinedDate = new Date(`${newDate}T${newTime}`);
-      if (!isNaN(combinedDate.getTime())) {
-        dateValue = combinedDate.toISOString();
-      }
+    const error = validateEventDates(newDate || null, newEndDate || null);
+    if (error) {
+      setCreateError(error);
+      return;
     }
-
-    const res = await fetch("/api/events", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: newTitle,
-        description: newDesc,
-        date: dateValue,
-        type: newType,
-      }),
-    });
-
-    if (res.ok) {
+    const dateValue = newDate ? new Date(newDate).toISOString() : null;
+    const endDateValue = newEndDate ? new Date(newEndDate).toISOString() : null;
+    setCreateError("");
+    setSaving(true);
+    try {
+      const res = await fetch("/api/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: newTitle,
+          description: newDesc,
+          date: dateValue,
+          endDate: endDateValue,
+          type: newType,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setCreateError(data.error || "Unable to create event.");
+        return;
+      }
       setNewTitle("");
       setNewDesc("");
       setNewDate("");
-      setNewTime("");
+      setNewEndDate("");
       setNewType("");
       setCreating(false);
       await load();
+    } catch {
+      setCreateError("Unable to create event. Please try again.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -147,6 +160,9 @@ export default function EventsPage() {
       id: String(e.id),
       title: e.title,
       start: e.date!,
+      end: e.endDate || undefined,
+      allDay: false,
+      textColor: "#ffffff",
       backgroundColor: getColorForType(e.type),
       borderColor: getColorForType(e.type),
     }));
@@ -155,15 +171,15 @@ export default function EventsPage() {
   const now = new Date();
     
   const upcomingEvents = events
-    .filter((e) => e.date && new Date(e.date) >= now) // ✅ only keep future or today
+    .filter((e) => e.date && new Date(e.endDate || e.date) >= now)
     .sort((a, b) => new Date(a.date!).getTime() - new Date(b.date!).getTime());
     
   const tbdEvents = events.filter((e) => !e.date);
 
   return (
-    <div className="flex gap-6 p-6">
+    <div className="calendar-page flex flex-col xl:flex-row gap-6 p-2 md:p-6">
       {/* Calendar */}
-      <div className="flex-1 bg-card rounded-xl shadow p-4 card">
+      <div className="min-w-0 flex-1 bg-card rounded-xl shadow p-4 card">
         <div className="fullcalendar-theme">
           <FullCalendar
             plugins={[dayGridPlugin, interactionPlugin]}
@@ -173,13 +189,19 @@ export default function EventsPage() {
             eventClick={handleEventClick}
             height="auto"
             displayEventTime={false}
+            eventDisplay="block"
+            nextDayThreshold="00:00:00"
+            dayMaxEvents={3}
+            eventDidMount={(info) => {
+              info.el.title = `${info.event.title}\n${formatEventRange(info.event.start?.toISOString(), info.event.end?.toISOString())}`;
+            }}
             datesSet={handleMonthChange}
           />
         </div>
       </div>
 
       {/* Sidebar */}
-      <aside className="w-96 bg-card rounded-xl shadow p-4 card flex flex-col">
+      <aside className="calendar-sidebar w-full xl:w-96 xl:shrink-0 bg-card rounded-xl shadow p-4 card flex flex-col">
         <div className="flex justify-between items-center mb-3">
           <h3 className="text-lg font-semibold">Events</h3>
           <div className="flex items-center gap-2">
@@ -201,9 +223,11 @@ export default function EventsPage() {
         </div>
 
         {creating ? (
-          <div className="space-y-2 mb-4 border rounded p-3 bg-accent/5">
+          <form onSubmit={(e) => { e.preventDefault(); void createEvent(); }} className="space-y-2 mb-4 border rounded p-3 bg-accent/5">
             <input
               placeholder="Title"
+              aria-label="Title"
+              required
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
               className="w-full border rounded px-2 py-1"
@@ -215,20 +239,26 @@ export default function EventsPage() {
               className="w-full border rounded px-2 py-1"
               rows={2}
             />
-            <div className="flex gap-2">
+            <label className="block text-sm">
+              <span className="block mb-1">Start date and time</span>
               <input
-                type="date"
+                type="datetime-local"
                 value={newDate}
                 onChange={(e) => setNewDate(e.target.value)}
-                className="flex-1 border rounded px-2 py-1"
+                className="w-full min-w-0 border rounded px-2 py-1"
               />
+            </label>
+            <label className="block text-sm">
+              <span className="block mb-1">End date and time (optional)</span>
               <input
-                type="time"
-                value={newTime}
-                onChange={(e) => setNewTime(e.target.value)}
-                className="flex-1 border rounded px-2 py-1"
+                type="datetime-local"
+                value={newEndDate}
+                min={newDate || undefined}
+                onChange={(e) => setNewEndDate(e.target.value)}
+                className="w-full min-w-0 border rounded px-2 py-1"
               />
-            </div>
+            </label>
+            <p className="text-xs text-gray-500">Leave both dates blank for a TBD event.</p>
             <select
               value={newType}
               onChange={(e) => setNewType(e.target.value)}
@@ -240,12 +270,14 @@ export default function EventsPage() {
               ))}
             </select>
             <button
-              onClick={createEvent}
-              className="w-full bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700"
+              type="submit"
+              disabled={saving}
+              className="w-full bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700 disabled:opacity-50"
             >
-              Save Event
+              {saving ? "Saving…" : "Save Event"}
             </button>
-          </div>
+            {createError && <p role="alert" className="text-sm text-red-600">{createError}</p>}
+          </form>
         ) : loading ? (
           <div>Loading...</div>
         ) : (
@@ -253,7 +285,7 @@ export default function EventsPage() {
             {/* Upcoming events */}
             <div className="mb-4">
               <h3 className="text-medium mb-2">Upcoming</h3>
-              <ul className="space-y-2 max-h-70 overflow-y-auto pr-1">
+              <ul className="calendar-event-list space-y-2 max-h-70 overflow-y-auto pr-1">
                 {upcomingEvents.length === 0 && (
                   <li className="text-sm text-gray-500">No upcoming events</li>
                 )}
@@ -270,11 +302,8 @@ export default function EventsPage() {
                     <div>
                       <div className="font-medium">{ev.title}</div>
                       <div className="text-sm text-gray-500">
-                        {new Date(ev.date!).toLocaleDateString()}{" "}
-                        {new Date(ev.date!).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
+                        {formatEventRange(ev.date, ev.endDate)}
+                        {ev.date && new Date(ev.date) <= now && ev.endDate && <span className="block text-blue-500">In progress</span>}
                       </div>
                     </div>
                   </li>
@@ -285,7 +314,7 @@ export default function EventsPage() {
             {/* TBD events */}
             <div>
               <h3 className="text-medium mb-2">TBD</h3>
-              <ul className="space-y-2 max-h-70 overflow-y-auto pr-1">
+              <ul className="calendar-event-list space-y-2 max-h-70 overflow-y-auto pr-1">
                 {tbdEvents.length === 0 && (
                   <li className="text-sm text-gray-500">No TBD events</li>
                 )}

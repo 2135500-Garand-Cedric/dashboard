@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 import { CalendarDaysIcon } from "@heroicons/react/24/outline";
 import { useMemory } from "@/context/MemoryContext";
+import { formatEventRange } from "@/lib/event-dates";
 
 type Event = {
   id: number;
   title: string;
-  date: string; // ISO date string
+  date: string | null;
+  endDate: string | null;
 };
 
 export default function EventDashboardTile() {
@@ -21,8 +23,8 @@ export default function EventDashboardTile() {
     // Sort by date and filter out past events
     const now = new Date();
     const upcoming = data
-      .filter((e) => new Date(e.date) >= now)
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      .filter((e) => e.date && new Date(e.endDate || e.date) >= now)
+      .sort((a, b) => new Date(a.date!).getTime() - new Date(b.date!).getTime());
 
     setEvents(upcoming.slice(0, 3));
   };
@@ -62,7 +64,7 @@ export default function EventDashboardTile() {
       ) : (
         <ul className="space-y-3">
           {events.map((event) => {
-            const date = new Date(event.date);
+            const date = new Date(event.date!);
             const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
             return (
@@ -76,7 +78,7 @@ export default function EventDashboardTile() {
                   <span className="text-xs text-gray-500">{time}</span>
                 </div>
                 <span className="text-xs text-gray-400">
-                  {date.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}
+                  {formatEventRange(event.date, event.endDate)}
                 </span>
               </li>
             );

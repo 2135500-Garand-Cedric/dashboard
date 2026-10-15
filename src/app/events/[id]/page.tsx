@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   PencilSquareIcon,
@@ -10,6 +10,7 @@ import {
 } from "@heroicons/react/24/solid";
 import { useSnackbar } from "@/context/SnackbarContext";
 import { useMemory } from "@/context/MemoryContext";
+import { formatEventRange, toLocalDateTime, validateEventDates } from "@/lib/event-dates";
 
 type Todo = { id: number; title: string; done: boolean };
 type EventItem = {
@@ -17,6 +18,7 @@ type EventItem = {
   title: string;
   description?: string | null;
   date?: string | null;
+  endDate?: string | null;
   type?: string | null;
   linkedTodo?: Todo | null;
 };
@@ -35,14 +37,16 @@ export default function EventPage() {
   const [descDraft, setDescDraft] = useState("");
   const [typeDraft, setTypeDraft] = useState<string | null>("");
   const [dateDraft, setDateDraft] = useState("");
-  const [timeDraft, setTimeDraft] = useState("");
+  const [endDateDraft, setEndDateDraft] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [saving, setSaving] = useState(false);
   const { showMessage } = useSnackbar();
 
   const getColorForType = (type?: string | null) => {
     return activityTypes.find((activityType) => activityType.name.toLowerCase() === type?.toLowerCase())?.color || "#9ca3af";
   };
 
-  const loadEvent = async () => {
+  const loadEvent = useCallback(async () => {
     const [eventRes, typesRes] = await Promise.all([
       fetch(`/api/events/${eventId}`),
       fetch("/api/activity-types"),
@@ -55,48 +59,50 @@ export default function EventPage() {
     setDescDraft(data.description || "");
     setTypeDraft(data.type || "");
 
-    if (data.date) {
-      const eventDate = new Date(data.date);
-      setDateDraft(eventDate.toISOString().slice(0, 10));
-      setTimeDraft(
-        eventDate.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        })
-      );
-    } else {
-      setDateDraft("");
-      setTimeDraft("");
-    }
-  };
+    setDateDraft(toLocalDateTime(data.date));
+    setEndDateDraft(toLocalDateTime(data.endDate));
+  }, [eventId]);
 
   useEffect(() => {
     loadEvent();
-  }, [eventId]);
+  }, [loadEvent]);
 
   if (!event) return <div className="text-center py-10">Loading...</div>;
 
   const saveEvent = async () => {
-    let dateValue: string | null = null;
-
-    if (dateDraft && timeDraft) {
-      const combinedDate = new Date(`${dateDraft}T${timeDraft}`);
-      dateValue = combinedDate.toISOString();
+    const error = validateEventDates(dateDraft || null, endDateDraft || null);
+    if (error) {
+      setSaveError(error);
+      return;
     }
-
-    await fetch(`/api/events/${eventId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: titleDraft,
-        description: descDraft,
-        type: typeDraft,
-        date: dateValue,
-      }),
-    });
-    setEditMode(false);
-    await loadEvent();
+    const dateValue = dateDraft ? new Date(dateDraft).toISOString() : null;
+    const endDateValue = endDateDraft ? new Date(endDateDraft).toISOString() : null;
+    setSaveError("");
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/events/${eventId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: titleDraft,
+          description: descDraft,
+          type: typeDraft,
+          date: dateValue,
+          endDate: endDateValue,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setSaveError(data.error || "Unable to save event.");
+        return;
+      }
+      setEditMode(false);
+      await loadEvent();
+    } catch {
+      setSaveError("Unable to save event. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const deleteEvent = async () => {
@@ -147,9 +153,10 @@ export default function EventPage() {
             <button
               onClick={async () => {
                 if (editMode) await saveEvent();
-                setEditMode(!editMode);
+                else setEditMode(true);
               }}
-              className="flex items-center gap-1 border rounded px-3 py-1 hover:bg-gray-100 hover:text-black cursor-pointer"
+              disabled={saving}
+              className="flex items-center gap-1 border rounded px-3 py-1 disabled:opacity-50 hover:bg-gray-100 hover:text-black cursor-pointer"
             >
               {editMode ? (
                 <>
@@ -220,46 +227,36 @@ export default function EventPage() {
             )}
           </div>
 
-          {/* Date & Time */}
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <label className="block text-sm text-gray-500 mb-1">Date</label>
-              {editMode ? (
+          {/* Start and optional end */}
+          {editMode ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="block text-sm">
+                <span className="block text-gray-500 mb-1">Start date and time</span>
                 <input
-                  type="date"
+                  type="datetime-local"
                   value={dateDraft}
                   onChange={(e) => setDateDraft(e.target.value)}
-                  className="w-full border rounded px-3 py-2"
+                  className="w-full min-w-0 border rounded px-3 py-2"
                 />
-              ) : event.date ? (
-                <span className="text-gray-700">
-                  {new Date(event.date).toLocaleDateString()}
-                </span>
-              ) : (
-                <span className="text-gray-400">TBD</span>
-              )}
-            </div>
-            <div className="flex-1">
-              <label className="block text-sm text-gray-500 mb-1">Time</label>
-              {editMode ? (
+              </label>
+              <label className="block text-sm">
+                <span className="block text-gray-500 mb-1">End date and time (optional)</span>
                 <input
-                  type="time"
-                  value={timeDraft}
-                  onChange={(e) => setTimeDraft(e.target.value)}
-                  className="w-full border rounded px-3 py-2"
+                  type="datetime-local"
+                  value={endDateDraft}
+                  min={dateDraft || undefined}
+                  onChange={(e) => setEndDateDraft(e.target.value)}
+                  className="w-full min-w-0 border rounded px-3 py-2"
                 />
-              ) : event.date ? (
-                <span className="text-gray-700">
-                  {new Date(event.date).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
-              ) : (
-                <span className="text-gray-400">TBD</span>
-              )}
+              </label>
+              {saveError && <p role="alert" className="text-sm text-red-600 sm:col-span-2">{saveError}</p>}
             </div>
-          </div>
+          ) : (
+            <div>
+              <div className="block text-sm text-gray-500 mb-1">Date and time</div>
+              <p>{formatEventRange(event.date, event.endDate)}</p>
+            </div>
+          )}
 
           {/* Linked Todo */}
           <div>

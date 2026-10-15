@@ -42,7 +42,7 @@ export default function SideMenu() {
 
       {/* Sidebar */}
       <div
-        className={`fixed top-0 left-0 w-64 z-30 transform transition-transform duration-300
+        className={`fixed top-0 left-0 w-64 shrink-0 z-30 transform transition-transform duration-300
           ${isOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0 md:static md:shadow-none flex flex-col h-screen justify-between`}
         style={{
           backgroundColor: "var(--color-card-bg)",

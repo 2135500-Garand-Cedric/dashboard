@@ -86,3 +86,125 @@ body {
   font-size: 0.875rem;
   cursor: pointer;
 }
+
+.fullcalendar-theme .fc-daygrid-block-event .fc-event-main {
+  color: #fff;
+}
+
+.fullcalendar-theme .fc-event-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+/* Square the continuing edge when an event runs across week rows. */
+.fullcalendar-theme .fc-daygrid-block-event:not(.fc-event-start) {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.fullcalendar-theme .fc-daygrid-block-event:not(.fc-event-end) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.fullcalendar-theme .fc-daygrid-more-link {
+  color: var(--accent);
+  font-size: 0.75rem;
+}
+
+.fullcalendar-theme .fc-popover {
+  background: var(--card-bg);
+  border-color: var(--card-border);
+}
+
+/* Scale gradually from full HD to larger desktop viewports. Rem-based
+   spacing and controls grow together without changing browser zoom. */
+@media (min-width: 2000px) {
+  :root {
+    font-size: clamp(16px, calc(0.625vw + 4px), 22px);
+  }
+
+  .dashboard-grid > * {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .dashboard-grid > .card,
+  .dashboard-grid > .rounded-xl {
+    padding: 1.5rem;
+  }
+
+  .dashboard-grid .music-thumbnail {
+    height: auto;
+    aspect-ratio: 16 / 9;
+  }
+
+  .calendar-sidebar {
+    width: clamp(24rem, 21vw, 30rem);
+  }
+
+  .calendar-page .fc-daygrid-day-frame {
+    min-height: clamp(6rem, 10vh, 11rem);
+  }
+
+  .calendar-page .fc-daygrid-day-number {
+    padding: 0.5rem;
+  }
+
+  .calendar-page .fc-daygrid-event {
+    padding-block: 0.25rem;
+  }
+
+  .calendar-event-list {
+    max-height: clamp(17.5rem, 32vh, 28rem);
+  }
+
+  .practice-card {
+    max-width: calc(32rem + clamp(0px, calc(60vw - 1152px), 500px));
+    padding: 2.5rem;
+  }
+
+  .practice-card button,
+  .practice-card a {
+    padding: 0.5rem 1rem;
+  }
+
+  .practice-categories {
+    max-height: clamp(12rem, 30vh, 22rem);
+  }
+
+  .practice-session {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: clamp(20rem, 42vh, 32rem);
+  }
+
+  .practice-word {
+    font-size: clamp(1.5rem, 1.5vw, 2.5rem);
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+
+  .practice-translation h3 {
+    font-size: 1.5rem;
+    line-height: 1.6;
+  }
+
+  .practice-kanji {
+    width: 12rem;
+    height: 12rem;
+  }
+
+  .vocabulary-table-scroll {
+    max-height: max(650px, calc(100dvh - 20rem));
+  }
+
+  .vocabulary-table td,
+  .vocabulary-table th {
+    padding-block: 0.75rem;
+  }
+}

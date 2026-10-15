@@ -28,7 +28,7 @@ export default function Home() {
 
   return (
     <div
-      className="p-8"
+      className="dashboard-page p-4 md:p-8"
       style={{ background: "var(--background)", color: "var(--foreground)" }}
     >
       {/* Header with title + progress */}
@@ -43,7 +43,7 @@ export default function Home() {
       </div>
 
       {/* Main grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="dashboard-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         <EventTile />
         <TodoTile />
         <MusicTile />
