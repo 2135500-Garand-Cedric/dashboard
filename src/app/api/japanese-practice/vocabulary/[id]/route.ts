@@ -2,6 +2,7 @@
 // Fetches a specific vocabulary entry with verb forms and activity status
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { recordJapaneseProgress } from "@/lib/japanese/progress-history";
 import { conjugateVerb } from "@/lib/japanese/conjugation";
 import { calculateActivityStats } from "@/lib/japanese/utils"; // import the util
 import { getKnownKanji, isKanjiWritingEligible, getApplicableActivityIds } from "@/lib/japanese/kanji-writing";
@@ -178,7 +179,10 @@ export async function PATCH(
         const reading = hiragana ?? existing.hiragana;
         const type = verbType ?? existing.verbType;
 
-        if (!base || !reading || !type) return updatedVocab;
+        if (!base || !reading || !type) {
+          await recordJapaneseProgress(tx);
+          return updatedVocab;
+        }
 
         // 7️⃣ Generate new forms
         const forms = conjugateVerb(base, reading, type);
@@ -228,6 +232,7 @@ export async function PATCH(
         });
       }
 
+      await recordJapaneseProgress(tx);
       return updatedVocab;
     });
 
@@ -253,7 +258,10 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: "Invalid vocabulary ID" }, { status: 400 });
     }
 
-    await prisma.vocabulary.delete({ where: { id: vocabId } });
+    await prisma.$transaction(async (tx) => {
+      await tx.vocabulary.delete({ where: { id: vocabId } });
+      await recordJapaneseProgress(tx);
+    });
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     console.error(error);

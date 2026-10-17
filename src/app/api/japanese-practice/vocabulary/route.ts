@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getKnownKanji, isKanjiWritingEligible, getApplicableActivityIds } from "@/lib/japanese/kanji-writing";
-import { calculateActivityStats } from "@/lib/japanese/utils";
+import { getKnownKanji, isKanjiWritingEligible } from "@/lib/japanese/kanji-writing";
+import { vocabularyProgress } from "@/lib/japanese/vocabulary-progress";
+import { recordJapaneseProgress } from "@/lib/japanese/progress-history";
 
 // Get all the vocabulary for a user
 export async function GET() {
@@ -26,22 +27,13 @@ export async function GET() {
     orderBy: { english: "asc" },
   });
 
-  const knownKanji = getKnownKanji(vocab);
-  const statusRank: Record<string, number> = { WEAK: 0, GOOD: 1, PERFECT: 2 };
-  const result = vocab.map((v) => {
-    const baseStats = calculateActivityStats(v.activityVocab, getApplicableActivityIds(activityIds, isKanjiWritingEligible(v.japanese, knownKanji)));
-    const stats = [baseStats];
-    if (v.category?.name.trim().toLowerCase() === "verb") {
-      stats.push(...v.verbForms.map((form) => calculateActivityStats(form.activityVocab, getApplicableActivityIds(activityIds, false, true))));
-    }
-    const worstStatus = stats.reduce((worst, stat) => statusRank[stat.worstStatus] < statusRank[worst] ? stat.worstStatus : worst, baseStats.worstStatus);
-    return {
-      id: v.id, english: v.english, japanese: v.japanese, hiragana: v.hiragana,
-      category_name: v.category?.name, starred: v.starred,
-      worst_status: worstStatus,
-      percentage: (stats.reduce((sum, stat) => sum + Number(stat.percentage), 0) / stats.length).toFixed(2),
-    };
-  });
+  const progress = vocabularyProgress(vocab, activityIds);
+  const result = vocab.map((v, index) => ({
+    id: v.id, english: v.english, japanese: v.japanese, hiragana: v.hiragana,
+    category_name: v.category?.name, starred: v.starred,
+    worst_status: progress[index].worstStatus,
+    percentage: progress[index].percentage.toFixed(2),
+  }));
 
   return NextResponse.json(result);
 }
@@ -124,6 +116,7 @@ export async function PATCH(req: Request) {
           weakCount: counts.weakCount,
         },
       });
+      await recordJapaneseProgress(tx);
     });
 
     return NextResponse.json({

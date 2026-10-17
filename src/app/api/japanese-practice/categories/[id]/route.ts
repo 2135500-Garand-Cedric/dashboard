@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { recordJapaneseProgress } from "@/lib/japanese/progress-history";
 
 // ✅ PATCH /api/categories/[id] — Update category name
 export async function PATCH(
@@ -25,16 +26,20 @@ export async function PATCH(
       );
     }
 
-    const updatedCategory = await prisma.category.update({
-      where: { id: categoryId },
-      data: { name: name.trim() },
+    const updatedCategory = await prisma.$transaction(async (tx) => {
+      const category = await tx.category.update({
+        where: { id: categoryId },
+        data: { name: name.trim() },
+      });
+      await recordJapaneseProgress(tx);
+      return category;
     });
 
     return NextResponse.json({ success: true, category: updatedCategory });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("PATCH /api/categories/[id] error:", error);
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: error instanceof Error ? error.message : "Unable to update category" },
       { status: 500 }
     );
   }
@@ -80,10 +85,10 @@ export async function DELETE(
       success: true,
       message: "Category deleted successfully",
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("DELETE /api/categories/[id] error:", error);
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: error instanceof Error ? error.message : "Unable to update category" },
       { status: 500 }
     );
   }

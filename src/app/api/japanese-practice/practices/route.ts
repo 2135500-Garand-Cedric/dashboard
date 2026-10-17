@@ -1,36 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { torontoDayRange } from "@/lib/japanese/dates";
 
 // GET: fetch today's practice records
 export async function GET() {
   try {
-    // 1️⃣ Get start & end of today
-    const now = new Date();
-
-    // Get Toronto time as string
-    const torontoNow = new Date(
-      now.toLocaleString("en-US", { timeZone: "America/Toronto" })
-    );
-
-    // Start of Toronto day
-    const startOfDayToronto = new Date(torontoNow);
-    startOfDayToronto.setHours(0, 0, 0, 0);
-
-    // End of Toronto day
-    const endOfDayToronto = new Date(torontoNow);
-    endOfDayToronto.setHours(23, 59, 59, 999);
-
-    // Convert back to UTC
-    const startOfDay = new Date(startOfDayToronto.toISOString());
-    const endOfDay = new Date(endOfDayToronto.toISOString());
-
+    const { start, end } = torontoDayRange();
 
     // 2️⃣ Fetch only today's practices
     const practices = await prisma.practice.findMany({
       where: {
         date: {
-          gte: startOfDay,
-          lte: endOfDay,
+          gte: start,
+          lt: end,
         },
       },
       include: {
@@ -52,10 +34,10 @@ export async function GET() {
     }));
 
     return NextResponse.json({ success: true, practices: result });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(error);
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: error instanceof Error ? error.message : "Unable to load practices" },
       { status: 500 }
     );
   }

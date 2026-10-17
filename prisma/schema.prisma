@@ -213,3 +213,14 @@ model VerbForm {
   @@unique([baseVocabId, formTypeId])
 }
 
+model JapaneseProgressSnapshot {
+  id              Int      @id @default(autoincrement())
+  userId          Int
+  day             String
+  average         Float
+  vocabularyCount Int
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, day])
+}
+

@@ -1,0 +1,344 @@
+{
+  "sources": {
+    "N5": "https://jlptsensei.com/jlpt-n5-nouns-vocabulary-list/",
+    "N4": "https://jlptsensei.com/jlpt-n4-nouns-vocabulary-list/"
+  },
+  "words": [
+    {
+      "japanese": "電車",
+      "hiragana": "でんしゃ",
+      "english": "train",
+      "level": "N5"
+    },
+    {
+      "japanese": "駅",
+      "hiragana": "えき",
+      "english": "station",
+      "level": "N5"
+    },
+    {
+      "japanese": "病院",
+      "hiragana": "びょういん",
+      "english": "hospital",
+      "level": "N5"
+    },
+    {
+      "japanese": "銀行",
+      "hiragana": "ぎんこう",
+      "english": "bank",
+      "level": "N5"
+    },
+    {
+      "japanese": "大学",
+      "hiragana": "だいがく",
+      "english": "university",
+      "level": "N5"
+    },
+    {
+      "japanese": "朝ご飯",
+      "hiragana": "あさごはん",
+      "english": "breakfast",
+      "level": "N5"
+    },
+    {
+      "japanese": "晩ご飯",
+      "hiragana": "ばんごはん",
+      "english": "dinner",
+      "level": "N5"
+    },
+    {
+      "japanese": "映画",
+      "hiragana": "えいが",
+      "english": "movie",
+      "level": "N5"
+    },
+    {
+      "japanese": "映画館",
+      "hiragana": "えいがかん",
+      "english": "cinema",
+      "level": "N5"
+    },
+    {
+      "japanese": "英語",
+      "hiragana": "えいご",
+      "english": "English language",
+      "level": "N5"
+    },
+    {
+      "japanese": "地下鉄",
+      "hiragana": "ちかてつ",
+      "english": "subway",
+      "level": "N5"
+    },
+    {
+      "japanese": "地図",
+      "hiragana": "ちず",
+      "english": "map",
+      "level": "N5"
+    },
+    {
+      "japanese": "台所",
+      "hiragana": "だいどころ",
+      "english": "kitchen",
+      "level": "N5"
+    },
+    {
+      "japanese": "出口",
+      "hiragana": "でぐち",
+      "english": "exit",
+      "level": "N5"
+    },
+    {
+      "japanese": "電話",
+      "hiragana": "でんわ",
+      "english": "telephone",
+      "level": "N5"
+    },
+    {
+      "japanese": "動物",
+      "hiragana": "どうぶつ",
+      "english": "animal",
+      "level": "N5"
+    },
+    {
+      "japanese": "封筒",
+      "hiragana": "ふうとう",
+      "english": "envelope",
+      "level": "N5"
+    },
+    {
+      "japanese": "牛乳",
+      "hiragana": "ぎゅうにゅう",
+      "english": "milk",
+      "level": "N5"
+    },
+    {
+      "japanese": "牛肉",
+      "hiragana": "ぎゅうにく",
+      "english": "beef",
+      "level": "N5"
+    },
+    {
+      "japanese": "豚肉",
+      "hiragana": "ぶたにく",
+      "english": "pork",
+      "level": "N5"
+    },
+    {
+      "japanese": "帽子",
+      "hiragana": "ぼうし",
+      "english": "hat",
+      "level": "N5"
+    },
+    {
+      "japanese": "鉛筆",
+      "hiragana": "えんぴつ",
+      "english": "pencil",
+      "level": "N5"
+    },
+    {
+      "japanese": "茶碗",
+      "hiragana": "ちゃわん",
+      "english": "rice bowl",
+      "level": "N5"
+    },
+    {
+      "japanese": "箱",
+      "hiragana": "はこ",
+      "english": "box",
+      "level": "N5"
+    },
+    {
+      "japanese": "花",
+      "hiragana": "はな",
+      "english": "flower",
+      "level": "N5"
+    },
+    {
+      "japanese": "橋",
+      "hiragana": "はし",
+      "english": "bridge",
+      "level": "N5"
+    },
+    {
+      "japanese": "部屋",
+      "hiragana": "へや",
+      "english": "room",
+      "level": "N5"
+    },
+    {
+      "japanese": "晴れ",
+      "hiragana": "はれ",
+      "english": "clear weather",
+      "level": "N5"
+    },
+    {
+      "japanese": "場所",
+      "hiragana": "ばしょ",
+      "english": "place",
+      "level": "N4"
+    },
+    {
+      "japanese": "文化",
+      "hiragana": "ぶんか",
+      "english": "culture",
+      "level": "N4"
+    },
+    {
+      "japanese": "文法",
+      "hiragana": "ぶんぽう",
+      "english": "grammar",
+      "level": "N4"
+    },
+    {
+      "japanese": "地理",
+      "hiragana": "ちり",
+      "english": "geography",
+      "level": "N4"
+    },
+    {
+      "japanese": "注意",
+      "hiragana": "ちゅうい",
+      "english": "caution",
+      "level": "N4"
+    },
+    {
+      "japanese": "注射",
+      "hiragana": "ちゅうしゃ",
+      "english": "injection",
+      "level": "N4"
+    },
+    {
+      "japanese": "駐車場",
+      "hiragana": "ちゅうしゃじょう",
+      "english": "parking lot",
+      "level": "N4"
+    },
+    {
+      "japanese": "大学生",
+      "hiragana": "だいがくせい",
+      "english": "university student",
+      "level": "N4"
+    },
+    {
+      "japanese": "暖房",
+      "hiragana": "だんぼう",
+      "english": "heating",
+      "level": "N4"
+    },
+    {
+      "japanese": "男性",
+      "hiragana": "だんせい",
+      "english": "man",
+      "level": "N4"
+    },
+    {
+      "japanese": "動物園",
+      "hiragana": "どうぶつえん",
+      "english": "zoo",
+      "level": "N4"
+    },
+    {
+      "japanese": "道具",
+      "hiragana": "どうぐ",
+      "english": "tool",
+      "level": "N4"
+    },
+    {
+      "japanese": "枝",
+      "hiragana": "えだ",
+      "english": "branch",
+      "level": "N4"
+    },
+    {
+      "japanese": "復習",
+      "hiragana": "ふくしゅう",
+      "english": "review",
+      "level": "N4"
+    },
+    {
+      "japanese": "原因",
+      "hiragana": "げんいん",
+      "english": "cause",
+      "level": "N4"
+    },
+    {
+      "japanese": "技術",
+      "hiragana": "ぎじゅつ",
+      "english": "technology",
+      "level": "N4"
+    },
+    {
+      "japanese": "歯医者",
+      "hiragana": "はいしゃ",
+      "english": "dentist",
+      "level": "N4"
+    },
+    {
+      "japanese": "花見",
+      "hiragana": "はなみ",
+      "english": "cherry-blossom viewing",
+      "level": "N4"
+    },
+    {
+      "japanese": "発音",
+      "hiragana": "はつおん",
+      "english": "pronunciation",
+      "level": "N4"
+    },
+    {
+      "japanese": "返事",
+      "hiragana": "へんじ",
+      "english": "reply",
+      "level": "N4"
+    },
+    {
+      "japanese": "光",
+      "hiragana": "ひかり",
+      "english": "light",
+      "level": "N4"
+    },
+    {
+      "japanese": "引き出し",
+      "hiragana": "ひきだし",
+      "english": "drawer",
+      "level": "N4"
+    },
+    {
+      "japanese": "昼休み",
+      "hiragana": "ひるやすみ",
+      "english": "lunch break",
+      "level": "N4"
+    },
+    {
+      "japanese": "翻訳",
+      "hiragana": "ほんやく",
+      "english": "translation",
+      "level": "N4"
+    },
+    {
+      "japanese": "星",
+      "hiragana": "ほし",
+      "english": "star",
+      "level": "N4"
+    },
+    {
+      "japanese": "意見",
+      "hiragana": "いけん",
+      "english": "opinion",
+      "level": "N4"
+    },
+    {
+      "japanese": "田舎",
+      "hiragana": "いなか",
+      "english": "countryside",
+      "level": "N4"
+    },
+    {
+      "japanese": "石",
+      "hiragana": "いし",
+      "english": "stone",
+      "level": "N4"
+    }
+  ]
+}

@@ -378,6 +378,10 @@ async function main() {
     if (!existing) await prisma.practice.create({ data: { ...data, date: practiceDates[index] } });
   }
 
+  if (process.env.NODE_ENV === "development") {
+    await require("./seed-statistics-demo")(prisma, user, categories, activities);
+  }
+
   console.log(`Seed complete for ${user.email} (user id ${user.id}).`);
   console.log("Created or verified dashboard, Japanese practice, quest, todo, event, and practice data.");
 }

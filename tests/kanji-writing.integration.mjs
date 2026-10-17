@@ -18,6 +18,10 @@ test("writing session saves its base-word status and counts it in the percentage
   const prisma = new PrismaClient();
   const rollback = new Error("ROLLBACK_TEST_FIXTURE");
   const utils = load("../src/lib/japanese/utils.ts");
+  const kanji = load("../src/lib/japanese/kanji-writing.ts");
+  const dates = load("../src/lib/japanese/dates.ts");
+  const progress = load("../src/lib/japanese/vocabulary-progress.ts", { "./kanji-writing": kanji, "./utils": utils });
+  const history = load("../src/lib/japanese/progress-history.ts", { "./dates": dates, "./vocabulary-progress": progress });
   try {
     await assert.rejects(prisma.$transaction(async (tx) => {
       const word = await tx.vocabulary.create({ data: {
@@ -26,8 +30,9 @@ test("writing session saves its base-word status and counts it in the percentage
       const link = await tx.activityVocab.create({ data: { vocabId: word.id, activityId: 5, status: "WEAK" } });
       const { PATCH } = load("../src/app/api/japanese-practice/vocabulary/route.ts", {
         "@/lib/prisma": { prisma: { $transaction: (callback) => callback(tx) } },
-        "@/lib/japanese/utils": utils,
-        "@/lib/japanese/kanji-writing": load("../src/lib/japanese/kanji-writing.ts"),
+        "@/lib/japanese/vocabulary-progress": progress,
+        "@/lib/japanese/progress-history": history,
+        "@/lib/japanese/kanji-writing": kanji,
       });
       for (const [status, percentage] of [["GOOD", "10.00"], ["PERFECT", "20.00"]]) {
         const response = await PATCH(new Request("http://localhost/api/japanese-practice/vocabulary", {
@@ -41,6 +46,10 @@ test("writing session saves its base-word status and counts it in the percentage
       }
       const updated = await tx.vocabulary.findUnique({ where: { id: word.id } });
       assert.ok(updated.lastPracticed);
+      const snapshot = await tx.japaneseProgressSnapshot.findUnique({ where: { userId_day: { userId: 1, day: dates.torontoDateKey(new Date()) } } });
+      assert.ok(snapshot);
+      assert.ok(Number.isFinite(snapshot.average));
+      assert.equal(snapshot.vocabularyCount, await tx.vocabulary.count({ where: { userId: 1 } }));
       throw rollback;
     }, { timeout: 10000 }), (error) => error === rollback);
   } finally {

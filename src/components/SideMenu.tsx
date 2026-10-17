@@ -21,6 +21,7 @@ export default function SideMenu() {
     { name: "Todos", href: "/todos", icon: DocumentTextIcon },
     { name: "Calendar", href: "/events", icon: FolderIcon },
     { name: "Time Manager", href: "/timemanager", icon: ChartPieIcon },
+    { name: "Japanese Statistics", href: "/japanese/statistics", icon: ChartPieIcon },
     { name: "Japanese Practice", href: "/japanese/practice", icon: DocumentTextIcon },
   ];
 

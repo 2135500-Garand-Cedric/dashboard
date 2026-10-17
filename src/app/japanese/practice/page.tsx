@@ -14,6 +14,7 @@ interface Word {
   hiragana: string;
   read_hiragana: boolean;
   status: string;
+  category_name: string | null;
 }
 
 function KanjiStroke({ character }: { character: string }) {
@@ -301,7 +302,12 @@ export default function PracticePage() {
 
             {/* Display word for activities other than japanese to english listening */}
             {selectedActivity !== 4 && (
-              <h3 className="practice-word text-xl font-bold">{getWordDisplay()}</h3>
+              <div>
+                <h3 className="practice-word text-xl font-bold">{getWordDisplay()}</h3>
+                {selectedActivity === 5 && currentWord.category_name && (
+                  <p className="mt-1 text-sm text-gray-400">{currentWord.category_name}</p>
+                )}
+              </div>
             )}
 
             {/* Input box for English → Japanese writing */}
