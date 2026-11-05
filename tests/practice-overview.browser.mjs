@@ -6,7 +6,7 @@ import { encode } from "next-auth/jwt";
 
 // Optional real-layout regression: install Playwright separately, then run with
 // RUN_PRACTICE_BROWSER_TEST=1 (NODE_PATH may point to a temporary installation).
-test("each practice status list scrolls inside its card at desktop and mobile sizes", { skip: process.env.RUN_PRACTICE_BROWSER_TEST !== "1" }, async () => {
+test("desktop word lists scroll independently while phones scroll the whole overview", { skip: process.env.RUN_PRACTICE_BROWSER_TEST !== "1" }, async () => {
   const require = createRequire(import.meta.url);
   const { chromium } = require("playwright");
   const { loadEnvConfig } = require("@next/env");
@@ -36,6 +36,26 @@ test("each practice status list scrolls inside its card at desktop and mobile si
         const root = document.querySelector(".practice-overview");
         return root?.style.getPropertyValue("--practice-overview-height");
       });
+      if (viewport.width < 1024) {
+        for (const label of ["Weak words", "Good words", "Perfect words"]) {
+          const list = page.getByRole("list", { name: label });
+          const size = await list.evaluate(element => ({ height: element.clientHeight, content: element.scrollHeight, overflow: getComputedStyle(element).overflowY }));
+          assert.equal(size.overflow, "visible", "phone lists must grow with their words");
+          assert.equal(size.height, size.content, "phone lists must not need internal scrolling");
+        }
+        const positions = await page.evaluate(() => ["Weak", "Good", "Perfect"].map(status => document.querySelector(`[aria-label="${status} words"]`).getBoundingClientRect().top));
+        assert.ok(positions[0] < positions[1] && positions[1] < positions[2], "phone sections must be stacked Weak, Good, Perfect");
+        await good.scrollIntoViewIfNeeded();
+        const before = await page.evaluate(() => window.scrollY);
+        const box = await good.boundingBox();
+        await page.mouse.move(box.x + box.width / 2, viewport.height / 2);
+        await page.mouse.wheel(0, 200);
+        await page.waitForFunction(previous => window.scrollY > previous, before);
+        assert.equal(await good.evaluate(element => element.scrollTop), 0, "scrolling over Good on a phone must move the page");
+        await page.getByRole("list", { name: "Perfect words" }).locator("li").last().scrollIntoViewIfNeeded();
+        console.log(`Verified whole-page scrolling at ${viewport.width}×${viewport.height}.`);
+        continue;
+      }
       const dimensions = await good.evaluate(element => {
         const root = document.querySelector(".practice-overview");
         return { height: element.clientHeight, content: element.scrollHeight, root: root.getBoundingClientRect().height, rootHeight: getComputedStyle(root).height, rootInline: root.getAttribute("style"), section: element.closest("section").getBoundingClientRect().height, grid: element.closest("section").parentElement.getBoundingClientRect().height };

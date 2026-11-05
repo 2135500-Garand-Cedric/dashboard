@@ -81,7 +81,7 @@ Click a Vocabulary practice or Kanji writing practice bar in Japanese Statistics
 
 The `20261105150000_add_practice_session_details` migration adds these details to Practice while preserving older records. Older practices display their existing totals with missing details marked as not recorded; their original words, durations, and average changes cannot be recovered. Apply the migration through the normal production deployment (`prisma migrate deploy`); production Compose already runs it on startup. Unit coverage: `node --test tests/practice-sessions.test.mjs`. Database coverage: `RUN_PRACTICE_SESSION_DB_TEST=1 node tests/practice-sessions.integration.mjs` inside the development container; fixtures are rolled back.
 
-Optional browser layout coverage: `RUN_PRACTICE_BROWSER_TEST=1 node tests/practice-overview.browser.mjs` with the development app running and Playwright/Chromium available. `NODE_PATH` can point to a separate temporary Playwright installation. It checks independent status-list scrolling, visible scrollbars, and access to all seven Good words at desktop and mobile sizes using browser-only fixtures; it does not change database records.
+Optional browser layout coverage: `RUN_PRACTICE_BROWSER_TEST=1 node tests/practice-overview.browser.mjs` with the development app running and Playwright/Chromium available. `NODE_PATH` can point to a separate temporary Playwright installation. It checks independent status-list scrolling on desktop, whole-page scrolling with stacked Weak/Good/Perfect sections below 1024px, and access to all seven Good words using browser-only fixtures; it does not change database records.
 
 ## Owner-only authentication
 

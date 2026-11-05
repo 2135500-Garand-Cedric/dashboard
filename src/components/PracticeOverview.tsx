@@ -24,7 +24,7 @@ export default function PracticeOverview({ review, actions, navigation }: { revi
       const top = container.getBoundingClientRect().top;
       const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
       const bottomPadding = main ? parseFloat(window.getComputedStyle(main).paddingBottom) || 0 : 0;
-      container.style.setProperty("--practice-overview-height", `${Math.max(0, viewportHeight - top - bottomPadding)}px`);
+      container.style.setProperty("--practice-overview-height", window.matchMedia("(min-width: 1024px)").matches ? `${Math.max(0, viewportHeight - top - bottomPadding)}px` : "auto");
       container.style.paddingTop = `${Math.max(0, (banner?.getBoundingClientRect().bottom ?? 0) - top)}px`;
     };
     resize();
@@ -64,12 +64,12 @@ export default function PracticeOverview({ review, actions, navigation }: { revi
         </div>
         {!review.hasDetails && <p className="text-sm text-slate-400">Detailed word results, timing, and average changes were not recorded for this older practice.</p>}
       </section>
-      <div className="grid min-h-[18rem] flex-1 grid-cols-1 grid-rows-3 gap-3 md:min-h-[12rem] md:grid-cols-3 md:grid-rows-1 md:gap-5">
+      <div className="grid min-h-0 flex-none grid-cols-1 gap-3 lg:min-h-[12rem] lg:flex-1 lg:grid-cols-3 lg:grid-rows-1 lg:gap-5">
         {statuses.map(group => {
           const words = review.words?.filter(word => word.status === group.status);
           return <section key={group.status} className="card flex min-h-0 min-w-0 flex-col !p-0 overflow-hidden">
             <h2 className={`flex shrink-0 items-center justify-between p-2 text-lg font-semibold md:p-4 md:text-xl ${group.color} ${group.background}`}><span>{group.label}</span><span>{review[group.count]}</span></h2>
-            {words && <ul tabIndex={0} aria-label={`${group.label} words`} style={{ scrollbarGutter: "stable", scrollbarWidth: "thin", scrollbarColor: "#64748b transparent" }} className="min-h-0 flex-1 divide-y divide-card-border overflow-y-auto overscroll-contain">
+            {words && <ul tabIndex={0} aria-label={`${group.label} words`} style={{ scrollbarGutter: "stable", scrollbarWidth: "thin", scrollbarColor: "#64748b transparent" }} className="flex-none divide-y divide-card-border overflow-visible lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain">
               {words.map(word => <li key={word.activityVocabId} className="p-3 space-y-1 break-words md:p-5"><p className="font-medium">{word.english}</p><p lang="ja" className="text-xl">{word.japanese}</p><p lang="ja" className="text-sm text-gray-500">{word.hiragana}</p>{word.categoryName && <p className="text-xs text-gray-500">{word.categoryName}</p>}</li>)}
             </ul>}
             {words?.length === 0 && <p className="p-5 text-sm text-gray-500">No words</p>}
