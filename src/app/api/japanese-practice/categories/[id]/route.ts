@@ -1,3 +1,4 @@
+import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { recordJapaneseProgress } from "@/lib/japanese/progress-history";
@@ -7,6 +8,9 @@ export async function PATCH(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  const accessError = await requireOwner(req);
+  if (accessError) return accessError;
+
   try {
     const { id } = await context.params;
     const categoryId = Number(id);
@@ -50,6 +54,9 @@ export async function DELETE(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  const accessError = await requireOwner(req);
+  if (accessError) return accessError;
+
   try {
     const { id } = await context.params;
     const categoryId = Number(id);

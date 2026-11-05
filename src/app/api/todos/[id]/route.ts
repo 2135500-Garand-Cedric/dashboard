@@ -1,3 +1,4 @@
+import { requireOwner } from "@/lib/require-owner";
 // src/app/api/todos/[id]/route.ts
 export const runtime = "nodejs";
 
@@ -8,6 +9,9 @@ export async function GET(
   _request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  const accessError = await requireOwner(_request);
+  if (accessError) return accessError;
+
   const { id } = await context.params;
 
   const todo = await prisma.todo.findUnique({
@@ -26,6 +30,9 @@ export async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  const accessError = await requireOwner(request);
+  if (accessError) return accessError;
+
   const { id } = await context.params;
   const body = await request.json();
 
@@ -70,6 +77,9 @@ export async function DELETE(
   _request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  const accessError = await requireOwner(_request);
+  if (accessError) return accessError;
+
   const { id } = await context.params;
 
   // Delete subtasks first

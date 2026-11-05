@@ -16,6 +16,7 @@ type Todo = { id: number; title: string; done: boolean };
 type EventItem = {
   id: number;
   title: string;
+  completed: boolean;
   description?: string | null;
   date?: string | null;
   endDate?: string | null;
@@ -39,6 +40,7 @@ export default function EventPage() {
   const [dateDraft, setDateDraft] = useState("");
   const [endDateDraft, setEndDateDraft] = useState("");
   const [saveError, setSaveError] = useState("");
+  const [completionSaving, setCompletionSaving] = useState(false);
   const [saving, setSaving] = useState(false);
   const { showMessage } = useSnackbar();
 
@@ -105,6 +107,22 @@ export default function EventPage() {
     }
   };
 
+  const toggleCompletion = async () => {
+    setCompletionSaving(true);
+    try {
+      const response = await fetch(`/api/events/${eventId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed: !event.completed }),
+      });
+      if (!response.ok) throw new Error("Unable to update completion.");
+      setEvent(await response.json());
+    } catch {
+      showMessage("Unable to update event completion. Please try again.");
+    } finally {
+      setCompletionSaving(false);
+    }
+  };
+
   const deleteEvent = async () => {
     if (confirm("Are you sure you want to delete this event?")) {
       const res = await fetch(`/api/events/${eventId}`, { method: "DELETE" });
@@ -145,7 +163,7 @@ export default function EventPage() {
                 className="text-lg font-semibold border rounded px-3 py-1 flex-1 text-center"
               />
             ) : (
-              <h1 className="text-xl font-semibold">{event.title}</h1>
+              <h1 className={`text-xl font-semibold ${event.completed ? "line-through text-gray-500" : ""}`}>{event.title}</h1>
             )}
           </div>
 
@@ -181,6 +199,17 @@ export default function EventPage() {
               </button>
             )}
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+          <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm font-medium ${event.completed ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-accent/10 text-accent"}`}>
+            {event.completed ? "✓ Completed" : "Open"}
+          </span>
+          <button type="button" onClick={() => void toggleCompletion()} disabled={completionSaving || saving}
+            aria-pressed={event.completed}
+            className="rounded-lg border border-card-border px-3 py-2 text-sm hover:bg-accent/10 disabled:opacity-50 cursor-pointer">
+            {completionSaving ? "Saving…" : event.completed ? "Mark incomplete" : "Mark completed"}
+          </button>
         </div>
 
         {/* Event details */}

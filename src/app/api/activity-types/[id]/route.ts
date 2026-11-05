@@ -1,9 +1,13 @@
+import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 type Context = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, context: Context) {
+  const accessError = await requireOwner(request);
+  if (accessError) return accessError;
+
   const { id } = await context.params;
   const body = await request.json();
   const data: { name?: string; color?: string; active?: boolean } = {};
@@ -40,6 +44,9 @@ export async function PATCH(request: Request, context: Context) {
 }
 
 export async function DELETE(_: Request, context: Context) {
+  const accessError = await requireOwner(_);
+  if (accessError) return accessError;
+
   const { id } = await context.params;
   const activityType = await prisma.activityType.findUnique({ where: { id: Number(id) } });
   if (!activityType) return NextResponse.json({ error: "Activity type not found" }, { status: 404 });

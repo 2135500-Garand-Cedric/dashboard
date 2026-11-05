@@ -7,7 +7,9 @@ const code = ts.transpileModule(fs.readFileSync(new URL("../src/app/api/time-man
   compilerOptions: { module: ts.ModuleKind.CommonJS },
 }).outputText;
 const exports = {};
-new Function("exports", "require", code)(exports, () => ({ NextResponse: { json: (data, options) => Response.json(data, options) } }));
+new Function("exports", "require", code)(exports, (name) => name === "@/lib/require-owner"
+  ? { requireOwner: async () => null }
+  : { NextResponse: { json: (data, options) => Response.json(data, options) } });
 
 test("Time Manager returns readable errors for missing configuration and upstream failures", async () => {
   const originalToken = process.env.TIME_MANAGER_API_KEY;

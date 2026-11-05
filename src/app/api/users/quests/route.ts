@@ -1,7 +1,11 @@
+import { requireOwner } from "@/lib/require-owner";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
+  const accessError = await requireOwner(req);
+  if (accessError) return accessError;
+
   try {
     const { questId, add, xp, coins } = await req.json();
     const userId = 1; // Replace with authenticated user
@@ -33,6 +37,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET() {
+  const accessError = await requireOwner();
+  if (accessError) return accessError;
+
   const userId = 1; // Replace with authenticated user
 
   const userQuests = await prisma.userQuest.findMany({

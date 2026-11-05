@@ -29,6 +29,7 @@ test("writing session saves its base-word status and counts it in the percentage
       } });
       const link = await tx.activityVocab.create({ data: { vocabId: word.id, activityId: 5, status: "WEAK" } });
       const { PATCH } = load("../src/app/api/japanese-practice/vocabulary/route.ts", {
+        "@/lib/require-owner": { requireOwner: async () => null },
         "@/lib/prisma": { prisma: { $transaction: (callback) => callback(tx) } },
         "@/lib/japanese/vocabulary-progress": progress,
         "@/lib/japanese/progress-history": history,

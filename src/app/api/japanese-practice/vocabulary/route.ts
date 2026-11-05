@@ -1,3 +1,4 @@
+import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getKnownKanji, isKanjiWritingEligible } from "@/lib/japanese/kanji-writing";
@@ -6,6 +7,9 @@ import { recordJapaneseProgress } from "@/lib/japanese/progress-history";
 
 // Get all the vocabulary for a user
 export async function GET() {
+  const accessError = await requireOwner();
+  if (accessError) return accessError;
+
   const userId = "1"; // Replace with actual user session ID
 
   // Get total activities count for percentage calculation
@@ -51,6 +55,9 @@ type UpdateRequestBody = {
 
 // Update the status of the vocabulary after a practice session
 export async function PATCH(req: Request) {
+  const accessError = await requireOwner(req);
+  if (accessError) return accessError;
+
   try {
     const data: UpdateRequestBody = await req.json();
 
@@ -135,6 +142,9 @@ export async function PATCH(req: Request) {
 
 // Get the words for a practice session
 export async function POST(req: Request) {
+  const accessError = await requireOwner(req);
+  if (accessError) return accessError;
+
   try {
     const body = await req.json();
     const userId = 1; // TODO: Replace with session logic (NextAuth/JWT)

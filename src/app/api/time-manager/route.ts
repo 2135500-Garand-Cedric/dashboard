@@ -1,8 +1,12 @@
+import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
 
 type TimeRecord = { end_time: string | null; duration_seconds: number | string | null };
 
 export async function GET() {
+  const accessError = await requireOwner();
+  if (accessError) return accessError;
+
   try {
     const token = process.env.TIME_MANAGER_API_KEY;
     if (!token) return NextResponse.json({ error: "Time Manager is not configured." }, { status: 503 });

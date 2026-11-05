@@ -1,3 +1,4 @@
+import { requireOwner } from "@/lib/require-owner";
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
@@ -7,6 +8,9 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  const accessError = await requireOwner(request);
+  if (accessError) return accessError;
+
   const { id } = await context.params;
   const eventId = Number(id);
 

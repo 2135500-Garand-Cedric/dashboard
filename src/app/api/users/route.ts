@@ -1,9 +1,13 @@
+import { requireOwner } from "@/lib/require-owner";
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@/generated/prisma";
 
 const prisma = new PrismaClient();
 
 export async function GET(req: NextRequest) {
+  const accessError = await requireOwner(req);
+  if (accessError) return accessError;
+
   try {
     // TODO: Replace this with real authentication (e.g., get userId from session)
     const userId = 1; // placeholder

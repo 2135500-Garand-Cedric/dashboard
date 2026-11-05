@@ -1,3 +1,4 @@
+import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { torontoDateKey, shiftDateKey, torontoMidnight } from "@/lib/japanese/dates";
@@ -6,6 +7,9 @@ import { recordJapaneseProgress } from "@/lib/japanese/progress-history";
 import { buildJapaneseStatistics, statisticsStartDate } from "@/lib/japanese/statistics";
 
 export async function GET(request: Request) {
+  const accessError = await requireOwner(request);
+  if (accessError) return accessError;
+
   const period = new URL(request.url).searchParams.get("period") || "month";
   if (period !== "month" && period !== "year") {
     return NextResponse.json({ error: "Choose month or year." }, { status: 400 });

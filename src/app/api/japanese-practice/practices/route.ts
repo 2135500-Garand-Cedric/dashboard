@@ -1,9 +1,13 @@
+import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { torontoDayRange } from "@/lib/japanese/dates";
 
 // GET: fetch today's practice records
 export async function GET() {
+  const accessError = await requireOwner();
+  if (accessError) return accessError;
+
   try {
     const { start, end } = torontoDayRange();
 

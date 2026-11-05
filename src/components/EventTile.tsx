@@ -8,6 +8,7 @@ import { formatEventRange } from "@/lib/event-dates";
 type Event = {
   id: number;
   title: string;
+  completed: boolean;
   date: string | null;
   endDate: string | null;
 };
@@ -74,7 +75,7 @@ export default function EventDashboardTile() {
                 className="flex flex-col p-3 rounded hover:bg-[var(--hover-bg)] transition border border-[var(--card-border)] cursor-pointer"
               >
                 <div className="flex justify-between items-center">
-                  <h3 className="font-medium text-[var(--color-foreground)]">{event.title}</h3>
+                  <h3 className={`font-medium text-[var(--color-foreground)] ${event.completed ? "line-through" : ""}`}>{event.completed && "✓ "}{event.title}</h3>
                   <span className="text-xs text-gray-500">{time}</span>
                 </div>
                 <span className="text-xs text-gray-400">

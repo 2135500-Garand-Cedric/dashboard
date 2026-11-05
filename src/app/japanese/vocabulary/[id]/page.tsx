@@ -34,6 +34,24 @@ type Category = {
   name: string;
 };
 
+function KanjiImage({ japanese }: { japanese: string }) {
+  const [failed, setFailed] = useState(false);
+  return failed ? (
+    <div className="flex h-[150px] w-[150px] items-center justify-center rounded border border-gray-300 bg-gray-50 text-sm text-gray-500">
+      Not Found
+    </div>
+  ) : (
+    <img
+      src={`/kanji/${japanese}.gif`}
+      alt={japanese}
+      width={150}
+      height={150}
+      className="border rounded"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 export default function VocabularyEditPage() {
   const params = useParams();
   const vocabId = Number(params.id);
@@ -333,30 +351,7 @@ export default function VocabularyEditPage() {
           {/* Kanji gif (only if category is Kanji) */}
           {typeof window !== "undefined" && categories.find((c) => c.id === vocab.categoryId)?.name === "Kanji" && (
             <div className="mt-2">
-              <img
-                src={`/kanji/${vocab.japanese}.gif`}
-                alt={vocab.japanese}
-                width={150}
-                height={150}
-                className="border rounded"
-                onError={(e) => {
-                  const img = e.currentTarget as HTMLImageElement;
-                  // replace the image with a placeholder div
-                  const placeholder = document.createElement("div");
-                  placeholder.style.width = "150px";
-                  placeholder.style.height = "150px";
-                  placeholder.style.border = "1px solid #ccc";
-                  placeholder.style.borderRadius = "0.25rem"; // same as rounded
-                  placeholder.style.display = "flex";
-                  placeholder.style.alignItems = "center";
-                  placeholder.style.justifyContent = "center";
-                  placeholder.style.backgroundColor = "#f9f9f9";
-                  placeholder.style.color = "#888";
-                  placeholder.style.fontSize = "14px";
-                  placeholder.innerText = "Not Found";
-                  img.replaceWith(placeholder);
-                }}
-              />
+              <KanjiImage key={vocab.japanese} japanese={vocab.japanese} />
             </div>
           )}
         </div>

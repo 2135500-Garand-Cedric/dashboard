@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, ReactNode, useRef, useEffect } from "react";
+import { loadYouTubeAPI, type YouTubePlayer } from "@/lib/youtube-api";
 
 interface Video {
   videoId: string;
@@ -27,37 +28,81 @@ export const MusicPlayerProvider = ({ children }: { children: ReactNode }) => {
   const [progress, setProgress] = useState(0);
   const [playerReady, setPlayerReady] = useState(false);
 
-  const playerRef = useRef<any>(null);
+  const playerRef = useRef<YouTubePlayer | null>(null);
+  const playerContainerRef = useRef<HTMLDivElement | null>(null);
+  const playbackRequestedRef = useRef(false);
   const intervalRef = useRef<number | null>(null);
 
-  // Load YouTube API once
   useEffect(() => {
-    // Only load the script once
-    if (!(window as any).YT) {
-      const tag = document.createElement("script");
-      tag.src = "https://www.youtube.com/iframe_api";
-      document.body.appendChild(tag);
-    }
+    const container = playerContainerRef.current;
+    if (!container) return;
+    let disposed = false;
+    let player: YouTubePlayer | null = null;
+    const controller = new AbortController();
 
-    // Define the global callback
-    (window as any).onYouTubeIframeAPIReady = () => {
-      const YT = (window as any).YT;
+    const fetchVideo = async (random = false) => {
+      try {
+        const res = await fetch(random ? "/api/youtube/random" : "/api/youtube", { signal: controller.signal });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (disposed || !data.items?.length) return;
+        const item = data.items[0];
+        const nextVideo = {
+          videoId: item.id.videoId,
+          title: item.snippet.title,
+          thumbnail: item.snippet.thumbnails.medium.url,
+        };
+        setVideo(nextVideo);
+        // Cue the initial video without playing. If Pause was pressed while
+        // fetching the next track, that track must also remain paused.
+        if (playbackRequestedRef.current) player?.loadVideoById(nextVideo.videoId);
+        else player?.cueVideoById(nextVideo.videoId);
+        setProgress(0);
+      } catch (err) {
+        if (!disposed) console.error("Failed to fetch video", err);
+      }
+    };
 
-      playerRef.current = new YT.Player("youtube-player-temp", {
-        videoId: "", // empty initially
+    loadYouTubeAPI().then((YT) => {
+      if (disposed) return;
+      // YouTube replaces its mount element with an iframe. Keep that element
+      // inside a stable wrapper whose DOM node remains under React's control.
+      const mount = document.createElement("div");
+      container.appendChild(mount);
+      player = new YT.Player(mount, {
+        videoId: "",
         events: {
           onReady: () => {
+            if (disposed) return;
             setPlayerReady(true);
-            fetchFirstVideo();
+            void fetchVideo();
           },
-          onStateChange: (event: any) => {
-            if (event.data === YT.PlayerState.PLAYING) setPlaying(true);
+          onStateChange: (event) => {
+            if (disposed) return;
+            if (event.data === YT.PlayerState.PLAYING) {
+              if (!playbackRequestedRef.current) {
+                player?.pauseVideo();
+                return;
+              }
+              setPlaying(true);
+            }
             else if (event.data === YT.PlayerState.PAUSED) setPlaying(false);
-            else if (event.data === YT.PlayerState.ENDED) fetchRandomVideo();
+            else if (event.data === YT.PlayerState.ENDED && playbackRequestedRef.current) void fetchVideo(true);
           },
         },
-        playerVars: { controls: 0, modestbranding: 1 },
+        playerVars: { controls: 0, modestbranding: 1, autoplay: 0 },
       });
+      playerRef.current = player;
+    }).catch((err) => {
+      if (!disposed) console.error("Failed to initialize YouTube player", err);
+    });
+
+    return () => {
+      disposed = true;
+      controller.abort();
+      playerRef.current = null;
+      player?.destroy();
+      container.replaceChildren();
     };
   }, []);
 
@@ -66,8 +111,10 @@ export const MusicPlayerProvider = ({ children }: { children: ReactNode }) => {
     if (!playerRef.current) return;
 
     const updateProgress = () => {
-      const duration = playerRef.current.getDuration();
-      const currentTime = playerRef.current.getCurrentTime();
+      const player = playerRef.current;
+      if (!player) return;
+      const duration = player.getDuration();
+      const currentTime = player.getCurrentTime();
       if (duration) setProgress((currentTime / duration) * 100);
     };
 
@@ -88,10 +135,12 @@ export const MusicPlayerProvider = ({ children }: { children: ReactNode }) => {
   // Control functions
   const play = () => {
     if (!playerReady || !video || !playerRef.current) return;
+    playbackRequestedRef.current = true;
     playerRef.current.playVideo();
     setPlaying(true);
   };
   const pause = () => {
+    playbackRequestedRef.current = false;
     if (!playerRef.current) return;
     playerRef.current.pauseVideo();
     setPlaying(false);
@@ -105,61 +154,12 @@ export const MusicPlayerProvider = ({ children }: { children: ReactNode }) => {
     playerRef.current.seekTo(Math.max(playerRef.current.getCurrentTime() - 10, 0), true);
   };
 
-  // Fetch first video
-  const fetchFirstVideo = async () => {
-    try {
-      const res = await fetch("/api/youtube");
-      const data = await res.json();
-      if (data.items?.length) {
-        const item = data.items[0];
-        const firstVideo = {
-          videoId: item.id.videoId,
-          title: item.snippet.title,
-          thumbnail: item.snippet.thumbnails.medium.url,
-        };
-        setVideo(firstVideo);
-
-        // Load it in the player so play button works
-        if (playerRef.current) {
-          playerRef.current.loadVideoById(firstVideo.videoId);
-        }
-      }
-    } catch (err) {
-      console.error("Failed to fetch first video", err);
-    }
-  };
-
-  // Fetch random video after previous ends
-  const fetchRandomVideo = async () => {
-    try {
-      const res = await fetch("/api/youtube/random");
-      const data = await res.json();
-      if (data.items?.length) {
-        const item = data.items[0];
-        const newVideo = {
-          videoId: item.id.videoId,
-          title: item.snippet.title,
-          thumbnail: item.snippet.thumbnails.medium.url,
-        };
-        setVideo(newVideo);
-
-        if (playerRef.current) {
-          playerRef.current.loadVideoById(newVideo.videoId);
-          playerRef.current.playVideo();
-          setPlaying(true);
-        }
-      }
-    } catch (err) {
-      console.error("Failed to fetch random video", err);
-    }
-  };
-
   return (
     <MusicPlayerContext.Provider
       value={{ video, playing, progress, play, pause, skipForward, skipBack, setVideo }}
     >
       {children}
-      <div id="youtube-player-temp" style={{ display: "none" }} />
+      <div ref={playerContainerRef} style={{ display: "none" }} />
     </MusicPlayerContext.Provider>
   );
 };

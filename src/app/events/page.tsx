@@ -7,12 +7,14 @@ import interactionPlugin from "@fullcalendar/interaction";
 import type { DatesSetArg, EventClickArg } from "@fullcalendar/core";
 import { formatEventRange, validateEventDates } from "@/lib/event-dates";
 import { Cog6ToothIcon, PlusIcon, TrashIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { useSnackbar } from "@/context/SnackbarContext";
 import { useMemory } from "@/context/MemoryContext";
 
 type Todo = { id: number; title: string; done: boolean };
 type EventItem = {
   id: number;
   title: string;
+  completed: boolean;
   description?: string | null;
   date: string | null;
   endDate: string | null;
@@ -24,6 +26,8 @@ type ActivityType = { id: number; name: string; color: string; active: boolean }
 export default function EventsPage() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [completingId, setCompletingId] = useState<number | null>(null);
+  const { showMessage } = useSnackbar();
   const [creating, setCreating] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
@@ -154,11 +158,30 @@ export default function EventsPage() {
     }
   };
 
+  const toggleCompletion = async (event: EventItem) => {
+    setCompletingId(event.id);
+    try {
+      const response = await fetch(`/api/events/${event.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed: !event.completed }),
+      });
+      if (!response.ok) throw new Error("Unable to update event completion.");
+      const updated: EventItem = await response.json();
+      setEvents((current) => current.map((item) => item.id === updated.id ? updated : item));
+    } catch {
+      showMessage("Unable to update event completion. Please try again.");
+    } finally {
+      setCompletingId(null);
+    }
+  };
+
   const fcEvents = events
     .filter((e) => e.date) // FullCalendar only accepts real dates
     .map((e) => ({
       id: String(e.id),
       title: e.title,
+      extendedProps: { completed: e.completed },
+      classNames: e.completed ? ["event-completed"] : [],
       start: e.date!,
       end: e.endDate || undefined,
       allDay: false,
@@ -192,8 +215,14 @@ export default function EventsPage() {
             eventDisplay="block"
             nextDayThreshold="00:00:00"
             dayMaxEvents={3}
+            eventContent={(info) => (
+              <span className="flex min-w-0 items-center gap-1" title={`${info.event.extendedProps.completed ? "Completed: " : ""}${info.event.title}\n${formatEventRange(info.event.start?.toISOString(), info.event.end?.toISOString())}`}>
+                {info.event.extendedProps.completed && <span aria-label="Completed" className="shrink-0">✓</span>}
+                <span className={`truncate ${info.event.extendedProps.completed ? "line-through" : ""}`}>{info.event.title}</span>
+              </span>
+            )}
             eventDidMount={(info) => {
-              info.el.title = `${info.event.title}\n${formatEventRange(info.event.start?.toISOString(), info.event.end?.toISOString())}`;
+              info.el.title = `${info.event.extendedProps.completed ? "Completed: " : ""}${info.event.title}\n${formatEventRange(info.event.start?.toISOString(), info.event.end?.toISOString())}`;
             }}
             datesSet={handleMonthChange}
           />
@@ -295,15 +324,20 @@ export default function EventsPage() {
                     className="p-2 border rounded hover:bg-accent/10 cursor-pointer transition flex items-center gap-2"
                     onClick={() => pageRouter('/events', `/events/${ev.id}`)}
                   >
+                    <input type="checkbox" checked={ev.completed} disabled={completingId !== null}
+                      onClick={(e) => e.stopPropagation()} onChange={() => void toggleCompletion(ev)}
+                      aria-label={`${ev.completed ? "Mark incomplete" : "Mark completed"}: ${ev.title}`}
+                      className="h-4 w-4 shrink-0 accent-emerald-600 cursor-pointer" />
                     <span
-                      className="w-3 h-3 rounded-full"
+                      className="w-3 h-3 rounded-full shrink-0"
                       style={{ backgroundColor: getColorForType(ev.type) }}
                     />
                     <div>
-                      <div className="font-medium">{ev.title}</div>
+                      <div className={`font-medium ${ev.completed ? "line-through text-gray-500" : ""}`}>{ev.title}</div>
+                      {ev.completed && <span className="text-xs font-medium text-emerald-500">✓ Completed</span>}
                       <div className="text-sm text-gray-500">
                         {formatEventRange(ev.date, ev.endDate)}
-                        {ev.date && new Date(ev.date) <= now && ev.endDate && <span className="block text-blue-500">In progress</span>}
+                        {!ev.completed && ev.date && new Date(ev.date) <= now && ev.endDate && <span className="block text-blue-500">In progress</span>}
                       </div>
                     </div>
                   </li>
@@ -324,12 +358,17 @@ export default function EventsPage() {
                     className="p-2 border rounded hover:bg-accent/10 cursor-pointer transition flex items-center gap-2"
                     onClick={() => pageRouter('/events', `/events/${ev.id}`)}
                   >
+                    <input type="checkbox" checked={ev.completed} disabled={completingId !== null}
+                      onClick={(e) => e.stopPropagation()} onChange={() => void toggleCompletion(ev)}
+                      aria-label={`${ev.completed ? "Mark incomplete" : "Mark completed"}: ${ev.title}`}
+                      className="h-4 w-4 shrink-0 accent-emerald-600 cursor-pointer" />
                     <span
-                      className="w-3 h-3 rounded-full"
+                      className="w-3 h-3 rounded-full shrink-0"
                       style={{ backgroundColor: getColorForType(ev.type) }}
                     />
                     <div>
-                      <div className="font-medium">{ev.title}</div>
+                      <div className={`font-medium ${ev.completed ? "line-through text-gray-500" : ""}`}>{ev.title}</div>
+                      {ev.completed && <span className="text-xs font-medium text-emerald-500">✓ Completed</span>}
                       <div className="text-sm text-gray-500 italic">
                         No date set
                       </div>

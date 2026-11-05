@@ -1,0 +1,62 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { encode } from "next-auth/jwt";
+import ts from "typescript";
+
+function files(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((item) => item.isDirectory() ? files(path.join(directory, item.name)) : [path.join(directory, item.name)]);
+}
+
+test("live app denies all anonymous data routes, rejects other identities, and allows the owner", { skip: process.env.RUN_AUTH_HTTP_TEST !== "1" }, async () => {
+  const base = "http://localhost:3000";
+  const secret = process.env.NEXTAUTH_SECRET;
+  assert.ok(secret, "Run inside the development container; never print or export the secret");
+  const apiRoot = fileURLToPath(new URL("../src/app/api", import.meta.url));
+  let checked = 0;
+  for (const file of files(apiRoot).filter((file) => file.endsWith("/route.ts") && !file.includes("/api/auth/"))) {
+    const endpoint = `/api/${path.relative(apiRoot, path.dirname(file)).replace(/\[[^\]]+\]/g, "1")}`;
+    const ast = ts.createSourceFile(file, fs.readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
+    for (const node of ast.statements) {
+      if (!ts.isFunctionDeclaration(node) || !["GET", "POST", "PUT", "PATCH", "DELETE"].includes(node.name?.text)) continue;
+      const response = await fetch(base + endpoint, { method: node.name.text });
+      assert.equal(response.status, 401, `${node.name.text} ${endpoint}`);
+      assert.deepEqual(await response.json(), { error: "Authentication required." });
+      checked += 1;
+    }
+  }
+  assert.ok(checked >= 43);
+  const cookie = async (token) => {
+    const value = await encode({ token, secret, maxAge: 120 });
+    return `next-auth.session-token=${value}; __Secure-next-auth.session-token=${value}`;
+  };
+  const owner = { githubId: "89470930", provider: "github", ownerAuthVersion: 1 };
+  for (const token of [
+    { ...owner, githubId: "123", ownerAccess: true, email: "cedricgarand@hotmail.com" },
+    { ...owner, provider: "credentials" },
+    { sub: "89470930", email: "cedricgarand@hotmail.com" },
+  ]) {
+    const headers = { cookie: await cookie(token) };
+    assert.equal((await fetch(`${base}/api/events`, { headers })).status, 403);
+    const page = await fetch(base, { headers, redirect: "manual" });
+    assert.equal(page.status, 307);
+    assert.ok(page.headers.get("location").endsWith("/access-denied"));
+  }
+  assert.equal((await fetch(`${base}/api/events`, { headers: { cookie: "next-auth.session-token=forged" } })).status, 401);
+  const headers = { cookie: await cookie(owner) };
+  assert.equal((await fetch(`${base}/api/events`, { headers })).status, 200);
+  assert.equal((await fetch(`${base}/api/events`, { method: "POST", headers: { ...headers, origin: "https://untrusted.example" } })).status, 403);
+  for (const page of ["/", "/events", "/japanese/practice", "/japanese/statistics", "/todos", "/timemanager"]) {
+    const response = await fetch(base + page, { redirect: "manual" });
+    assert.equal(response.status, 307, page);
+    assert.ok(response.headers.get("location").includes("/api/auth/signin"));
+  }
+  const denied = await fetch(`${base}/access-denied`);
+  assert.equal(denied.status, 200);
+  const html = await denied.text();
+  assert.ok(html.includes("You cannot use this app"));
+  assert.ok(!html.includes("Dashboard Menu"));
+  console.log(`Verified ${checked} protected API handlers, page redirects, denied identities, forged cookies, and the owner session.`);
+});

@@ -1,3 +1,4 @@
+import { requireOwner } from "@/lib/require-owner";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
@@ -8,6 +9,9 @@ export async function DELETE(
   request: Request,
   context: { params: Promise<{ subtaskId: string }> }
 ) {
+  const accessError = await requireOwner(request);
+  if (accessError) return accessError;
+
   const { subtaskId } = await context.params;
   const subtaskIdNumber = Number(subtaskId);
 
@@ -31,6 +35,9 @@ export async function PATCH(
   request: Request,
   context: { params: Promise<{ subtaskId: string }> }
 ) {
+  const accessError = await requireOwner(request);
+  if (accessError) return accessError;
+
   const { subtaskId } = await context.params;
   const subtaskIdNumber = Number(subtaskId);
 

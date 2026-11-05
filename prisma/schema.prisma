@@ -105,6 +105,7 @@ model Event {
   description  String?
   date         DateTime?
   endDate      DateTime?
+  completed    Boolean  @default(false)
   type         String?  // used for color/type (exam, personal, task...)
   
   // Relations

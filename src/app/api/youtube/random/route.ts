@@ -1,6 +1,10 @@
+import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
 
 export async function GET() {
+  const accessError = await requireOwner();
+  if (accessError) return accessError;
+
   const channelId = "UCn1icliVp7N5EcLosJ-zJXg";
   const apiKey = process.env.YOUTUBE_API_KEY;
 

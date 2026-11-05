@@ -1,7 +1,11 @@
+import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
+  const accessError = await requireOwner();
+  if (accessError) return accessError;
+
   try {
     const categories = await prisma.category.findMany({
       select: {
@@ -34,6 +38,9 @@ export async function GET() {
 
 // ✅ POST /api/categories — Create a new category
 export async function POST(req: Request) {
+  const accessError = await requireOwner(req);
+  if (accessError) return accessError;
+
   try {
     const { name } = await req.json();
 

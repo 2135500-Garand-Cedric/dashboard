@@ -1,3 +1,4 @@
+import { requireOwner } from "@/lib/require-owner";
 // src/app/api/todos/[id]/subtasks/route.ts
 export const runtime = "nodejs";
 
@@ -8,6 +9,9 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  const accessError = await requireOwner(request);
+  if (accessError) return accessError;
+
   const { id } = await context.params;
   const todoId = Number(id);
 

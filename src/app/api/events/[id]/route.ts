@@ -1,3 +1,4 @@
+import { requireOwner } from "@/lib/require-owner";
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
@@ -8,6 +9,9 @@ export async function GET(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  const accessError = await requireOwner(request);
+  if (accessError) return accessError;
+
   const { id } = await context.params; // ✅ await params
   const event = await prisma.event.findUnique({
     where: { id: Number(id) },
@@ -21,9 +25,15 @@ export async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  const accessError = await requireOwner(request);
+  if (accessError) return accessError;
+
   const { id } = await context.params;
   const body = await request.json();
-  const { title, description, date, endDate, type, linkedTodoId } = body;
+  const { title, description, date, endDate, type, linkedTodoId, completed } = body;
+  if (completed !== undefined && typeof completed !== "boolean") {
+    return NextResponse.json({ error: "Completed must be true or false." }, { status: 400 });
+  }
   const existing = await prisma.event.findUnique({ where: { id: Number(id) } });
   if (!existing) return NextResponse.json({ error: "Event not found" }, { status: 404 });
   const error = validateEventDates(
@@ -41,6 +51,7 @@ export async function PATCH(
       endDate: endDate === undefined ? undefined : endDate === null ? null : new Date(endDate),
       type,
       linkedTodoId,
+      completed,
     },
     include: { linkedTodo: true },
   });
@@ -52,6 +63,9 @@ export async function DELETE(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  const accessError = await requireOwner(request);
+  if (accessError) return accessError;
+
   const { id } = await context.params;
 
   // Find the event to see if it has a linked todo

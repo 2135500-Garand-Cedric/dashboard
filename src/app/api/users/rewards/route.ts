@@ -1,7 +1,11 @@
+import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: Request) {
+  const accessError = await requireOwner(req);
+  if (accessError) return accessError;
+
   try {
     // const session = await getServerSession(); // assumes next-auth
     // if (!session?.user?.id) {

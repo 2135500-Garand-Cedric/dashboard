@@ -1,7 +1,11 @@
+import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
+  const accessError = await requireOwner();
+  if (accessError) return accessError;
+
   const activityTypes = await prisma.activityType.findMany({
     orderBy: { name: "asc" },
   });
@@ -9,6 +13,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const accessError = await requireOwner(request);
+  if (accessError) return accessError;
+
   const body = await request.json();
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const color = typeof body.color === "string" ? body.color : "";

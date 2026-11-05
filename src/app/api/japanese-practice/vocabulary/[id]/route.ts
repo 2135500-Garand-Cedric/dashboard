@@ -1,3 +1,4 @@
+import { requireOwner } from "@/lib/require-owner";
 // GET /api/japanese-practice/vocabulary/[id]
 // Fetches a specific vocabulary entry with verb forms and activity status
 import { NextResponse } from "next/server";
@@ -12,6 +13,9 @@ export async function GET(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  const accessError = await requireOwner(req);
+  if (accessError) return accessError;
+
   try {
     const { id } = await context.params;
     const vocabId = Number(id);
@@ -108,6 +112,9 @@ export async function PATCH(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  const accessError = await requireOwner(req);
+  if (accessError) return accessError;
+
   try {
     const { id } = await context.params;
     const vocabId = Number(id);
@@ -251,6 +258,9 @@ export async function DELETE(
   req: Request, 
   context: { params: Promise<{ id: string }> }
 ) {
+  const accessError = await requireOwner(req);
+  if (accessError) return accessError;
+
   try {
     const { id } = await context.params;
     const vocabId = Number(id);

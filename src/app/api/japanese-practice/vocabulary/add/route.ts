@@ -1,3 +1,4 @@
+import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { torontoDayRange } from "@/lib/japanese/dates";
@@ -7,6 +8,9 @@ import { conjugateVerb } from "@/lib/japanese/conjugation";
 
 // POST /api/japanese-practice/vocabulary/add
 export async function POST(req: Request) {
+  const accessError = await requireOwner(req);
+  if (accessError) return accessError;
+
   try {
     const body = await req.json();
     const { english, japanese, hiragana, categoryId, starred, verbType } = body;
@@ -102,6 +106,9 @@ export async function POST(req: Request) {
 
 // GET: number of vocabulary added today
 export async function GET() {
+  const accessError = await requireOwner();
+  if (accessError) return accessError;
+
   try {
     const userId = 1; // TODO: replace with session logic
 
