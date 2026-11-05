@@ -35,6 +35,13 @@ model User {
   events    Event[]
   userQuests UserQuest[]
   vocabulary Vocabulary[]
+  financialAccounts FinancialAccount[]
+  financeCategories FinanceCategory[]
+  financialTransactions FinancialTransaction[]
+  financialReceipts FinancialReceipt[]
+  financialIncomeRecords FinancialIncomeRecord[]
+  financialDocuments FinancialDocument[]
+  financialImports FinancialImport[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -236,5 +243,215 @@ model JapaneseProgressSnapshot {
   updatedAt       DateTime @updatedAt
 
   @@unique([userId, day])
+}
+
+enum FinancialAccountType {
+  CHEQUING
+  SAVINGS
+  CREDIT_CARD
+  CASH
+  OTHER
+}
+
+enum FinanceCategoryType {
+  INCOME
+  EXPENSE
+}
+
+enum FinancialTransactionType {
+  EXPENSE
+  INCOME
+  TRANSFER
+  ADJUSTMENT
+}
+
+enum FinancialTransactionSource {
+  MANUAL
+  IMPORTED
+}
+
+enum FinancialDocumentType {
+  RECEIPT
+  BANK_STATEMENT
+  CREDIT_CARD_STATEMENT
+  PAY_STUB
+  OTHER
+}
+
+model FinancialAccount {
+  id               Int                  @id @default(autoincrement())
+  userId           Int
+  name             String               @db.VarChar(100)
+  normalizedName   String               @db.VarChar(100)
+  type             FinancialAccountType
+  currency         String               @db.Char(3)
+  maskedIdentifier String?              @db.VarChar(32)
+  active           Boolean              @default(true)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  user             User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  transactions     FinancialTransaction[]
+  receipts         FinancialReceipt[]
+  incomeRecords    FinancialIncomeRecord[]
+  documents        FinancialDocument[]
+  imports          FinancialImport[]
+
+  @@unique([userId, normalizedName])
+  @@index([userId, active])
+}
+
+model FinanceCategory {
+  id             Int                 @id @default(autoincrement())
+  userId         Int
+  name           String              @db.VarChar(100)
+  normalizedName String              @db.VarChar(100)
+  type           FinanceCategoryType
+  active         Boolean             @default(true)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  user           User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  transactions   FinancialTransaction[]
+  receipts       FinancialReceipt[]
+  incomeRecords  FinancialIncomeRecord[]
+
+  @@unique([userId, type, normalizedName])
+  @@index([userId, active])
+}
+
+// Foundation only: no transaction, receipt, income, document, or import APIs yet.
+// Transactions are the canonical ledger. Signed amounts: inflow positive,
+// outflow negative. Transfers/adjustments remain distinct from income/expenses.
+model FinancialTransaction {
+  id          Int                        @id @default(autoincrement())
+  userId      Int
+  accountId   Int
+  categoryId  Int?
+  occurredOn  DateTime                   @db.Date
+  amount      Decimal                    @db.Decimal(19, 4)
+  currency    String                     @db.Char(3)
+  type        FinancialTransactionType
+  source      FinancialTransactionSource @default(MANUAL)
+  description String
+  counterparty String?
+  createdAt   DateTime                   @default(now())
+  updatedAt   DateTime                   @updatedAt
+  user        User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  account     FinancialAccount           @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  category    FinanceCategory?           @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  receipts    FinancialReceipt[]
+  incomeRecords FinancialIncomeRecord[]
+  documents   FinancialDocument[]
+  importEntries FinancialImportEntry[]
+
+  @@index([userId, occurredOn])
+  @@index([accountId, occurredOn])
+  @@index([categoryId])
+}
+
+model FinancialReceipt {
+  id            Int                   @id @default(autoincrement())
+  userId        Int
+  accountId     Int?
+  categoryId    Int?
+  transactionId Int?
+  purchasedOn   DateTime              @db.Date
+  merchant      String?
+  total         Decimal               @db.Decimal(19, 4)
+  currency      String                @db.Char(3)
+  createdAt     DateTime              @default(now())
+  user          User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  account       FinancialAccount?     @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  category      FinanceCategory?      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  transaction   FinancialTransaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  documents     FinancialDocument[]
+
+  @@index([userId, purchasedOn])
+  @@index([accountId])
+  @@index([categoryId])
+  @@index([transactionId])
+}
+
+model FinancialIncomeRecord {
+  id            Int                   @id @default(autoincrement())
+  userId        Int
+  accountId     Int?
+  categoryId    Int?
+  transactionId Int?
+  paidOn        DateTime              @db.Date
+  description   String
+  grossAmount   Decimal?              @db.Decimal(19, 4)
+  netAmount     Decimal               @db.Decimal(19, 4)
+  currency      String                @db.Char(3)
+  createdAt     DateTime              @default(now())
+  user          User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  account       FinancialAccount?     @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  category      FinanceCategory?      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  transaction   FinancialTransaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  documents     FinancialDocument[]
+
+  @@index([userId, paidOn])
+  @@index([accountId])
+  @@index([categoryId])
+  @@index([transactionId])
+}
+
+// Storage keys identify private objects, never publicly served file URLs.
+model FinancialDocument {
+  id            Int                   @id @default(autoincrement())
+  userId        Int
+  accountId     Int?
+  transactionId Int?
+  receiptId     Int?
+  incomeRecordId Int?
+  importId      Int?
+  type          FinancialDocumentType
+  storageKey    String                @unique
+  originalName  String
+  mimeType      String
+  byteSize      Int
+  createdAt     DateTime              @default(now())
+  user          User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  account       FinancialAccount?     @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  transaction   FinancialTransaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  receipt       FinancialReceipt?     @relation(fields: [receiptId], references: [id], onDelete: SetNull)
+  incomeRecord  FinancialIncomeRecord? @relation(fields: [incomeRecordId], references: [id], onDelete: SetNull)
+  import        FinancialImport?      @relation(fields: [importId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([accountId])
+  @@index([transactionId])
+  @@index([receiptId])
+  @@index([incomeRecordId])
+  @@index([importId])
+}
+
+model FinancialImport {
+  id          Int                  @id @default(autoincrement())
+  userId      Int
+  accountId   Int
+  fingerprint String               @db.VarChar(64)
+  createdAt   DateTime             @default(now())
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  account     FinancialAccount     @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  entries     FinancialImportEntry[]
+  documents   FinancialDocument[]
+
+  @@unique([accountId, fingerprint])
+  @@index([userId])
+}
+
+// Separate original source data from editable ledger fields. Many imported
+// entries may match one transaction without duplicating that money movement.
+model FinancialImportEntry {
+  id            Int                   @id @default(autoincrement())
+  importId      Int
+  rowKey        String
+  originalData  Json
+  transactionId Int?
+  import        FinancialImport       @relation(fields: [importId], references: [id], onDelete: Cascade)
+  transaction   FinancialTransaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  @@unique([importId, rowKey])
+  @@index([transactionId])
 }
 

@@ -83,6 +83,30 @@ The `20261105150000_add_practice_session_details` migration adds these details t
 
 Optional browser layout coverage: `RUN_PRACTICE_BROWSER_TEST=1 node tests/practice-overview.browser.mjs` with the development app running and Playwright/Chromium available. `NODE_PATH` can point to a separate temporary Playwright installation. It checks independent status-list scrolling on desktop, whole-page scrolling with stacked Weak/Good/Perfect sections below 1024px, and access to all seven Good words using browser-only fixtures; it does not change database records.
 
+## Personal finance — Phase 1
+
+The sidebar's **Finance** section provides an overview, financial accounts, and customizable Income/Expense categories. Accounts support chequing, savings, credit card, cash, and other types; each has an explicit currency, optional masked identifier, and active/inactive status. Names are trimmed and normalized for duplicate detection. Account names are unique for the owner; category names are unique within Income or Expense. Identifiers accept only the last four characters with optional masking symbols. Full account/card numbers, CVVs, and banking credentials have no fields or supported workflow.
+
+Accounts can be edited, deactivated, and reactivated. Categories can also be deleted when unused. Foreign keys retain referenced categories and accounts; deactivation preserves history. Once financial records reference an account, its currency cannot be changed. A category's Income/Expense type likewise cannot change after use. New categories/accounts should be created for those changes instead.
+
+All Finance pages use `ProtectedLayout`; all nine Finance API handlers call `requireOwner` before processing requests. Queries are scoped to database user 1, following the existing single-owner policy. Finance responses are private/non-cacheable, inputs reject client-supplied ownership, and API errors do not expose ORM payloads or log account/category values. No new dependencies, services, or database were added.
+
+The additive `20261105180000_finance_foundation` migration creates the two management tables and minimal future financial record tables:
+
+- `FinancialTransaction` is the canonical money movement, with signed `Decimal(19,4)` amounts (positive inflow, negative outflow), explicit currency, account, optional category, transaction type, and source. Transfers and adjustments are distinct from income/expenses.
+- `FinancialReceipt` and `FinancialIncomeRecord` may exist unmatched, or link to a transaction as supporting purchase/earnings details. Gross/net income remain separate; receipts and income details must not be counted again as independent ledger movements.
+- `FinancialDocument` holds private storage metadata and optional record links. No files, public file URLs, upload/download endpoints, or storage service are implemented.
+- `FinancialImport` has an account-scoped unique fingerprint. `FinancialImportEntry` retains original JSON separately from editable ledger fields, has a unique row key within its import, and can match an existing transaction. Multiple imported entries can reference the same transaction without requiring duplicate ledger entries.
+
+These future tables define relationships only. There are no transaction-entry, receipt, income, document-upload, import/reconciliation, AI, or reporting workflows in Phase 1. Future monetary APIs must accept/return decimal strings and use Prisma Decimal arithmetic; amounts must not be converted to JavaScript floating-point numbers. The stored scale is four decimal places with 15 integer digits. Future phases must validate currency/account/category compatibility and document storage access at their own input boundaries.
+
+Deploy through the existing production Compose workflow, which runs `prisma migrate deploy` automatically; generate Prisma Client when building. No finance demo data is seeded. Verification:
+
+- `node --test tests/finance.test.mjs tests/auth-security.test.mjs`
+- In the development container: `RUN_FINANCE_DB_TEST=1 node tests/finance.integration.mjs` (all fixtures roll back).
+- With Playwright/Chromium available and the development app running: `RUN_FINANCE_BROWSER_TEST=1 node tests/finance.browser.mjs` (`NODE_PATH` may point to a temporary Playwright installation). All finance writes use browser-only fixtures.
+- `RUN_AUTH_HTTP_TEST=1 node tests/auth-security.integration.mjs` inside the development container checks all protected endpoints and Finance page redirects without creating finance records.
+
 ## Owner-only authentication
 
 The app is restricted to the permanent GitHub account ID `89470930` (`2135500-Garand-Cedric`). The allowlist is in `src/lib/owner-policy.ts`; matching an email address or username does not grant access. Other GitHub accounts are redirected to `/access-denied` and do not receive an authorized app session.
