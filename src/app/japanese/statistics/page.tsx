@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LineChart, Line, PieChart, Pie, Cell } from "recharts";
 import type { JapaneseStatistics, StatisticsPeriod } from "@/lib/japanese/statistics";
 
@@ -11,8 +13,13 @@ const shortDate = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateSt
 
 const monthLabel = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-CA", { timeZone: "America/Toronto", month: "short", year: "2-digit" });
 
-function PeriodBars({ data, title, period }: { period: StatisticsPeriod; data: { date: string; perfect: number; good: number; weak: number }[]; title: string }) {
+function PeriodBars({ data, title, period, practiceKind }: { period: StatisticsPeriod; data: { date: string; perfect: number; good: number; weak: number }[]; title: string; practiceKind?: "vocab" | "kanji" }) {
+  const router = useRouter();
   const formatDate = period === "year" ? monthLabel : shortDate;
+  const historyLink = (date: string) => `/japanese/practice/history?${new URLSearchParams({ date, kind: practiceKind ?? "vocab", range: period === "year" ? "month" : "day" })}`;
+  const selectBar = (entry: { payload?: { date?: string } }) => {
+    if (practiceKind && entry.payload?.date) router.push(historyLink(entry.payload.date));
+  };
   return (
     <section className="card min-w-0">
       <h2 className="text-lg font-semibold mb-6">{title}</h2>
@@ -24,12 +31,13 @@ function PeriodBars({ data, title, period }: { period: StatisticsPeriod; data: {
             <YAxis allowDecimals={false} tick={{ fill: "var(--foreground)", fontSize: 11 }} tickLine={false} axisLine={false} />
             <Tooltip contentStyle={tooltipStyle} labelFormatter={(label) => formatDate(String(label))} cursor={{ fill: "var(--card-border)", opacity: 0.4 }} />
             <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12, paddingTop: 12 }} />
-            <Bar dataKey="perfect" name="Perfect" stackId="day" fill={colors.perfect} maxBarSize={22} />
-            <Bar dataKey="good" name="Good" stackId="day" fill={colors.good} maxBarSize={22} />
-            <Bar dataKey="weak" name="Weak" stackId="day" fill={colors.weak} maxBarSize={22} radius={[3, 3, 0, 0]} />
+            <Bar dataKey="perfect" name="Perfect" stackId="day" fill={colors.perfect} maxBarSize={22} onClick={selectBar} cursor={practiceKind ? "pointer" : undefined} />
+            <Bar dataKey="good" name="Good" stackId="day" fill={colors.good} maxBarSize={22} onClick={selectBar} cursor={practiceKind ? "pointer" : undefined} />
+            <Bar dataKey="weak" name="Weak" stackId="day" fill={colors.weak} maxBarSize={22} radius={[3, 3, 0, 0]} onClick={selectBar} cursor={practiceKind ? "pointer" : undefined} />
           </BarChart>
         </ResponsiveContainer>
       </div>
+      {practiceKind && <details className="mt-4 text-sm"><summary className="cursor-pointer text-blue-500">Browse practice sessions by {period === "year" ? "month" : "day"}</summary><div className="mt-3 flex flex-wrap gap-2">{data.filter(day => day.perfect + day.good + day.weak > 0).map(day => <Link key={day.date} href={historyLink(day.date)} className="rounded-md border border-card-border px-3 py-2 hover:border-blue-500">{formatDate(day.date)}</Link>)}</div></details>}
     </section>
   );
 }
@@ -91,8 +99,8 @@ export default function JapaneseStatisticsPage() {
           ].map((item) => <div key={item.label} className="card"><p className="text-sm text-gray-500">{item.label}</p><p className={`text-3xl font-bold mt-3 ${item.color}`}>{item.value}</p></div>)}
         </div>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <PeriodBars period={period} title="Vocabulary practice" data={data.days.map((day) => ({ date: day.date, ...day.vocab }))} />
-          <PeriodBars period={period} title="Kanji writing practice" data={data.days.map((day) => ({ date: day.date, ...day.kanji }))} />
+          <PeriodBars period={period} title="Vocabulary practice" practiceKind="vocab" data={data.days.map((day) => ({ date: day.date, ...day.vocab }))} />
+          <PeriodBars period={period} title="Kanji writing practice" practiceKind="kanji" data={data.days.map((day) => ({ date: day.date, ...day.kanji }))} />
           <PeriodBars period={period} title="Words added" data={data.days.map((day) => ({ date: day.date, ...day.added }))} />
           <section className="card min-w-0">
             <h2 className="text-lg font-semibold mb-6">Vocabulary average over time</h2>

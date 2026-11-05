@@ -47,8 +47,36 @@ test("live app denies all anonymous data routes, rejects other identities, and a
   assert.equal((await fetch(`${base}/api/events`, { headers: { cookie: "next-auth.session-token=forged" } })).status, 401);
   const headers = { cookie: await cookie(owner) };
   assert.equal((await fetch(`${base}/api/events`, { headers })).status, 200);
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const historyUrl = `${base}/api/japanese-practice/practice-sessions?date=${today}&kind=vocab`;
+  const history = await fetch(historyUrl, { headers });
+  assert.equal(history.status, 200);
+  const beforeSessions = (await history.json()).sessions;
+  const wordResponse = await fetch(`${base}/api/japanese-practice/vocabulary`, {
+    method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ activity: 1, nbWords: 1, categories: [] }),
+  });
+  assert.equal(wordResponse.status, 200);
+  const { words } = await wordResponse.json();
+  assert.ok(words.length);
+  const completedAt = new Date();
+  const preview = await fetch(`${base}/api/japanese-practice/practice-sessions/preview`, {
+    method: "POST", headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionKey: crypto.randomUUID(), activity: 1, startedAt: new Date(completedAt.getTime() - 65000).toISOString(), completedAt: completedAt.toISOString(), categories: [], starredOnly: false, updates: [{ activityVocabId: words[0].id, status: "PERFECT" }] }),
+  });
+  assert.equal(preview.status, 200);
+  const { review } = await preview.json();
+  assert.equal(review.id, null);
+  assert.equal(review.durationSeconds, 65);
+  assert.equal(review.words.length, 1);
+  assert.ok(Number.isFinite(review.averageAfter));
+  assert.equal((await (await fetch(historyUrl, { headers })).json()).sessions.length, beforeSessions.length, "preview must not save a practice");
+  if (beforeSessions.length) {
+    const detail = await fetch(`${base}/api/japanese-practice/practice-sessions/${beforeSessions[0].id}`, { headers });
+    assert.equal(detail.status, 200);
+    assert.equal((await detail.json()).review.id, beforeSessions[0].id);
+  }
   assert.equal((await fetch(`${base}/api/events`, { method: "POST", headers: { ...headers, origin: "https://untrusted.example" } })).status, 403);
-  for (const page of ["/", "/events", "/japanese/practice", "/japanese/statistics", "/todos", "/timemanager"]) {
+  for (const page of ["/", "/events", "/japanese/practice", "/japanese/practice/history", "/japanese/practice/history/1", "/japanese/statistics", "/todos", "/timemanager"]) {
     const response = await fetch(base + page, { redirect: "manual" });
     assert.equal(response.status, 307, page);
     assert.ok(response.headers.get("location").includes("/api/auth/signin"));

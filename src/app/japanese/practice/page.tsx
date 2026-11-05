@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { isKanji } from "@/lib/japanese/kanji-writing";
 import { useSnackbar } from "@/context/SnackbarContext";
+import PracticeOverview from "@/components/PracticeOverview";
+import type { PracticeSessionInput, PracticeSessionReview, PracticeStatus } from "@/lib/japanese/practice-session-types";
 
 interface Category { id: number; name: string; }
 interface Activity { id: number; activity: string; }
@@ -37,9 +39,20 @@ export default function PracticePage() {
   const [words, setWords] = useState<Word[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showingTranslation, setShowingTranslation] = useState(false);
-  const [statusArray, setStatusArray] = useState<{ activityVocabId:number, status:string }[]>([]);
+  const [statusArray, setStatusArray] = useState<PracticeSessionInput["updates"]>([]);
   const [userInput, setUserInput] = useState("");
   const [inputColor, setInputColor] = useState("border-gray-300 focus:ring-blue-500");
+  const [isSaving, setIsSaving] = useState(false);
+  const savingRef = useRef(false);
+  const finishingRef = useRef(false);
+  const startedAtRef = useRef("");
+  const sessionKeyRef = useRef("");
+  const practiceOptionsRef = useRef({ activity: selectedActivity, categories: selectedCategories, starredOnly });
+  const [isStarting, setIsStarting] = useState(false);
+  const [completedSession, setCompletedSession] = useState<PracticeSessionInput | null>(null);
+  const [review, setReview] = useState<PracticeSessionReview | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewError, setReviewError] = useState("");
   const { showMessage } = useSnackbar();
 
   useEffect(() => {
@@ -78,29 +91,98 @@ export default function PracticePage() {
   };
 
   const handleStart = async () => {
-    const res = await fetch("/api/japanese-practice/vocabulary", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ categories: selectedCategories, nbWords, activity: selectedActivity, starredOnly })
-    });
-
-    const data = await res.json();
-    if (data.success) {
+    if (isStarting) return;
+    const startedAt = new Date().toISOString();
+    const options = { categories: [...selectedCategories], nbWords, activity: selectedActivity, starredOnly };
+    setIsStarting(true);
+    try {
+      const res = await fetch("/api/japanese-practice/vocabulary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(options)
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) throw new Error(data?.error || "Unable to start practice. Please try again.");
+      if (!data.words?.length) {
+        showMessage("No vocabulary matches these practice options.");
+        return;
+      }
+      startedAtRef.current = startedAt;
+      sessionKeyRef.current = crypto.randomUUID();
+      practiceOptionsRef.current = options;
+      setSelectedActivity(options.activity);
+      finishingRef.current = false;
+      setCompletedSession(null);
+      setReview(null);
+      setReviewError("");
       setWords(data.words);
       setCurrentIndex(0);
       setShowingTranslation(false);
       setStatusArray([]);
       setUserInput("");
-    } else {
-      showMessage(data.error);
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : "Unable to start practice. Please check your connection.");
+    } finally {
+      setIsStarting(false);
+    }
+  };
+
+  const loadReview = async (input: PracticeSessionInput) => {
+    setReviewLoading(true);
+    setReviewError("");
+    try {
+      const res = await fetch("/api/japanese-practice/practice-sessions/preview", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) throw new Error(data?.error || "Unable to prepare your practice overview. Please try again.");
+      setReview(data.review);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to prepare your practice overview.";
+      setReviewError(message);
+      showMessage(message);
+    } finally {
+      setReviewLoading(false);
+    }
+  };
+
+  const saveReview = async () => {
+    if (!completedSession || savingRef.current) return;
+    savingRef.current = true;
+    setIsSaving(true);
+    try {
+      const res = await fetch("/api/japanese-practice/practice-sessions", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(completedSession),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) throw new Error(data?.error || "Unable to save practice. Please try again.");
+      setWords([]);
+      setCurrentIndex(0);
+      setShowingTranslation(false);
+      setStatusArray([]);
+      setUserInput("");
+      setCompletedSession(null);
+      setReview(null);
+      finishingRef.current = false;
+      showMessage("Practice saved successfully!");
+    } catch (error) {
+      showMessage(`${error instanceof Error ? error.message : "Unable to save practice."} Your results are kept. Press Okay to retry.`);
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
     }
   };
 
   const showTranslation = () => setShowingTranslation(true);
 
-  const setStatus = (status: "PERFECT"|"GOOD"|"WEAK") => {
+  const setStatus = async (status: PracticeStatus) => {
+    if (savingRef.current || finishingRef.current) return;
     const currentWord = words[currentIndex];
-    const newStatuses = [...statusArray, { activityVocabId: currentWord.id, status }];
+    if (!currentWord) return;
+    const newStatuses = [
+      ...statusArray.filter(item => item.activityVocabId !== currentWord.id),
+      { activityVocabId: currentWord.id, status },
+    ];
     setStatusArray(newStatuses);
 
     // Assign status to currentWord for border color
@@ -113,18 +195,13 @@ export default function PracticePage() {
       setShowingTranslation(false);
       setUserInput("");
     } else {
-      // Save statuses and reset
-      fetch("/api/japanese-practice/vocabulary", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ updates: newStatuses, activity: selectedActivity })
-      }).then(() => {
-        setWords([]);
-        setCurrentIndex(0);
-        setShowingTranslation(false);
-        setStatusArray([]);
-        setUserInput("");
-      });
+      finishingRef.current = true;
+      const input: PracticeSessionInput = {
+        sessionKey: sessionKeyRef.current, startedAt: startedAtRef.current, completedAt: new Date().toISOString(),
+        ...practiceOptionsRef.current, updates: newStatuses,
+      };
+      setCompletedSession(input);
+      await loadReview(input);
     }
   };
 
@@ -177,6 +254,7 @@ export default function PracticePage() {
   // Global F1 / F2 / F3 keyboard shortcuts
   useEffect(() => {
     const handleFunctionKeys = (e: KeyboardEvent) => {
+      if (finishingRef.current) return;
       if (e.key === "Enter") {
         e.preventDefault();
         showTranslation();
@@ -205,11 +283,22 @@ export default function PracticePage() {
 
   // Auto-play sound for japanese to english listening activity when word changes
   useEffect(() => {
-    if (selectedActivity === 4 && words.length > 0 && !showingTranslation) {
+    if (!completedSession && selectedActivity === 4 && words.length > 0 && !showingTranslation) {
       speak(currentWord.japanese);
     }
-  }, [currentIndex, selectedActivity, showingTranslation, currentWord, words]);
+  }, [completedSession, currentIndex, selectedActivity, showingTranslation, currentWord, words]);
 
+  if (completedSession) return (
+    <div className="min-w-0">
+      {review ? <PracticeOverview review={review} actions={<button type="button" onClick={() => void saveReview()} disabled={isSaving} className="rounded-lg bg-blue-600 px-6 py-3 font-medium text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer">{isSaving ? "Saving…" : "Okay"}</button>} /> : (
+        <div className="card max-w-3xl mx-auto space-y-4">
+          <h1 className="text-2xl font-bold">Practice complete</h1>
+          {reviewLoading && <p role="status">Preparing your practice overview…</p>}
+          {reviewError && <><p role="alert" className="text-rose-500">{reviewError}</p><button type="button" onClick={() => void loadReview(completedSession)} disabled={reviewLoading} className="rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-50">Retry overview</button></>}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="practice-page flex items-center justify-center mt-10 text-white">
@@ -282,9 +371,10 @@ export default function PracticePage() {
             <div className="flex flex-wrap justify-center gap-2 mt-4 min-[2240px]:col-span-2">
               <button
                 onClick={handleStart}
-                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
+                disabled={isStarting}
+                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition disabled:opacity-50"
               >
-                Start Practice
+                {isStarting ? "Starting…" : "Start Practice"}
               </button>
               <Link
                 href="/japanese/vocabulary"
@@ -376,19 +466,22 @@ export default function PracticePage() {
                 <>
                   <button
                     onClick={() => setStatus("PERFECT")}
-                    className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition"
+                    disabled={isSaving}
+                    className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition disabled:opacity-50"
                   >
                     PERFECT
                   </button>
                   <button
                     onClick={() => setStatus("GOOD")}
-                    className="px-3 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600 transition"
+                    disabled={isSaving}
+                    className="px-3 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600 transition disabled:opacity-50"
                   >
                     GOOD
                   </button>
                   <button
                     onClick={() => setStatus("WEAK")}
-                    className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition"
+                    disabled={isSaving}
+                    className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition disabled:opacity-50"
                   >
                     WEAK
                   </button>
@@ -406,6 +499,7 @@ export default function PracticePage() {
               )}
             </div>
             
+            {isSaving && <p role="status">Saving practice…</p>}
             <p>{currentIndex + 1}/{words.length}</p>
           </div>
         )}

@@ -21,7 +21,7 @@ export async function GET(request: Request) {
     const data = await prisma.$transaction(async (tx) => {
       await recordJapaneseProgress(tx, userId, now);
       const [practices, vocabulary, activities, snapshots] = await Promise.all([
-        tx.practice.findMany({ where: { date: { gte: torontoMidnight(statisticsStartDate(now, period)), lt: torontoMidnight(shiftDateKey(today, 1)) } } }),
+        tx.practice.findMany({ where: { userId, date: { gte: torontoMidnight(statisticsStartDate(now, period)), lt: torontoMidnight(shiftDateKey(today, 1)) } } }),
         tx.vocabulary.findMany({ where: { userId }, include: { category: true, activityVocab: true, verbForms: { include: { activityVocab: true } } } }),
         tx.activity.findMany({ select: { id: true } }),
         tx.japaneseProgressSnapshot.findMany({ where: { userId, day: { lte: today } }, orderBy: { day: "asc" } }),

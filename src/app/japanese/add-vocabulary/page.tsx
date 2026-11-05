@@ -52,23 +52,37 @@ export default function AddVocabularyPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!categoryId) return;
+    if (!categoryId) {
+      showMessage("Please select a category before adding vocabulary.");
+      return;
+    }
 
-    const res = await fetch("/api/japanese-practice/vocabulary/add", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        english,
-        japanese,
-        hiragana,
-        categoryId,
-        verbType: selectedVerbType,
-        starred: starred,
-      }),
-    });
+    try {
+      const res = await fetch("/api/japanese-practice/vocabulary/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          english,
+          japanese,
+          hiragana,
+          categoryId,
+          verbType: selectedVerbType,
+          starred,
+        }),
+      });
 
-    const data = await res.json();
-    if (res.ok) {
+      const data = await res.json().catch(() => null);
+      if (!res.ok || data?.success !== true) {
+        const message = [data?.error, data?.message].find(
+          (value) => typeof value === "string" && value.trim()
+        );
+        const fallback = res.status === 401 || res.status === 403
+          ? "Your session may have expired. Please sign in again."
+          : `The server could not save this vocabulary (HTTP ${res.status}). Please try again.`;
+        showMessage(`Unable to add vocabulary: ${message || fallback}`);
+        return;
+      }
+
       showMessage("Vocabulary added successfully!");
       setEnglish("");
       setJapanese("");
@@ -76,8 +90,8 @@ export default function AddVocabularyPage() {
       setCategoryId(categories[0]?.id || null);
       setSelectedVerbType(null);
       setStarred(false);
-    } else {
-      showMessage("Error: " + data.message);
+    } catch {
+      showMessage("Unable to add vocabulary. Could not reach the server. Check your connection and try again.");
     }
   };
 

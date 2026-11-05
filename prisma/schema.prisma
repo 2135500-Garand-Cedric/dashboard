@@ -161,8 +161,21 @@ model Practice {
   perfectCount  Int
   goodCount     Int
   weakCount     Int
+  userId        Int         @default(1)
+  sessionKey    String?     @unique
+  activityName  String?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  durationSeconds Int?
+  averageBefore Float?
+  averageAfter  Float?
+  selectedCategories Json?
+  starredOnly   Boolean     @default(false)
+  words         Json?
 
   activity   Activity @relation(fields: [activityId], references: [id])
+
+  @@index([userId, date])
 }
 
 

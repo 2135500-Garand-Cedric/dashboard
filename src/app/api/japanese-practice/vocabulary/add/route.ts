@@ -97,8 +97,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, vocabulary: result });
   } catch (error: unknown) {
     console.error(error);
+    const code = error && typeof error === "object" && "code" in error ? error.code : null;
+    if (code === "P2002") {
+      return NextResponse.json(
+        { success: false, error: "A vocabulary entry with the same English meaning and hiragana reading already exists. Edit the existing entry or use a different meaning or reading." },
+        { status: 409 }
+      );
+    }
+    if (code === "P2003") {
+      return NextResponse.json(
+        { success: false, error: "The selected category no longer exists. Refresh the page and choose an available category." },
+        { status: 400 }
+      );
+    }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Unable to load vocabulary" },
+      { success: false, error: error instanceof Error && error.message ? error.message : "Unable to add vocabulary. Please try again." },
       { status: 500 }
     );
   }

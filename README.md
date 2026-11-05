@@ -71,6 +71,18 @@ Dashboard daily totals and statistics buckets use America/Toronto, including day
 
 Development statistics vocabulary uses 56 distinct noun entries checked against [JLPT Sensei's N5 list](https://jlptsensei.com/jlpt-n5-nouns-vocabulary-list/) and [N4 list](https://jlptsensei.com/jlpt-n4-nouns-vocabulary-list/). Readings, meanings, study levels, and source URLs are stored in `prisma/statistics-vocabulary.json`. The seed matches Japanese spelling plus reading, preserves existing progress, and removes the old dated statistics-demo clones. Practice totals and past average snapshots remain illustrative development data.
 
+## Practice reviews and history
+
+Rating the final word opens a practice overview. **Okay** commits the ratings, practice session, and progress snapshot in one transaction. The overview includes the activity, status groups with word spellings/readings, total words, selected categories (or no category filter), starred filter, and elapsed time from pressing Start Practice to rating the final word. Reading the overview and time spent reviewing it do not extend that duration. Failed saves retain the overview for retry; a unique session key prevents duplicate sessions if the response is lost.
+
+The average uses the same full vocabulary-list calculation described above, including verb-form averages and Kanji writing eligibility. The review previews the effect without changing saved ratings. On Okay, before/after averages are computed against the current database state inside the save transaction and stored permanently. Average change is shown in percentage points: for example, 40% to 42% is +2 percentage points.
+
+Click a Vocabulary practice or Kanji writing practice bar in Japanese Statistics to browse its sessions. Month view opens the selected Toronto calendar day; Year view opens the selected month, grouped by day. Accessible date links are available under each practice chart. Selecting a session opens the same overview using saved word/category/activity snapshots, so later edits or vocabulary deletion do not rewrite its history. Opening old results does not save them again.
+
+The `20261105150000_add_practice_session_details` migration adds these details to Practice while preserving older records. Older practices display their existing totals with missing details marked as not recorded; their original words, durations, and average changes cannot be recovered. Apply the migration through the normal production deployment (`prisma migrate deploy`); production Compose already runs it on startup. Unit coverage: `node --test tests/practice-sessions.test.mjs`. Database coverage: `RUN_PRACTICE_SESSION_DB_TEST=1 node tests/practice-sessions.integration.mjs` inside the development container; fixtures are rolled back.
+
+Optional browser layout coverage: `RUN_PRACTICE_BROWSER_TEST=1 node tests/practice-overview.browser.mjs` with the development app running and Playwright/Chromium available. `NODE_PATH` can point to a separate temporary Playwright installation. It checks independent status-list scrolling, visible scrollbars, and access to all seven Good words at desktop and mobile sizes using browser-only fixtures; it does not change database records.
+
 ## Owner-only authentication
 
 The app is restricted to the permanent GitHub account ID `89470930` (`2135500-Garand-Cedric`). The allowlist is in `src/lib/owner-policy.ts`; matching an email address or username does not grant access. Other GitHub accounts are redirected to `/access-denied` and do not receive an authorized app session.
