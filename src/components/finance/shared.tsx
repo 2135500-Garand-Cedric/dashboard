@@ -6,13 +6,17 @@ export const fieldClass = "w-full min-w-0 rounded-lg border border-card-border b
 export const primaryButton = "inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500";
 export const secondaryButton = "inline-flex items-center justify-center rounded-lg border border-card-border px-4 py-2 text-sm font-medium transition-colors hover:bg-blue-500/10 disabled:opacity-50 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500";
 
+export class FinanceRequestError extends Error {
+  constructor(message: string, public code?: string, public existingId?: number) { super(message); }
+}
+
 export async function financeRequest<T>(url: string, options?: RequestInit): Promise<T> {
   let response: Response;
   try { response = await fetch(url, { ...options, cache: "no-store" }); }
   catch { throw new Error("Could not reach the server. Check your connection and try again."); }
   const data = await response.json().catch(() => null);
   if (!response.ok || !data) {
-    throw new Error(typeof data?.error === "string" ? data.error : "Unable to complete the finance request. Please try again.");
+    throw new FinanceRequestError(typeof data?.error === "string" ? data.error : "Unable to complete the finance request. Please try again.", typeof data?.code === "string" ? data.code : undefined, typeof data?.existingId === "number" ? data.existingId : undefined);
   }
   return data;
 }

@@ -83,13 +83,13 @@ The `20261105150000_add_practice_session_details` migration adds these details t
 
 Optional browser layout coverage: `RUN_PRACTICE_BROWSER_TEST=1 node tests/practice-overview.browser.mjs` with the development app running and Playwright/Chromium available. `NODE_PATH` can point to a separate temporary Playwright installation. It checks independent status-list scrolling on desktop, whole-page scrolling with stacked Weak/Good/Perfect sections below 1024px, and access to all seven Good words using browser-only fixtures; it does not change database records.
 
-## Personal finance — Phase 1
+## Personal finance — Phases 1–2
 
 The sidebar's **Finance** section provides an overview, financial accounts, and customizable Income/Expense categories. Accounts support chequing, savings, credit card, cash, and other types; each has an explicit currency, optional masked identifier, and active/inactive status. Names are trimmed and normalized for duplicate detection. Account names are unique for the owner; category names are unique within Income or Expense. Identifiers accept only the last four characters with optional masking symbols. Full account/card numbers, CVVs, and banking credentials have no fields or supported workflow.
 
 Accounts can be edited, deactivated, and reactivated. Categories can also be deleted when unused. Foreign keys retain referenced categories and accounts; deactivation preserves history. Once financial records reference an account, its currency cannot be changed. A category's Income/Expense type likewise cannot change after use. New categories/accounts should be created for those changes instead.
 
-All Finance pages use `ProtectedLayout`; all nine Finance API handlers call `requireOwner` before processing requests. Queries are scoped to database user 1, following the existing single-owner policy. Finance responses are private/non-cacheable, inputs reject client-supplied ownership, and API errors do not expose ORM payloads or log account/category values. No new dependencies, services, or database were added.
+All Finance pages use `ProtectedLayout`; all Finance API handlers call `requireOwner` before processing requests. Queries are scoped to database user 1, following the existing single-owner policy. Finance responses are private/non-cacheable, inputs reject client-supplied ownership, and API errors do not expose ORM payloads or log account/category values. No new dependencies, services, or database were added.
 
 The additive `20261105180000_finance_foundation` migration creates the two management tables and minimal future financial record tables:
 
@@ -98,13 +98,22 @@ The additive `20261105180000_finance_foundation` migration creates the two manag
 - `FinancialDocument` holds private storage metadata and optional record links. No files, public file URLs, upload/download endpoints, or storage service are implemented.
 - `FinancialImport` has an account-scoped unique fingerprint. `FinancialImportEntry` retains original JSON separately from editable ledger fields, has a unique row key within its import, and can match an existing transaction. Multiple imported entries can reference the same transaction without requiring duplicate ledger entries.
 
-These future tables define relationships only. There are no transaction-entry, receipt, income, document-upload, import/reconciliation, AI, or reporting workflows in Phase 1. Future monetary APIs must accept/return decimal strings and use Prisma Decimal arithmetic; amounts must not be converted to JavaScript floating-point numbers. The stored scale is four decimal places with 15 integer digits. Future phases must validate currency/account/category compatibility and document storage access at their own input boundaries.
+Phase 2 adds manual entry and transaction history at `/finance/transactions`, with search, date/account/category/type/currency filters, pagination, editing and confirmed deletion. Date, description, amount, currency and account are required; expenses/income/refunds also require a compatible category. Merchant/counterparty and notes are optional; receipts and documents are never required. Cash, debit and credit card purchases are expenses against their respective accounts. Record Interac e-Transfers to other people as expenses or income, according to their purpose. A refund is a positive movement against an expense category, separate from income. Adjustments allow either direction without categorization.
+
+The additive `20261105210000_manual_financial_transactions` migration adds notes, refund type, retry/duplicate fingerprints, and `FinancialTransfer` groups. A transfer saves two linked ledger entries atomically: a negative movement from the source and a positive movement into the destination. History displays the group once, and editing/deleting updates both sides together. Credit card bill payments and cash withdrawals into tracked cash accounts are transfers, never new expenses. Both accounts must belong to the owner. Same-currency transfers require equal amounts; cross-currency transfers explicitly capture both amounts in the respective account currencies. Record fees as separate expenses.
+
+Money crosses HTTP boundaries as decimal strings and uses Prisma Decimal arithmetic, never JavaScript floating-point arithmetic. The stored scale is four decimal places with 15 integer digits. Amounts are nonzero, currencies must match accounts, and category types must match transaction types. Dates are calendar dates, avoiding timezone shifts. Inactive accounts/categories remain visible in history and existing entries; new entries require active references.
+
+Each new form has an idempotency key: retrying the same request returns the original result. A different request with matching normalized date, account(s), type, amount(s), description and counterparty returns a duplicate warning with an existing-entry link. The user can explicitly confirm a separate legitimate entry. Similar entries with different dates/descriptions are not automatically merged. Edits check the saved version to avoid overwriting concurrent changes. Serializable writes protect transfer and duplicate operations.
+
+Stable transaction IDs and the existing import-entry links let future statement rows reference these manual ledger entries rather than create another expense. Transfer edits preserve both entry IDs. Entries already linked to imports cannot be edited/deleted through manual management. Original imported JSON stays separate and untouched. Receipt uploads, income-detail records, statement imports, reconciliation, AI and reports still have no application workflows; their foundation tables remain minimal.
 
 Deploy through the existing production Compose workflow, which runs `prisma migrate deploy` automatically; generate Prisma Client when building. No finance demo data is seeded. Verification:
 
-- `node --test tests/finance.test.mjs tests/auth-security.test.mjs`
-- In the development container: `RUN_FINANCE_DB_TEST=1 node tests/finance.integration.mjs` (all fixtures roll back).
+- `node --test tests/*.test.mjs`
+- In the development container: `RUN_FINANCE_DB_TEST=1 node tests/finance.integration.mjs` and `RUN_FINANCE_TRANSACTION_DB_TEST=1 node tests/finance-transactions.integration.mjs` (all fixtures roll back).
 - With Playwright/Chromium available and the development app running: `RUN_FINANCE_BROWSER_TEST=1 node tests/finance.browser.mjs` (`NODE_PATH` may point to a temporary Playwright installation). All finance writes use browser-only fixtures.
+- Transaction browser checks: `RUN_FINANCE_TRANSACTION_BROWSER_TEST=1 node tests/finance-transactions.browser.mjs`, with Playwright/Chromium and the app available; financial writes use browser-only fixtures.
 - `RUN_AUTH_HTTP_TEST=1 node tests/auth-security.integration.mjs` inside the development container checks all protected endpoints and Finance page redirects without creating finance records.
 
 ## Owner-only authentication

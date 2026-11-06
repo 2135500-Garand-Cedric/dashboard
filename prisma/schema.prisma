@@ -38,6 +38,7 @@ model User {
   financialAccounts FinancialAccount[]
   financeCategories FinanceCategory[]
   financialTransactions FinancialTransaction[]
+  financialTransfers FinancialTransfer[]
   financialReceipts FinancialReceipt[]
   financialIncomeRecords FinancialIncomeRecord[]
   financialDocuments FinancialDocument[]
@@ -261,6 +262,7 @@ enum FinanceCategoryType {
 enum FinancialTransactionType {
   EXPENSE
   INCOME
+  REFUND
   TRANSFER
   ADJUSTMENT
 }
@@ -318,7 +320,6 @@ model FinanceCategory {
   @@index([userId, active])
 }
 
-// Foundation only: no transaction, receipt, income, document, or import APIs yet.
 // Transactions are the canonical ledger. Signed amounts: inflow positive,
 // outflow negative. Transfers/adjustments remain distinct from income/expenses.
 model FinancialTransaction {
@@ -333,11 +334,17 @@ model FinancialTransaction {
   source      FinancialTransactionSource @default(MANUAL)
   description String
   counterparty String?
+  notes       String?
+  transferId  String?                    @db.Uuid
+  requestKey  String?                    @db.Uuid
+  requestFingerprint String?             @db.VarChar(64)
+  contentFingerprint String?             @db.VarChar(64)
   createdAt   DateTime                   @default(now())
   updatedAt   DateTime                   @updatedAt
   user        User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
   account     FinancialAccount           @relation(fields: [accountId], references: [id], onDelete: Restrict)
   category    FinanceCategory?           @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  transfer    FinancialTransfer?         @relation(fields: [transferId], references: [id], onDelete: Cascade)
   receipts    FinancialReceipt[]
   incomeRecords FinancialIncomeRecord[]
   documents   FinancialDocument[]
@@ -346,6 +353,20 @@ model FinancialTransaction {
   @@index([userId, occurredOn])
   @@index([accountId, occurredOn])
   @@index([categoryId])
+  @@unique([userId, requestKey])
+  @@unique([transferId, accountId])
+  @@index([userId, contentFingerprint])
+}
+
+// One economic transfer, with one outgoing and one incoming ledger entry.
+// Both legs are created, edited, and deleted in the same database transaction.
+model FinancialTransfer {
+  id           String                 @id @default(uuid()) @db.Uuid
+  userId       Int
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  transactions FinancialTransaction[]
+
+  @@index([userId])
 }
 
 model FinancialReceipt {
