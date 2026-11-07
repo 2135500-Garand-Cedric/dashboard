@@ -473,6 +473,15 @@ model FinancialImport {
   id          Int                  @id @default(autoincrement())
   userId      Int
   accountId   Int
+  status      FinancialImportStatus @default(DRAFT)
+  revision    Int                  @default(1)
+  originalName String?
+  byteSize    Int?
+  parsing     Json?
+  headers     Json?
+  mapping     Json?
+  updatedAt   DateTime             @updatedAt
+  completedAt DateTime?
   fingerprint String               @db.VarChar(64)
   createdAt   DateTime             @default(now())
   user        User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
@@ -490,6 +499,11 @@ model FinancialImportEntry {
   id            Int                   @id @default(autoincrement())
   importId      Int
   rowKey        String
+  rowNumber     Int?
+  rowFingerprint String? @db.VarChar(64)
+  sourceIdentifier String?
+  action        FinancialImportAction @default(REVIEW)
+  normalized    Json?
   originalData  Json
   transactionId Int?
   import        FinancialImport       @relation(fields: [importId], references: [id], onDelete: Cascade)
@@ -497,6 +511,8 @@ model FinancialImportEntry {
 
   @@unique([importId, rowKey])
   @@index([transactionId])
+  @@index([rowFingerprint])
+  @@index([sourceIdentifier])
 }
 
 
@@ -545,4 +561,15 @@ model FinancialIncomeDeduction {
 
   @@unique([incomeRecordId, typeId])
   @@index([typeId])
+}
+
+enum FinancialImportStatus {
+  DRAFT
+  COMPLETED
+}
+enum FinancialImportAction {
+  REVIEW
+  CREATE
+  MATCH
+  SKIP
 }

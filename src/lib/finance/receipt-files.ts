@@ -7,7 +7,7 @@ import { MAX_RECEIPT_BYTES } from "./receipts";
 
 export interface PreparedReceiptFile { buffer: Buffer; originalName: string; mimeType: string; extension: string; contentHash: string; }
 export function receiptStoragePath(key: string) {
-  if (!/^[a-f0-9-]{36}\.(jpg|png|webp|gif|pdf)$/.test(key)) throw new FinanceValidationError("Invalid stored document.", 404);
+  if (!/^[a-f0-9-]{36}\.(jpg|png|webp|gif|pdf|csv)$/.test(key)) throw new FinanceValidationError("Invalid stored document.", 404);
   const root = path.resolve(process.env.FINANCE_UPLOAD_DIR || path.join(process.cwd(), "private/finance"));
   const publicRoot = path.resolve(process.cwd(), "public");
   if (root === publicRoot || root.startsWith(`${publicRoot}${path.sep}`)) throw new Error("Receipt storage must be private.");
@@ -55,10 +55,10 @@ export async function readReceiptFile(key: string) {
 }
 
 // Bound the actual stream, not just an untrusted Content-Length header, before parsing multipart.
-// Shared bounded multipart reader for receipts and income documents.
-export async function receiptFormData(request: Request, label = "Receipt") {
-  const limit = MAX_RECEIPT_BYTES + 65536;
-  if (Number(request.headers.get("content-length")) > limit) throw new FinanceValidationError("The upload is too large. Maximum file size is 15 MB.", 413);
+// Shared bounded multipart reader for receipts, income documents and statement CSVs.
+export async function readFinanceFormData(request: Request, maxBytes: number, label: string) {
+  const limit = maxBytes + 65536;
+  if (Number(request.headers.get("content-length")) > limit) throw new FinanceValidationError(`The upload is too large. Maximum file size is ${Math.floor(maxBytes / 1024 / 1024)} MB.`, 413);
   if (!request.headers.get("content-type")?.startsWith("multipart/form-data;")) throw new FinanceValidationError(`Use a multipart ${label.toLowerCase()} form.`);
   const reader = request.body?.getReader();
   if (!reader) throw new FinanceValidationError(`${label} form is missing.`);
@@ -67,7 +67,7 @@ export async function receiptFormData(request: Request, label = "Receipt") {
     while (true) {
       const chunk = await reader.read(); if (chunk.done) break;
       size += chunk.value.byteLength;
-      if (size > limit) { await reader.cancel(); throw new FinanceValidationError("The upload is too large. Maximum file size is 15 MB.", 413); }
+      if (size > limit) { await reader.cancel(); throw new FinanceValidationError(`The upload is too large. Maximum file size is ${Math.floor(maxBytes / 1024 / 1024)} MB.`, 413); }
       chunks.push(chunk.value);
     }
   } finally { reader.releaseLock(); }
@@ -78,6 +78,11 @@ export async function receiptFormData(request: Request, label = "Receipt") {
   const details = form.get("details");
   if (typeof details !== "string" || details.length > 16000) throw new FinanceValidationError(`${label} details are missing or too large.`);
   const file = form.get("file");
-  if (file !== null && typeof file === "string") throw new FinanceValidationError("Choose a valid image or PDF file.");
-  return { details: JSON.parse(details), file: file ? await prepareReceiptFile(file) : null };
+  if (file !== null && typeof file === "string") throw new FinanceValidationError("Choose a valid uploaded file.");
+  return { details: JSON.parse(details), file };
+}
+
+export async function receiptFormData(request: Request, label = "Receipt") {
+  const form = await readFinanceFormData(request, MAX_RECEIPT_BYTES, label);
+  return { details: form.details, file: form.file ? await prepareReceiptFile(form.file) : null };
 }

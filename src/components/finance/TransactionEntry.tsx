@@ -41,7 +41,7 @@ function EntryForm({ initialDate, existing }: { initialDate: string; existing?: 
   const crossCurrency = draft.type === "TRANSFER" && account && destination && account.currency !== destination.currency;
   const availableAccounts = accounts.data?.accounts.filter(item => item.active || item.id === existing?.account.id || item.id === existing?.transfer?.account.id) ?? [];
   const availableCategories = categories.data?.categories.filter(item => (item.active || item.id === existing?.category?.id) && item.type === (draft.type === "INCOME" ? "INCOME" : "EXPENSE")) ?? [];
-  const readOnly = existing?.source === "IMPORTED";
+  const readOnly = existing?.source === "IMPORTED" || existing?.editable === false;
 
   async function save(allowDuplicate = false) {
     if (saving.current || readOnly) return;
@@ -69,7 +69,7 @@ function EntryForm({ initialDate, existing }: { initialDate: string; existing?: 
   function submit(event: FormEvent) { event.preventDefault(); void save(); }
 
   return <div className="space-y-5">
-    <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-2xl font-semibold">{existing ? "Edit transaction" : "New transaction"}</h2><Link href="/finance/transactions" className={secondaryButton}>← Transaction history</Link></div>
+    <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-2xl font-semibold">{existing ? readOnly ? "Transaction details" : "Edit transaction" : "New transaction"}</h2><Link href="/finance/transactions" className={secondaryButton}>← Transaction history</Link></div>
     {!!existing?.receipts?.length && <section className="card max-w-5xl space-y-3"><h3 className="text-lg font-semibold">Linked receipts ({existing.receipts.length})</h3><div className="flex flex-wrap gap-2">{existing.receipts.map(receipt => <Link key={receipt.id} href={`/finance/receipts/${receipt.id}`} className={`${secondaryButton} max-w-full break-words`}>
       {existing.receipts.length === 1 ? "View receipt" : `View receipt #${receipt.id} — ${receipt.merchant || "Receipt"} · ${receipt.date}`}
     </Link>)}</div></section>}
@@ -77,7 +77,7 @@ function EntryForm({ initialDate, existing }: { initialDate: string; existing?: 
     {accounts.error && <FinanceLoadError error={accounts.error} retry={accounts.retry} />}
     {categories.error && <FinanceLoadError error={categories.error} retry={categories.retry} />}
     {failure && <div role="alert" className="card space-y-3 border-rose-500/40"><p className="text-rose-500">{failure.message}</p>{failure.existingId && <div className="flex flex-wrap gap-3"><Link href={`/finance/transactions/${failure.existingId}`} className={secondaryButton}>Review existing transaction</Link>{failure.code === "DUPLICATE_TRANSACTION" && <button type="button" disabled={busy} className={primaryButton} onClick={() => void save(true)}>Save as a separate transaction</button>}</div>}</div>}
-    {readOnly && <p role="alert" className="card">Imported entries cannot be edited through manual transaction management.</p>}
+    {readOnly && <p role="alert" className="card">Imported entries and transactions linked to statements cannot be edited through manual transaction management.</p>}
     {!accounts.loading && accounts.data && !availableAccounts.length && <div className="card space-y-3"><p>Create an active account before entering transactions.</p><Link href="/finance/accounts" className={primaryButton}>Manage accounts</Link></div>}
     <form onSubmit={submit} className="card max-w-5xl">
       <fieldset disabled={busy || accounts.loading || categories.loading || !!accounts.error || !!categories.error || !availableAccounts.length || readOnly} className="min-w-0 space-y-5">

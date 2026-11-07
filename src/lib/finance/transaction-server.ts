@@ -38,6 +38,7 @@ export function serializeTransaction(row: Row): FinanceTransaction {
     id: row.id, date: row.occurredOn.toISOString().slice(0, 10), description: row.description,
     amount: row.amount.toFixed(4), currency: row.currency, type: row.type,
     account: row.account, category: row.category, counterparty: row.counterparty, notes: row.notes,
+    editable: row.source === "MANUAL" && !row._count.importEntries && incoming?.source !== "IMPORTED" && !incoming?._count.importEntries,
     source: row.source, updatedAt: row.updatedAt.toISOString(),
     receipts: row.receipts.map(receipt => ({ id: receipt.id, merchant: receipt.merchant, date: receipt.purchasedOn.toISOString().slice(0, 10) })),
     incomeRecords: row.incomeRecords.map(record => ({ id: record.id, description: record.description, date: record.paidOn.toISOString().slice(0, 10) })),
