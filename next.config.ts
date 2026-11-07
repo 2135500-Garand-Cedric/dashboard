@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Finance query strings may include private descriptions and merchant searches.
+  logging: { incomingRequests: { ignore: [/^\/(?:api\/)?finance(?:[/?]|$)/] } },
   eslint: {
     ignoreDuringBuilds: true,
   },

@@ -171,7 +171,7 @@ export async function deleteTransaction(id: number) {
   }, { isolationLevel: "Serializable" });
 }
 
-export async function listTransactions(params: URLSearchParams) {
+export async function listTransactions(params: URLSearchParams, exporting = false) {
   const conditions: Prisma.FinancialTransactionWhereInput[] = [{ OR: [{ transferId: null }, { amount: { lt: 0 } }] }];
   for (const key of ["account", "category"]) {
     const value = params.get(key);
@@ -200,10 +200,11 @@ export async function listTransactions(params: URLSearchParams) {
   }
   const pageText = params.get("page") ?? "1";
   if (!/^[1-9]\d*$/.test(pageText) || Number(pageText) > 1000000) throw new FinanceValidationError("Invalid page number.");
-  const page = Number(pageText), pageSize = 25;
+  const page = exporting ? 1 : Number(pageText), pageSize = exporting ? 5000 : 25;
   return prisma.$transaction(async db => {
     const where = { userId: FINANCE_USER_ID, AND: conditions };
     const total = await db.financialTransaction.count({ where });
+    if (exporting && total > pageSize) throw new FinanceValidationError("Export is limited to 5,000 records. Narrow the date range or filters.", 413);
     const rows = await db.financialTransaction.findMany({ where, include, orderBy: [{ occurredOn: "desc" }, { id: "desc" }], skip: (page - 1) * pageSize, take: pageSize });
     return { transactions: rows.map(serializeTransaction), total, page, pageSize };
   }, { isolationLevel: "RepeatableRead" });

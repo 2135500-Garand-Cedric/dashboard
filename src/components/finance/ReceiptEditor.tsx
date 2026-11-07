@@ -1,13 +1,11 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element -- Originals use authenticated URLs and must bypass the public image optimizer. */
-
 import Link from "next/link";
-import ReceiptPdfPreview from "./ReceiptPdfPreview";
+import FinanceDocumentPanel from "./FinanceDocumentPanel";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useSnackbar } from "@/context/SnackbarContext";
-import { MAX_RECEIPT_BYTES, RECEIPT_FILE_ACCEPT, receiptDifference, receiptMoney, type FinanceReceipt } from "@/lib/finance/receipts";
+import { receiptDifference, receiptMoney, type FinanceReceipt } from "@/lib/finance/receipts";
 import type { FinanceAccount, FinanceCategory } from "@/lib/finance/validation";
 import { displayAmount, type TransactionPage } from "@/lib/finance/transactions";
 import { fieldClass, financeRequest, FinanceLoadError, FinanceRequestError, primaryButton, secondaryButton, useFinanceData } from "./shared";
@@ -26,8 +24,6 @@ function ReceiptForm({ existing, initialDate, currencies, refresh }: { existing?
   const categories = useFinanceData<{ categories: FinanceCategory[] }>("/api/finance/categories");
   const [draft, setDraft] = useState(() => ({ merchant: existing?.merchant ?? "", date: initialDate, accountId: String(existing?.account?.id ?? ""), categoryId: String(existing?.category?.id ?? ""), currency: existing?.currency ?? "CAD", subtotal: existing?.subtotal ?? "", tax: existing?.tax ?? "0", tip: existing?.tip ?? "0", total: existing?.total ?? "", notes: existing?.notes ?? "", transactionAction: existing?.transaction ? "LINK" : "UNMATCHED", transactionId: String(existing?.transaction?.id ?? "") }));
   const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState("");
-  const [imageError, setImageError] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<FinanceRequestError | null>(null);
   const [acknowledge, setAcknowledge] = useState(false);
@@ -37,11 +33,6 @@ function ReceiptForm({ existing, initialDate, currencies, refresh }: { existing?
   const requestKey = useRef<string | null>(null), saving = useRef(false);
   const router = useRouter(), { showMessage } = useSnackbar();
   const patch = (key: keyof typeof draft, value: string) => { setDraft(previous => ({ ...previous, [key]: value })); setAcknowledge(false); };
-  useEffect(() => {
-    if (!file) { setPreview(""); return; }
-    const url = URL.createObjectURL(file); setPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
   let difference: string | null = null;
   try { difference = receiptDifference(draft.subtotal, draft.tax, draft.tip || "0", draft.total); } catch { /* Show the warning only once all amounts are valid. */ }
   const mismatch = difference !== null && difference !== "0.0000";
@@ -55,15 +46,6 @@ function ReceiptForm({ existing, initialDate, currencies, refresh }: { existing?
   const accountOptions = accounts.data?.accounts.filter(account => account.active || account.id === existing?.account?.id) ?? [];
   const categoryOptions = categories.data?.categories.filter(category => category.type === "EXPENSE" && (category.active || category.id === existing?.category?.id)) ?? [];
   const selectedTransaction = eligible.find(item => String(item.id) === draft.transactionId);
-  const originalUrl = existing?.document ? `/api/finance/receipts/${existing.id}/document?v=${existing.document.id}` : "";
-  const previewUrl = preview || originalUrl;
-  const previewType = file?.type || existing?.document?.mimeType;
-  useEffect(() => { setImageError(false); }, [previewUrl]);
-  function chooseFile(chosen?: File) {
-    if (!chosen) return;
-    if (!chosen.size || chosen.size > MAX_RECEIPT_BYTES) { setFailure(new FinanceRequestError("Choose an image or PDF up to 15 MB.")); return; }
-    setFailure(null); setFile(chosen);
-  }
   async function save(event: FormEvent) {
     event.preventDefault(); if (saving.current) return;
     saving.current = true; setBusy(true); setFailure(null);
@@ -94,7 +76,8 @@ function ReceiptForm({ existing, initialDate, currencies, refresh }: { existing?
     {accounts.error && <FinanceLoadError error={accounts.error} retry={accounts.retry} />}{categories.error && <FinanceLoadError error={categories.error} retry={categories.retry} />}
     {existing?.linkWarning && <p role="alert" className="card text-amber-500">{existing.linkWarning}</p>}
     {confirmation && <div className="card space-y-3" role="alert"><p>{confirmation === "document" ? "Delete the uploaded document? Your receipt details and linked transaction will remain." : "Delete this receipt and its uploaded document? The linked transaction will remain; this does not reverse the expense."}</p><div className="flex gap-2"><button disabled={busy} type="button" onClick={remove} className={`${primaryButton} bg-rose-600`}>Confirm deletion</button><button type="button" disabled={busy} onClick={() => setConfirmation(null)} className={secondaryButton}>Cancel</button></div></div>}
-    <form onSubmit={save}>
+    {(accounts.loading || categories.loading) && <p role="status">Loading accounts and categories…</p>}
+    <form aria-busy={busy} onSubmit={save}>
       <fieldset disabled={busy || accounts.loading || categories.loading || !!accounts.error || !!categories.error} className="grid min-w-0 items-start gap-5 xl:grid-cols-2">
         <section className="card min-w-0 space-y-4">
           <h3 className="text-lg font-semibold">Receipt information</h3>
@@ -120,15 +103,9 @@ function ReceiptForm({ existing, initialDate, currencies, refresh }: { existing?
               {existing?.transaction && <Link href={`/finance/transactions/${existing.transaction.id}`} className={secondaryButton}>View linked transaction</Link>}
             </>}
           </section>
-          <div className="flex flex-wrap gap-2 pt-3"><button className={primaryButton} type="submit">{busy ? "Saving…" : "Save receipt"}</button><Link href="/finance/receipts" className={secondaryButton}>Cancel</Link>{existing && <button type="button" className={`${secondaryButton} text-rose-500`} onClick={() => { setConfirmation("receipt"); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Delete receipt</button>}</div>
+          <div className="flex flex-col gap-2 pt-3 sm:flex-row sm:flex-wrap"><button className={primaryButton} type="submit">{busy ? "Saving…" : "Save receipt"}</button><Link href="/finance/receipts" className={secondaryButton}>Cancel</Link>{existing && <button type="button" className={`${secondaryButton} text-rose-500`} onClick={() => { setConfirmation("receipt"); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Delete receipt</button>}</div>
         </section>
-        <section className="card order-first min-w-0 space-y-4 xl:order-none"><h3 className="text-lg font-semibold">Original receipt</h3><p className="text-sm text-gray-400">JPEG, PNG, WebP, single-frame GIF or PDF · up to 15 MB. HEIC photos must be exported as JPEG.</p>
-          <div className="flex flex-wrap gap-2"><label className={`${secondaryButton} relative overflow-hidden`}>{existing?.document ? "Replace file" : "Choose photo or PDF"}<input aria-label="Choose receipt file" type="file" accept={RECEIPT_FILE_ACCEPT} className="absolute inset-0 cursor-pointer opacity-0" onChange={event => { chooseFile(event.target.files?.[0]); event.target.value = ""; }} /></label><label className={`${secondaryButton} relative overflow-hidden`}>Take photo<input aria-label="Take receipt photo" type="file" accept="image/*" capture="environment" className="absolute inset-0 cursor-pointer opacity-0" onChange={event => { chooseFile(event.target.files?.[0]); event.target.value = ""; }} /></label></div>
-          {file && <div className="space-y-2"><p className="break-words text-sm">Selected: {file.name}. The original is uploaded when you save.</p><button type="button" className={secondaryButton} onClick={() => setFile(null)}>Discard selected file</button></div>}
-          {previewUrl ? <div className="overflow-hidden rounded-lg border border-card-border">{previewType === "application/pdf" ? <ReceiptPdfPreview url={previewUrl} /> : /* Private owner-only originals must bypass Next's public image optimizer. */ <img src={previewUrl} onError={() => setImageError(true)} alt="Receipt preview" className="max-h-[75dvh] w-full object-contain" />}</div> : <div className="rounded-lg border border-dashed border-card-border p-8 text-center text-gray-400">No document attached. You can save receipt details and attach a file later.</div>}
-          {imageError && <p role="alert" className="text-sm text-amber-500">Could not load the image preview. Try opening the original, or choose a valid replacement file.</p>}
-          {existing?.document && <><p className="break-words text-sm text-gray-400">{existing.document.originalName} · {(existing.document.byteSize / 1024).toFixed(0)} KB</p><div className="flex flex-wrap gap-2"><a href={originalUrl} target="_blank" rel="noopener noreferrer" className={secondaryButton}>Open original</a><a href={`${originalUrl}&download=1`} className={secondaryButton}>Download original</a><button type="button" className={`${secondaryButton} text-rose-500`} onClick={() => { setConfirmation("document"); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Delete document</button></div><p className="text-sm text-gray-400">If the PDF preview is unavailable on your phone, use Open original or Download original.</p></>}
-        </section>
+        <FinanceDocumentPanel document={existing?.document ?? null} baseUrl={`/api/finance/receipts/${existing?.id}/document`} title="Receipt" file={file} onFile={setFile} onDelete={() => { setConfirmation("document"); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
       </fieldset>
     </form>
   </div>;

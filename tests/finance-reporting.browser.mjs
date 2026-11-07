@@ -54,7 +54,7 @@ test("live finance reports, filters, charts, examples, private previews and phon
     await page.unroute("**/api/finance/reports?**");
     for (const [route, heading] of [["accounts", "Financial accounts"], ["categories", "Income & expense categories"], ["transactions", "Transaction history"], ["receipts", "Receipt history"], ["income", "Income history"], ["imports", "Statement imports"], ["reconciliation", "Financial reconciliation"]]) {
       await page.goto(`${base}/finance/${route}`); await visible(page.getByRole("heading", { name: heading, exact: true }));
-      await page.locator('[role="status"]').filter({ hasText: /^Loading/ }).waitFor({ state: "detached" }); assert.equal(await page.getByRole("alert").filter({ hasText: /\S/ }).count(), 0, route);
+      await page.waitForFunction(() => ![...document.querySelectorAll('[role="status"]')].some(node => /^Loading/.test(node.textContent))); assert.equal(await page.getByRole("alert").filter({ hasText: /\S/ }).count(), 0, route);
       await page.setViewportSize({ width: 390, height: 844 }); await noOverflow(); await page.setViewportSize({ width: 1440, height: 1000 });
     }
     const receipts = await get("/api/finance/receipts"), income = await get("/api/finance/income"), imports = await get("/api/finance/imports");
@@ -66,7 +66,7 @@ test("live finance reports, filters, charts, examples, private previews and phon
     for (const [kind, sample] of previewCases) {
       assert.ok(sample, `Example ${kind} private document`);
       await page.goto(`${base}/finance/${kind}/${sample.id}`); await visible(page.getByRole("heading", { name: kind === "receipts" ? "Receipt details" : "Income details", exact: true }));
-      await page.locator('[role="status"]').filter({ hasText: /^Loading/ }).waitFor({ state: "detached" });
+      await page.waitForFunction(() => ![...document.querySelectorAll('[role="status"]')].some(node => /^Loading/.test(node.textContent)));
       if (sample.document.mimeType === "application/pdf") { await visible(page.locator('canvas[role="img"]')); await page.getByText("Loading PDF preview…", { exact: true }).waitFor({ state: "detached" }); }
       else await page.waitForFunction(() => [...document.querySelectorAll('img[alt$="preview"]')].some(image => image.complete && image.naturalWidth > 0));
       assert.equal(await page.getByRole("alert").filter({ hasText: /\S/ }).count(), 0);
@@ -76,7 +76,7 @@ test("live finance reports, filters, charts, examples, private previews and phon
     assert.ok(exampleImports.some(row => row.status === "DRAFT") && exampleImports.some(row => row.status === "COMPLETED"));
     for (const batch of exampleImports) {
       const detail = await get(`/api/finance/imports/${batch.id}`); assert.ok(detail);
-      await page.goto(`${base}/finance/imports/${batch.id}`); await page.locator('[role="status"]').filter({ hasText: /^Loading/ }).waitFor({ state: "detached" }); assert.equal(await page.getByRole("alert").filter({ hasText: /\S/ }).count(), 0);
+      await page.goto(`${base}/finance/imports/${batch.id}`); await page.waitForFunction(() => ![...document.querySelectorAll('[role="status"]')].some(node => /^Loading/.test(node.textContent))); assert.equal(await page.getByRole("alert").filter({ hasText: /\S/ }).count(), 0);
       const original = await context.request.get(`${base}/api/finance/imports/${batch.id}/document`); assert.equal(original.status(), 200); assert.match(original.headers()["content-disposition"], /attachment/); assert.ok((await original.body()).length > 100);
     }
     await page.goto(`${base}/finance`); await visible(page.locator("[data-finance-report]")); await page.setViewportSize({ width: 1440, height: 1000 });

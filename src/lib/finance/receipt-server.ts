@@ -130,7 +130,7 @@ export async function getReceiptDocument(id: number) {
   if (!document) throw new FinanceValidationError("Receipt document not found.", 404);
   return document;
 }
-export async function listReceipts(params: URLSearchParams) {
+export async function listReceipts(params: URLSearchParams, exporting = false) {
   const where: Prisma.FinancialReceiptWhereInput = { userId: FINANCE_USER_ID };
   const search = params.get("search")?.trim();
   if (search) {
@@ -149,9 +149,10 @@ export async function listReceipts(params: URLSearchParams) {
   if (from && to && from > to) throw new FinanceValidationError("From date must not be after To date.");
   const pageText = params.get("page") ?? "1";
   if (!/^[1-9]\d{0,5}$/.test(pageText)) throw new FinanceValidationError("Invalid page number.");
-  const page = Number(pageText), pageSize = 20;
+  const page = exporting ? 1 : Number(pageText), pageSize = exporting ? 5000 : 20;
   return prisma.$transaction(async db => {
     const total = await db.financialReceipt.count({ where });
+    if (exporting && total > pageSize) throw new FinanceValidationError("Export is limited to 5,000 records. Narrow the date range or filters.", 413);
     const rows = await db.financialReceipt.findMany({ where, include, orderBy: [{ purchasedOn: "desc" }, { id: "desc" }], skip: (page - 1) * pageSize, take: pageSize });
     return { receipts: rows.map(serialize), total, page, pageSize };
   }, { isolationLevel: "RepeatableRead" });

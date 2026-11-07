@@ -138,7 +138,7 @@ export async function getIncomeDocument(id: number) {
   if (!document) throw new FinanceValidationError("Pay stub not found.", 404);
   return document;
 }
-export async function listIncome(params: URLSearchParams) {
+export async function listIncome(params: URLSearchParams, exporting = false) {
   const where: Prisma.FinancialIncomeRecordWhereInput = { userId: FINANCE_USER_ID };
   const search = params.get("search")?.trim();
   if (search) {
@@ -154,9 +154,10 @@ export async function listIncome(params: URLSearchParams) {
   if (from && to && from > to) throw new FinanceValidationError("From date must not be after To date.");
   const pageText = params.get("page") ?? "1";
   if (!/^[1-9]\d{0,5}$/.test(pageText)) throw new FinanceValidationError("Invalid page number.");
-  const page = Number(pageText), pageSize = 20;
+  const page = exporting ? 1 : Number(pageText), pageSize = exporting ? 5000 : 20;
   return prisma.$transaction(async db => {
     const total = await db.financialIncomeRecord.count({ where });
+    if (exporting && total > pageSize) throw new FinanceValidationError("Export is limited to 5,000 records. Narrow the date range or filters.", 413);
     const rows = await db.financialIncomeRecord.findMany({ where, include, orderBy: [{ paidOn: "desc" }, { id: "desc" }], skip: (page - 1) * pageSize, take: pageSize });
     return { records: rows.map(serialize), total, page, pageSize };
   }, { isolationLevel: "RepeatableRead" });

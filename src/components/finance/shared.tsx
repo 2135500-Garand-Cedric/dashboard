@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-export const fieldClass = "w-full min-w-0 rounded-lg border border-card-border bg-card-bg px-3 py-2 text-foreground focus:outline-2 focus:outline-blue-500";
-export const primaryButton = "inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500";
-export const secondaryButton = "inline-flex items-center justify-center rounded-lg border border-card-border px-4 py-2 text-sm font-medium transition-colors hover:bg-blue-500/10 disabled:opacity-50 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500";
+export const fieldClass = "w-full min-w-0 min-h-11 text-base md:text-sm rounded-lg border border-card-border bg-card-bg px-3 py-2 text-foreground focus:outline-2 focus:outline-blue-500";
+export const primaryButton = "inline-flex min-h-11 items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500";
+export const secondaryButton = "inline-flex min-h-11 items-center justify-center rounded-lg border border-card-border px-4 py-2 text-sm font-medium transition-colors hover:bg-blue-500/10 disabled:opacity-50 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500";
 
 export class FinanceRequestError extends Error {
   constructor(message: string, public code?: string, public existingId?: number) { super(message); }

@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import FinanceExport from "./FinanceExport";
+import { useHistoryFilters } from "./useHistoryFilters";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useSnackbar } from "@/context/SnackbarContext";
 import { type FinanceAccount, type FinanceCategory } from "@/lib/finance/validation";
@@ -9,9 +11,7 @@ import { fieldClass, financeRequest, FinanceLoadError, primaryButton, secondaryB
 
 const emptyFilters = { search: "", account: "", category: "", type: "", currency: "", from: "", to: "" };
 export default function TransactionHistory() {
-  const [draft, setDraft] = useState(emptyFilters);
-  const [filters, setFilters] = useState(emptyFilters);
-  const [page, setPage] = useState(1);
+  const { draft, setDraft, filters, setFilters, page, setPage } = useHistoryFilters(emptyFilters);
   const [deleting, setDeleting] = useState<FinanceTransaction | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -24,7 +24,7 @@ export default function TransactionHistory() {
   Object.entries(filters).forEach(([key, value]) => { if (value) params.set(key, value); });
   const history = useFinanceData<TransactionPage>(`/api/finance/transactions?${params}`);
   const update = (key: keyof typeof draft, value: string) => setDraft(previous => ({ ...previous, [key]: value }));
-  function apply(event: FormEvent) { event.preventDefault(); setFilters({ ...draft }); setPage(1); history.retry(); }
+  function apply(event: FormEvent) { event.preventDefault(); setFilters({ ...draft }); history.retry(); }
   async function remove() {
     if (!deleting || busy) return;
     setBusy(true); setError("");
@@ -46,8 +46,9 @@ export default function TransactionHistory() {
       <label className="space-y-1">Currency<select aria-label="Filter currency" className={fieldClass} value={draft.currency} onChange={event => update("currency", event.target.value)}><option value="">All currencies</option>{[...new Set(accounts.data?.accounts.map(account => account.currency) ?? [])].sort().map(currency => <option key={currency}>{currency}</option>)}</select></label>
       <label className="space-y-1">From<input aria-label="From date" type="date" className={fieldClass} value={draft.from} onChange={event => update("from", event.target.value)} /></label>
       <label className="space-y-1">To<input aria-label="To date" type="date" className={fieldClass} value={draft.to} min={draft.from || undefined} onChange={event => update("to", event.target.value)} /></label>
-      <div className="flex flex-wrap gap-2 sm:col-span-2 xl:col-span-4"><button className={primaryButton}>Apply filters</button><button type="button" className={secondaryButton} onClick={() => { setDraft(emptyFilters); setFilters(emptyFilters); setPage(1); }}>Reset</button></div>
+      <div className="flex flex-wrap gap-2 sm:col-span-2 xl:col-span-4"><button className={primaryButton}>Apply filters</button><button type="button" className={secondaryButton} onClick={() => { setDraft(emptyFilters); setFilters(emptyFilters); }}>Reset</button></div>
     </form>
+    <FinanceExport kind="transactions" filters={filters} />
     {accounts.error && <FinanceLoadError error={accounts.error} retry={accounts.retry} />}{categories.error && <FinanceLoadError error={categories.error} retry={categories.retry} />}
     {deleting && <section role="alert" className="card space-y-3 border-rose-500"><h3 className="break-words font-semibold">Delete “{deleting.description}”?</h3><p>{deleting.transfer ? "Both sides of this transfer will be deleted." : "This transaction will be permanently deleted."}</p>{error && <p className="text-rose-500">{error}</p>}<div className="flex gap-2"><button ref={deleteConfirmation} disabled={busy} onClick={remove} className={`${primaryButton} bg-rose-600 hover:bg-rose-700`}>{busy ? "Deleting…" : "Confirm deletion"}</button><button disabled={busy} onClick={() => { setDeleting(null); setError(""); }} className={secondaryButton}>Cancel</button></div></section>}
     {history.error && <FinanceLoadError error={history.error} retry={history.retry} />}

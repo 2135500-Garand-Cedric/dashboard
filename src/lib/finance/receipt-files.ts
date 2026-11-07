@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, chmod, writeFile, readFile, unlink } from "node:fs/promises";
+import { mkdir, chmod, writeFile, open, realpath, unlink } from "node:fs/promises";
 import path from "node:path";
+import { constants } from "node:fs";
 import sharp from "sharp";
 import { FinanceValidationError } from "./validation";
 import { MAX_RECEIPT_BYTES } from "./receipts";
@@ -37,6 +38,8 @@ export async function storeReceiptFile(file: PreparedReceiptFile) {
   const key = `${randomUUID()}.${file.extension}`;
   const target = receiptStoragePath(key);
   await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
+  const root = await realpath(path.dirname(target)), publicRoot = await realpath(path.join(process.cwd(), "public"));
+  if (root === publicRoot || root.startsWith(`${publicRoot}${path.sep}`)) throw new Error("Receipt storage must be private.");
   await chmod(path.dirname(target), 0o700);
   try { await writeFile(target, file.buffer, { flag: "wx", mode: 0o600 }); }
   catch (error) {
@@ -50,7 +53,17 @@ export async function removeReceiptFile(key: string) {
   catch (error) { if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) console.error("Finance: unable to remove a private financial file."); }
 }
 export async function readReceiptFile(key: string) {
-  try { return await readFile(receiptStoragePath(key)); }
+  try {
+    const target = receiptStoragePath(key), root = await realpath(path.dirname(target));
+    const publicRoot = await realpath(path.join(process.cwd(), "public"));
+    if (root === publicRoot || root.startsWith(`${publicRoot}${path.sep}`)) throw new Error("Storage is public");
+    const handle = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const stat = await handle.stat();
+      if (!stat.isFile() || !stat.size || stat.size > MAX_RECEIPT_BYTES) throw new Error("Invalid stored file");
+      return await handle.readFile();
+    } finally { await handle.close(); }
+  }
   catch { throw new FinanceValidationError("The document is unavailable. Replace the document or restore it from backup.", 404); }
 }
 

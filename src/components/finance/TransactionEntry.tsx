@@ -80,7 +80,8 @@ function EntryForm({ initialDate, existing }: { initialDate: string; existing?: 
     {failure && <div role="alert" className="card space-y-3 border-rose-500/40"><p className="text-rose-500">{failure.message}</p>{failure.existingId && <div className="flex flex-wrap gap-3"><Link href={`/finance/transactions/${failure.existingId}`} className={secondaryButton}>Review existing transaction</Link>{failure.code === "DUPLICATE_TRANSACTION" && <button type="button" disabled={busy} className={primaryButton} onClick={() => void save(true)}>Save as a separate transaction</button>}</div>}</div>}
     {readOnly && <p role="alert" className="card">Imported entries and transactions linked to statements cannot be edited through manual transaction management.</p>}
     {!accounts.loading && accounts.data && !availableAccounts.length && <div className="card space-y-3"><p>Create an active account before entering transactions.</p><Link href="/finance/accounts" className={primaryButton}>Manage accounts</Link></div>}
-    <form onSubmit={submit} className="card max-w-5xl">
+    {(accounts.loading || categories.loading) && <p role="status">Loading accounts and categories…</p>}
+    <form aria-busy={busy} onSubmit={submit} className="card max-w-5xl">
       <fieldset disabled={busy || accounts.loading || categories.loading || !!accounts.error || !!categories.error || !availableAccounts.length || readOnly} className="min-w-0 space-y-5">
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block space-y-2"><span className="text-sm font-medium">Transaction type</span><select aria-label="Transaction type" className={fieldClass} value={draft.type} onChange={event => { setDraft({ ...draft, type: event.target.value as TransactionType, categoryId: "", amount: draft.amount.replace(/^-/, ""), ...(event.target.value !== "TRANSFER" ? { destinationAccountId: "", destinationAmount: "" } : {}) }); setFailure(null); }}>{Object.entries(TRANSACTION_TYPES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
@@ -101,7 +102,7 @@ function EntryForm({ initialDate, existing }: { initialDate: string; existing?: 
         {needsCategory && !categories.loading && categories.data && !availableCategories.length && <p className="text-sm text-amber-500">Create an active {draft.type === "INCOME" ? "income" : "expense"} category first. <Link href="/finance/categories" className="underline">Manage categories</Link></p>}
         <label className="block space-y-2"><span className="text-sm font-medium">Merchant or counterparty (optional)</span><input aria-label="Merchant or counterparty (optional)" maxLength={200} autoComplete="off" className={fieldClass} value={draft.counterparty} onChange={event => setDraft({ ...draft, counterparty: event.target.value })} /></label>
         <label className="block space-y-2"><span className="text-sm font-medium">Notes (optional)</span><textarea aria-label="Notes (optional)" rows={3} maxLength={2000} className={fieldClass} value={draft.notes} onChange={event => setDraft({ ...draft, notes: event.target.value })} /></label>
-        <div className="flex flex-wrap gap-3"><button type="submit" className={primaryButton}>{busy ? "Saving…" : existing ? "Save changes" : "Save transaction"}</button><Link href="/finance/transactions" className={secondaryButton}>Cancel</Link></div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap"><button type="submit" className={primaryButton}>{busy ? "Saving…" : existing ? "Save changes" : "Save transaction"}</button><Link href="/finance/transactions" className={secondaryButton}>Cancel</Link></div>
       </fieldset>
     </form>
   </div>;
