@@ -76,12 +76,12 @@ test("live app denies all anonymous data routes, rejects other identities, and a
     assert.equal((await detail.json()).review.id, beforeSessions[0].id);
   }
   assert.equal((await fetch(`${base}/api/events`, { method: "POST", headers: { ...headers, origin: "https://untrusted.example" } })).status, 403);
-  for (const page of ["/", "/events", "/japanese/practice", "/japanese/practice/history", "/japanese/practice/history/1", "/japanese/statistics", "/todos", "/timemanager", "/finance", "/finance/accounts", "/finance/categories", "/finance/transactions", "/finance/transactions/new", "/finance/transactions/1"]) {
+  for (const page of ["/", "/events", "/japanese/practice", "/japanese/practice/history", "/japanese/practice/history/1", "/japanese/statistics", "/todos", "/timemanager", "/finance", "/finance/accounts", "/finance/categories", "/finance/transactions", "/finance/transactions/new", "/finance/transactions/1", "/finance/receipts", "/finance/receipts/new", "/finance/receipts/1"]) {
     const response = await fetch(base + page, { redirect: "manual" });
     assert.equal(response.status, 307, page);
     assert.ok(response.headers.get("location").includes("/api/auth/signin"));
   }
-  for (const endpoint of ["accounts", "categories", "transactions"]) {
+  for (const endpoint of ["accounts", "categories", "transactions", "receipts"]) {
     const response = await fetch(`${base}/api/finance/${endpoint}`, { headers });
     assert.equal(response.status, 200);
     assert.match(response.headers.get("cache-control"), /no-store/);

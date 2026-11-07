@@ -70,6 +70,9 @@ function EntryForm({ initialDate, existing }: { initialDate: string; existing?: 
 
   return <div className="space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-2xl font-semibold">{existing ? "Edit transaction" : "New transaction"}</h2><Link href="/finance/transactions" className={secondaryButton}>← Transaction history</Link></div>
+    {!!existing?.receipts?.length && <section className="card max-w-5xl space-y-3"><h3 className="text-lg font-semibold">Linked receipts ({existing.receipts.length})</h3><div className="flex flex-wrap gap-2">{existing.receipts.map(receipt => <Link key={receipt.id} href={`/finance/receipts/${receipt.id}`} className={`${secondaryButton} max-w-full break-words`}>
+      {existing.receipts.length === 1 ? "View receipt" : `View receipt #${receipt.id} — ${receipt.merchant || "Receipt"} · ${receipt.date}`}
+    </Link>)}</div></section>}
     {accounts.error && <FinanceLoadError error={accounts.error} retry={accounts.retry} />}
     {categories.error && <FinanceLoadError error={categories.error} retry={categories.retry} />}
     {failure && <div role="alert" className="card space-y-3 border-rose-500/40"><p className="text-rose-500">{failure.message}</p>{failure.existingId && <div className="flex flex-wrap gap-3"><Link href={`/finance/transactions/${failure.existingId}`} className={secondaryButton}>Review existing transaction</Link>{failure.code === "DUPLICATE_TRANSACTION" && <button type="button" disabled={busy} className={primaryButton} onClick={() => void save(true)}>Save as a separate transaction</button>}</div>}</div>}

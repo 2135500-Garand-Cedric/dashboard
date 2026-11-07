@@ -11,6 +11,7 @@ export default function FinanceLanding() {
     {accounts.error && <FinanceLoadError error={accounts.error} retry={accounts.retry} />}
     {categories.error && <FinanceLoadError error={categories.error} retry={categories.retry} />}
     <section className="card flex flex-wrap items-center justify-between gap-4"><h2 className="text-xl font-semibold">Transactions</h2><div className="flex flex-wrap gap-2"><Link href="/finance/transactions" className={secondaryButton}>Transaction history</Link><Link href="/finance/transactions/new" className={primaryButton}>Add transaction</Link></div></section>
+    <section className="card flex flex-wrap items-center justify-between gap-4"><h2 className="text-xl font-semibold">Receipts</h2><div className="flex flex-wrap gap-2"><Link href="/finance/receipts" className={secondaryButton}>Receipt history</Link><Link href="/finance/receipts/new" className={primaryButton}>Add receipt</Link></div></section>
     <div className="grid gap-5 md:grid-cols-2">
       <section className="card space-y-4"><h2 className="text-xl font-semibold">Financial accounts</h2>
         {accounts.loading ? <p role="status" className="text-gray-500">Loading accounts…</p> : accounts.data && <><p className="text-4xl font-bold">{accounts.data.accounts.length}</p><p className="text-sm text-gray-500">{accounts.data.accounts.filter(account => account.active).length} active · {accounts.data.accounts.filter(account => !account.active).length} inactive</p></>}

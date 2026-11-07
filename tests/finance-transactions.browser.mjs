@@ -74,6 +74,13 @@ test("manual transaction entry, history, duplicate recovery and mobile layout", 
     assert.equal(await page.getByLabel("Description", { exact: true }).inputValue(), "Cash lunch");
     failure = false; await submit();
     assert.equal(records[0].amount, "-50.0000"); assert.equal(records[0].counterparty, null);
+    records[0].receipts = [{ id: 101, merchant: "Lunch receipt", date: "2026-11-05" }];
+    await page.goto(`http://localhost:3000/finance/transactions/${records[0].id}`);
+    assert.equal(await page.getByRole("link", { name: "View receipt", exact: true }).getAttribute("href"), "/finance/receipts/101");
+    records[0].receipts.push({ id: 102, merchant: "Additional receipt", date: "2026-11-05" });
+    await page.reload();
+    assert.equal(await page.getByRole("link", { name: /View receipt #101/ }).getAttribute("href"), "/finance/receipts/101");
+    assert.equal(await page.getByRole("link", { name: /View receipt #102/ }).getAttribute("href"), "/finance/receipts/102");
     await form("INCOME", "Payroll", 2, "1500.25"); await submit();
     assert.equal(records[1].amount, "1500.2500");
     await form("TRANSFER", "Credit card payment", 2, "60");

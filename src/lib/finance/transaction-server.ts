@@ -9,6 +9,7 @@ import { calendarDate, TRANSACTION_TYPES, type FinanceTransaction, type Transact
 type DB = Prisma.TransactionClient;
 const include = {
   account: { select: accountSelect }, category: { select: categorySelect },
+  receipts: { where: { userId: FINANCE_USER_ID }, select: { id: true, merchant: true, purchasedOn: true }, orderBy: [{ purchasedOn: "desc" as const }, { id: "desc" as const }] },
   _count: { select: { importEntries: true } },
   transfer: { include: { transactions: { where: { userId: FINANCE_USER_ID }, include: { account: { select: accountSelect }, _count: { select: { importEntries: true } } } } } },
 } satisfies Prisma.FinancialTransactionInclude;
@@ -37,6 +38,7 @@ export function serializeTransaction(row: Row): FinanceTransaction {
     amount: row.amount.toFixed(4), currency: row.currency, type: row.type,
     account: row.account, category: row.category, counterparty: row.counterparty, notes: row.notes,
     source: row.source, updatedAt: row.updatedAt.toISOString(),
+    receipts: row.receipts.map(receipt => ({ id: receipt.id, merchant: receipt.merchant, date: receipt.purchasedOn.toISOString().slice(0, 10) })),
     transfer: incoming ? { id: row.transferId!, transactionId: incoming.id, account: incoming.account, amount: incoming.amount.toFixed(4), currency: incoming.currency } : null,
   };
 }
@@ -81,55 +83,10 @@ function assertEditable(row: Row) {
 }
 
 export async function saveTransaction(input: TransactionInput, id?: number) {
-  const fingerprint = requestFingerprint(input);
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       return await prisma.$transaction(async db => {
-        if (id === undefined) {
-          const existing = await db.financialTransaction.findUnique({ where: { userId_requestKey: { userId: FINANCE_USER_ID, requestKey: input.requestKey! } }, include });
-          if (existing) {
-            if (existing.requestFingerprint !== fingerprint) throw new TransactionConflict("This form already saved a different entry. Open that transaction or start a new entry.", "REQUEST_ALREADY_USED", existing.id);
-            return { transaction: serializeTransaction(existing), replayed: true };
-          }
-        }
-        const current = id === undefined ? undefined : await rowById(db, id);
-        if (current) {
-          assertEditable(current);
-          if (current.updatedAt.getTime() !== Date.parse(input.expectedUpdatedAt!)) throw new FinanceValidationError("This transaction changed since you opened it. Reload before saving your edits.", 409);
-        }
-        const destination = await references(db, input, current);
-        const contentFingerprint = hash([input.date, normalized(input.description), input.amount, input.currency, input.type, input.accountId, normalized(input.counterparty), input.destinationAccountId, destination?.amount.toFixed(4) ?? null]);
-        if (!input.allowDuplicate) {
-          const duplicate = await db.financialTransaction.findFirst({ where: { userId: FINANCE_USER_ID, source: "MANUAL", contentFingerprint, ...(current ? { id: { not: current.id } } : {}) }, select: { id: true } });
-          if (duplicate) throw new TransactionConflict("A matching manual entry already exists for these accounts, date, type, amount, description, and counterparty. Review it before saving another.", "DUPLICATE_TRANSACTION", duplicate.id);
-        }
-        const amount = new Prisma.Decimal(input.amount);
-        const signedAmount = input.type === "EXPENSE" || input.type === "TRANSFER" ? amount.negated() : amount;
-        const data = {
-          accountId: input.accountId, categoryId: input.categoryId, occurredOn: new Date(`${input.date}T00:00:00Z`),
-          amount: signedAmount, currency: input.currency, type: input.type, description: input.description,
-          counterparty: input.counterparty, notes: input.notes, contentFingerprint,
-        };
-        let transferId = current?.transferId ?? null;
-        const oldPeer = current ? peer(current) : null;
-        if (destination) {
-          if (!transferId) transferId = (await db.financialTransfer.create({ data: { userId: FINANCE_USER_ID } })).id;
-          // Temporarily detach the incoming leg to allow swapping account IDs
-          // without violating the unique (transferId, accountId) constraint.
-          if (oldPeer) await db.financialTransaction.update({ where: { id: oldPeer.id }, data: { transferId: null, type: "ADJUSTMENT" } });
-        }
-        const root = current
-          ? await db.financialTransaction.update({ where: { id: current.id, userId: FINANCE_USER_ID }, data: { ...data, transferId: destination ? transferId : null } })
-          : await db.financialTransaction.create({ data: { ...data, userId: FINANCE_USER_ID, source: "MANUAL", transferId, requestKey: input.requestKey, requestFingerprint: fingerprint } });
-        if (destination) {
-          const incoming = { userId: FINANCE_USER_ID, accountId: destination.account.id, amount: destination.amount, currency: destination.account.currency, type: "TRANSFER" as const, source: "MANUAL" as const, occurredOn: data.occurredOn, categoryId: null, description: input.description, counterparty: input.counterparty, notes: input.notes, transferId };
-          if (oldPeer) await db.financialTransaction.update({ where: { id: oldPeer.id }, data: incoming });
-          else await db.financialTransaction.create({ data: incoming });
-        } else if (current?.transferId) {
-          await db.financialTransfer.delete({ where: { id: current.transferId, userId: FINANCE_USER_ID } });
-        }
-        const saved = await rowById(db, root.id);
-        return { transaction: serializeTransaction(saved), replayed: false };
+        return saveTransactionInDb(db, input, id);
       }, { isolationLevel: "Serializable", timeout: 15000 });
     } catch (error) {
       const code = error && typeof error === "object" && "code" in error ? error.code : null;
@@ -138,6 +95,56 @@ export async function saveTransaction(input: TransactionInput, id?: number) {
     }
   }
   throw new FinanceValidationError("The transaction could not be saved. Please retry.", 503);
+}
+
+// Shared atomic write used when a receipt explicitly creates its expense.
+export async function saveTransactionInDb(db: DB, input: TransactionInput, id?: number) {
+  const fingerprint = requestFingerprint(input);
+  if (id === undefined) {
+    const existing = await db.financialTransaction.findUnique({ where: { userId_requestKey: { userId: FINANCE_USER_ID, requestKey: input.requestKey! } }, include });
+    if (existing) {
+      if (existing.requestFingerprint !== fingerprint) throw new TransactionConflict("This form already saved a different entry. Open that transaction or start a new entry.", "REQUEST_ALREADY_USED", existing.id);
+      return { transaction: serializeTransaction(existing), replayed: true };
+    }
+  }
+  const current = id === undefined ? undefined : await rowById(db, id);
+  if (current) {
+    assertEditable(current);
+    if (current.updatedAt.getTime() !== Date.parse(input.expectedUpdatedAt!)) throw new FinanceValidationError("This transaction changed since you opened it. Reload before saving your edits.", 409);
+  }
+  const destination = await references(db, input, current);
+  const contentFingerprint = hash([input.date, normalized(input.description), input.amount, input.currency, input.type, input.accountId, normalized(input.counterparty), input.destinationAccountId, destination?.amount.toFixed(4) ?? null]);
+  if (!input.allowDuplicate) {
+    const duplicate = await db.financialTransaction.findFirst({ where: { userId: FINANCE_USER_ID, source: "MANUAL", contentFingerprint, ...(current ? { id: { not: current.id } } : {}) }, select: { id: true } });
+    if (duplicate) throw new TransactionConflict("A matching manual entry already exists for these accounts, date, type, amount, description, and counterparty. Review it before saving another.", "DUPLICATE_TRANSACTION", duplicate.id);
+  }
+  const amount = new Prisma.Decimal(input.amount);
+  const signedAmount = input.type === "EXPENSE" || input.type === "TRANSFER" ? amount.negated() : amount;
+  const data = {
+    accountId: input.accountId, categoryId: input.categoryId, occurredOn: new Date(`${input.date}T00:00:00Z`),
+    amount: signedAmount, currency: input.currency, type: input.type, description: input.description,
+    counterparty: input.counterparty, notes: input.notes, contentFingerprint,
+  };
+  let transferId = current?.transferId ?? null;
+  const oldPeer = current ? peer(current) : null;
+  if (destination) {
+    if (!transferId) transferId = (await db.financialTransfer.create({ data: { userId: FINANCE_USER_ID } })).id;
+    // Temporarily detach the incoming leg to allow swapping account IDs
+    // without violating the unique (transferId, accountId) constraint.
+    if (oldPeer) await db.financialTransaction.update({ where: { id: oldPeer.id }, data: { transferId: null, type: "ADJUSTMENT" } });
+  }
+  const root = current
+    ? await db.financialTransaction.update({ where: { id: current.id, userId: FINANCE_USER_ID }, data: { ...data, transferId: destination ? transferId : null } })
+    : await db.financialTransaction.create({ data: { ...data, userId: FINANCE_USER_ID, source: "MANUAL", transferId, requestKey: input.requestKey, requestFingerprint: fingerprint } });
+  if (destination) {
+    const incoming = { userId: FINANCE_USER_ID, accountId: destination.account.id, amount: destination.amount, currency: destination.account.currency, type: "TRANSFER" as const, source: "MANUAL" as const, occurredOn: data.occurredOn, categoryId: null, description: input.description, counterparty: input.counterparty, notes: input.notes, transferId };
+    if (oldPeer) await db.financialTransaction.update({ where: { id: oldPeer.id }, data: incoming });
+    else await db.financialTransaction.create({ data: incoming });
+  } else if (current?.transferId) {
+    await db.financialTransfer.delete({ where: { id: current.transferId, userId: FINANCE_USER_ID } });
+  }
+  const saved = await rowById(db, root.id);
+  return { transaction: serializeTransaction(saved), replayed: false };
 }
 
 export async function deleteTransaction(id: number) {

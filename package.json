@@ -20,10 +20,12 @@
     "@tailwindcss/postcss": "^4",
     "next": "15.5.29",
     "next-auth": "^4.24.11",
+    "pdfjs-dist": "6.5.438",
     "prisma": "^6.15.0",
     "react": "19.1.10",
     "react-dom": "19.1.10",
     "recharts": "^3.2.1",
+    "sharp": "0.35.5",
     "tailwindcss": "^4"
   },
   "devDependencies": {

@@ -377,6 +377,13 @@ model FinancialReceipt {
   transactionId Int?
   purchasedOn   DateTime              @db.Date
   merchant      String?
+  subtotal      Decimal               @default(0) @db.Decimal(19, 4)
+  tax           Decimal               @default(0) @db.Decimal(19, 4)
+  tip           Decimal               @default(0) @db.Decimal(19, 4)
+  notes         String?
+  requestKey    String?               @db.Uuid
+  requestFingerprint String?          @db.VarChar(64)
+  updatedAt     DateTime              @updatedAt
   total         Decimal               @db.Decimal(19, 4)
   currency      String                @db.Char(3)
   createdAt     DateTime              @default(now())
@@ -390,6 +397,7 @@ model FinancialReceipt {
   @@index([accountId])
   @@index([categoryId])
   @@index([transactionId])
+  @@unique([userId, requestKey])
 }
 
 model FinancialIncomeRecord {
@@ -426,6 +434,7 @@ model FinancialDocument {
   incomeRecordId Int?
   importId      Int?
   type          FinancialDocumentType
+  contentHash   String?               @db.VarChar(64)
   storageKey    String                @unique
   originalName  String
   mimeType      String
@@ -442,6 +451,7 @@ model FinancialDocument {
   @@index([accountId])
   @@index([transactionId])
   @@index([receiptId])
+  @@unique([userId, contentHash])
   @@index([incomeRecordId])
   @@index([importId])
 }
