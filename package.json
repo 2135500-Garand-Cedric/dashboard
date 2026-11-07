@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "seed": "node prisma/seed.js",
+    "seed:finance-examples": "node scripts/seed-finance-examples.mjs",
     "backfill:verb-conditionals": "node scripts/backfill-verb-conditionals.mjs"
   },
   "dependencies": {

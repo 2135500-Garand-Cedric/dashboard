@@ -1,3 +1,4 @@
-import FinanceLanding from "@/components/finance/FinanceLanding";
+import FinanceOverview from "@/components/finance/FinanceOverview";
+import { reportingToday } from "@/lib/finance/reporting";
 
-export default function FinancePage() { return <FinanceLanding />; }
+export default function FinancePage() { return <FinanceOverview today={reportingToday()} />; }

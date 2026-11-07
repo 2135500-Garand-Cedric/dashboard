@@ -47,6 +47,7 @@ model User {
   financialImports FinancialImport[]
   financialMatches FinancialMatch[]
   financialMatchEvents FinancialMatchEvent[]
+  financialExampleDataset FinancialExampleDataset?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -650,4 +651,13 @@ model FinancialMatchEvent {
   @@unique([userId, requestKey])
   @@index([userId, createdAt])
   @@index([matchId])
+}
+
+// Development examples are identified explicitly, so reports can exclude them.
+model FinancialExampleDataset {
+  userId Int @id
+  version Int
+  manifest Json
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 }
