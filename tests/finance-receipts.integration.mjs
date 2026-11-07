@@ -29,8 +29,9 @@ test("receipt API keeps independent receipts separate from expenses; linking, cr
   try {
     await assert.rejects(prisma.$transaction(async tx => {
       const db = { prisma: { ...tx, $transaction: callback => callback(tx) } };
+      const ledger = load("../src/lib/finance/reconciliation-ledger.ts", { "@/generated/prisma": { Prisma }, "./validation": validation, "./server": server });
       const transactions = load("../src/lib/finance/transaction-server.ts", { "@/generated/prisma": { Prisma }, "@/lib/prisma": db, "next/server": nextServer, "./validation": validation, "./server": server, "./transactions": transactionValidation });
-      const receipts = load("../src/lib/finance/receipt-server.ts", { "@/generated/prisma": { Prisma }, "@/lib/prisma": db, "next/server": nextServer, "./validation": validation, "./server": server, "./transactions": transactionValidation, "./transaction-server": transactions, "./receipt-files": files, "./receipts": receiptValidation });
+      const receipts = load("../src/lib/finance/receipt-server.ts", { "@/generated/prisma": { Prisma }, "@/lib/prisma": db, "next/server": nextServer, "./validation": validation, "./server": server, "./transactions": transactionValidation, "./transaction-server": transactions, "./reconciliation-ledger": ledger, "./receipt-files": files, "./receipts": receiptValidation });
       const deps = { "@/lib/require-owner": { requireOwner: async () => null }, "next/server": nextServer, "@/lib/finance/server": server, "@/lib/finance/validation": validation, "@/lib/finance/receipts": receiptValidation, "@/lib/finance/receipt-files": files, "@/lib/finance/receipt-server": receipts };
       const route = load("../src/app/api/finance/receipts/route.ts", deps), detail = load("../src/app/api/finance/receipts/[id]/route.ts", deps), documentRoute = load("../src/app/api/finance/receipts/[id]/document/route.ts", deps);
       const account = await tx.financialAccount.create({ data: { userId: 1, name: randomUUID(), normalizedName: randomUUID(), type: "CASH", currency: "CAD" } });

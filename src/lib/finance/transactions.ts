@@ -15,9 +15,10 @@ export interface FinanceTransaction {
   id: number; date: string; description: string; amount: string; currency: string; type: TransactionType;
   account: FinanceAccount; category: FinanceCategory | null; counterparty: string | null; notes: string | null;
   source: "MANUAL" | "IMPORTED"; updatedAt: string; editable: boolean;
+  ledgerAmount: string; excludedAmount: string;
   incomeRecords: { id: number; description: string; date: string }[];
   receipts: { id: number; merchant: string | null; date: string }[];
-  transfer: { id: string; transactionId: number; account: FinanceAccount; amount: string; currency: string } | null;
+  transfer: { id: string; transactionId: number; account: FinanceAccount; amount: string; ledgerAmount: string; currency: string } | null;
 }
 
 export interface TransactionPage { transactions: FinanceTransaction[]; total: number; page: number; pageSize: number; }

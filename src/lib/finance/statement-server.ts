@@ -5,6 +5,7 @@ import { FinanceValidationError, financeId } from "./validation";
 import { FINANCE_USER_ID, accountSelect, categorySelect } from "./server";
 import { calendarDate, decimalAmount, transactionInput } from "./transactions";
 import { saveTransactionInDb } from "./transaction-server";
+import { writeMatch } from "./reconciliation-ledger";
 import { storeReceiptFile, removeReceiptFile, type PreparedReceiptFile } from "./receipt-files";
 import { type ParsedStatement, MAX_CSV_ROWS } from "./statement-csv";
 import { strictObject, statementId, mappingInput, mappedReview, reviewInput, normalizedText, validCurrency, IMPORT_ACTIONS, type ImportAction, type ImportBatch, type ImportCandidate, type ImportMapping, type ImportReview, type ImportRow } from "./statement-imports";
@@ -50,10 +51,10 @@ async function candidates(db: DB, batch: Batch, entry: Entry, row: ImportReview)
   const prior = [...byFingerprint, ...byReference];
   const conditions: Prisma.FinancialTransactionWhereInput[] = [];
   try { const day = new Date(`${calendarDate(row.date)}T00:00:00Z`); conditions.push({ occurredOn: { gte: new Date(day.getTime() - 7 * 86400000), lte: new Date(day.getTime() + 7 * 86400000) } }); } catch { /* Strong IDs can still identify a row with a date needing correction. */ }
-  const nearby = conditions.length ? await db.financialTransaction.findMany({ where: { userId: FINANCE_USER_ID, accountId: batch.accountId, amount, currency: row.currency, OR: conditions }, include: candidateInclude, orderBy: [{ occurredOn: "desc" }, { id: "desc" }], take: 21 }) : [];
+  const nearby = conditions.length ? await db.financialTransaction.findMany({ where: { userId: FINANCE_USER_ID, accountId: batch.accountId, excludedAmount: 0, amount, currency: row.currency, OR: conditions }, include: candidateInclude, orderBy: [{ occurredOn: "desc" }, { id: "desc" }], take: 21 }) : [];
   // An explicitly selected old transaction must remain matchable even when suggestions are capped.
   if (row.matchId && !nearby.some(item => item.id === row.matchId)) {
-    const selected = await db.financialTransaction.findFirst({ where: { id: row.matchId, userId: FINANCE_USER_ID, accountId: batch.accountId, amount, currency: row.currency }, include: candidateInclude });
+    const selected = await db.financialTransaction.findFirst({ where: { id: row.matchId, userId: FINANCE_USER_ID, accountId: batch.accountId, excludedAmount: 0, amount, currency: row.currency }, include: candidateInclude });
     if (selected) nearby.push(selected);
   }
   const sourceIds: number[] = [], rows = new Map<number, { row: CandidateRow; confidence: ImportCandidate["confidence"] }>();
@@ -231,6 +232,7 @@ export async function commitStatement(id: number, value: unknown) {
           const row = checked.review!;
           const transactionId = checked.action === "MATCH" ? row.matchId! : await createMovement(db, batch, row);
           await db.financialImportEntry.update({ where: { id: entry.id }, data: { transactionId, normalized: json(row), sourceIdentifier: row.reference || null } });
+          if (checked.action === "MATCH") await writeMatch(db, { kind: "STATEMENT", sourceId: entry.id, transactionId, amount: row.amount.replace(/^-/, ""), currency: row.currency, status: "CONFIRMED", snapshot: json({ ...row, label: row.description, signedAmount: row.amount, accountId: batch.accountId, origin: "import" }), action: "CONFIRM", note: "Confirmed when importing reviewed statement rows" });
         }
         await db.financialImport.update({ where: { id, userId: FINANCE_USER_ID }, data: { status: "COMPLETED", completedAt: new Date(), revision: { increment: 1 } } });
         return { batch: await serialize(db, await findBatch(db, id)), replayed: false };

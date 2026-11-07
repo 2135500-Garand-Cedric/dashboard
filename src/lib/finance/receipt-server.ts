@@ -1,3 +1,4 @@
+import { guardSupportingEdit, syncSupportingMatch, unlinkSupportingMatches } from "./reconciliation-ledger";
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
@@ -10,7 +11,7 @@ import { saveTransactionInDb, transactionError } from "./transaction-server";
 import { storeReceiptFile, removeReceiptFile, type PreparedReceiptFile } from "./receipt-files";
 
 type DB = Prisma.TransactionClient;
-const include = { account: { select: accountSelect }, category: { select: categorySelect }, transaction: true, documents: { where: { userId: FINANCE_USER_ID, type: "RECEIPT" as const }, orderBy: { id: "desc" as const } } } satisfies Prisma.FinancialReceiptInclude;
+const include = { account: { select: accountSelect }, category: { select: categorySelect }, transaction: true, matches: { where: { userId: FINANCE_USER_ID, status: "CONFIRMED" as const }, select: { id: true, transactionId: true, amount: true } }, documents: { where: { userId: FINANCE_USER_ID, type: "RECEIPT" as const }, orderBy: { id: "desc" as const } } } satisfies Prisma.FinancialReceiptInclude;
 type Row = Prisma.FinancialReceiptGetPayload<{ include: typeof include }>;
 class ReceiptConflict extends FinanceValidationError {
   constructor(message: string, public code: string, public existingId?: number) { super(message, 409); }
@@ -33,6 +34,7 @@ function serialize(row: Row): FinanceReceipt {
     updatedAt: row.updatedAt.toISOString(), difference: receiptDifference(row.subtotal.toFixed(4), row.tax.toFixed(4), row.tip.toFixed(4), row.total.toFixed(4)),
     document: document ? { id: document.id, originalName: document.originalName, mimeType: document.mimeType, byteSize: document.byteSize } : null,
     transaction: transaction ? { id: transaction.id, description: transaction.description, date: transaction.occurredOn.toISOString().slice(0, 10), amount: transaction.amount.toFixed(4), currency: transaction.currency, accountId: transaction.accountId, type: transaction.type } : null,
+    allocations: row.matches.map(link => ({ id: link.id, transactionId: link.transactionId, amount: link.amount.toFixed(4) })),
     linkWarning: linkProblem(row),
   };
 }
@@ -59,6 +61,7 @@ export async function saveReceipt(input: ReceiptInput, file: PreparedReceiptFile
             }
           }
           const current = id === undefined ? null : await rowById(db, id);
+          await guardSupportingEdit(db, "RECEIPT", current, input);
           if (current && current.updatedAt.getTime() !== Date.parse(input.expectedUpdatedAt!)) throw new FinanceValidationError("This receipt changed since you opened it. Reload before saving.", 409);
           const account = await db.financialAccount.findFirst({ where: { id: input.accountId, userId: FINANCE_USER_ID } });
           const category = await db.financeCategory.findFirst({ where: { id: input.categoryId, userId: FINANCE_USER_ID, type: "EXPENSE" } });
@@ -87,6 +90,7 @@ export async function saveReceipt(input: ReceiptInput, file: PreparedReceiptFile
           const saved = current
             ? await db.financialReceipt.update({ where: { id: current.id, userId: FINANCE_USER_ID }, data })
             : await db.financialReceipt.create({ data: { ...data, userId: FINANCE_USER_ID, requestKey: input.requestKey, requestFingerprint: fingerprint } });
+          await syncSupportingMatch(db, "RECEIPT", saved, current?.transactionId ?? null);
           const oldKeys: string[] = [];
           if (file && storageKey) {
             if (current?.documents.length) {
@@ -116,7 +120,7 @@ export async function deleteReceipt(id: number, documentOnly = false, expectedUp
     if (!expectedUpdatedAt || Date.parse(expectedUpdatedAt) !== row.updatedAt.getTime()) throw new FinanceValidationError("This receipt changed. Reload before deleting.", 409);
     await db.financialDocument.deleteMany({ where: { userId: FINANCE_USER_ID, receiptId: id, type: "RECEIPT" } });
     if (documentOnly) await db.financialReceipt.update({ where: { id, userId: FINANCE_USER_ID }, data: { updatedAt: new Date() } });
-    else await db.financialReceipt.delete({ where: { id, userId: FINANCE_USER_ID } });
+    else { await unlinkSupportingMatches(db, "RECEIPT", id); await db.financialReceipt.delete({ where: { id, userId: FINANCE_USER_ID } }); }
     return row.documents.map(document => document.storageKey);
   }, { isolationLevel: "Serializable" });
   await Promise.all(keys.map(removeReceiptFile));
@@ -133,8 +137,8 @@ export async function listReceipts(params: URLSearchParams) {
     if (search.length > 200) throw new FinanceValidationError("Search must not exceed 200 characters.");
     where.OR = [{ merchant: { contains: search, mode: "insensitive" } }, { notes: { contains: search, mode: "insensitive" } }];
   }
-  if (params.get("status") === "unmatched") where.transactionId = null;
-  else if (params.get("status") === "linked") where.transactionId = { not: null };
+  if (params.get("status") === "unmatched") where.AND = [{ transactionId: null }, { matches: { none: { status: "CONFIRMED" } } }];
+  else if (params.get("status") === "linked") where.AND = [{ OR: [{ transactionId: { not: null } }, { matches: { some: { status: "CONFIRMED" } } }] }];
   else if (params.get("status")) throw new FinanceValidationError("Invalid receipt status filter.");
   if (params.get("account")) {
     if (!/^[1-9]\d{0,9}$/.test(params.get("account")!) || Number(params.get("account")) > 2147483647) throw new FinanceValidationError("Invalid account filter.");

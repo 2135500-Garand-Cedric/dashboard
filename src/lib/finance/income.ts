@@ -17,7 +17,7 @@ export interface FinanceIncome {
   id: number; source: IncomeSource | null; description: string; date: string; periodStart: string | null; periodEnd: string | null;
   account: FinanceAccount | null; category: FinanceCategory | null; currency: string; grossAmount: string | null; netAmount: string;
   deductions: { typeId: number; name: string; active: boolean; amount: string }[]; deductionsTotal: string; difference: string | null;
-  notes: string | null; updatedAt: string; document: ReceiptDocument | null; transaction: FinanceReceipt["transaction"]; linkWarning: string | null;
+  notes: string | null; updatedAt: string; document: ReceiptDocument | null; transaction: FinanceReceipt["transaction"]; linkWarning: string | null; allocations: { id: number; transactionId: number | null; amount: string }[];
 }
 export interface IncomePage { records: FinanceIncome[]; total: number; page: number; pageSize: number; }
 function text(value: unknown, label: string, limit: number, required = false) {

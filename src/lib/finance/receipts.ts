@@ -15,7 +15,7 @@ export interface FinanceReceipt {
   subtotal: string; tax: string; tip: string; total: string; currency: string; notes: string | null;
   updatedAt: string; difference: string; document: ReceiptDocument | null;
   transaction: { id: number; description: string; date: string; amount: string; currency: string; accountId: number; type: string } | null;
-  linkWarning: string | null;
+  linkWarning: string | null; allocations: { id: number; transactionId: number | null; amount: string }[];
 }
 export interface ReceiptPage { receipts: FinanceReceipt[]; total: number; page: number; pageSize: number; }
 function text(value: unknown, label: string, max: number, required = false) {

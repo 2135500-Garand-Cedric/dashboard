@@ -1,3 +1,4 @@
+import { guardSupportingEdit, syncSupportingMatch, unlinkSupportingMatches } from "./reconciliation-ledger";
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
@@ -14,6 +15,7 @@ export const incomeSourceSelect = { id: true, name: true, kind: true, active: tr
 export const deductionTypeSelect = { id: true, name: true, active: true } as const;
 const include = {
   source: { select: incomeSourceSelect }, account: { select: accountSelect }, category: { select: categorySelect }, transaction: true,
+  matches: { where: { userId: FINANCE_USER_ID, status: "CONFIRMED" as const }, select: { id: true, transactionId: true, amount: true } },
   deductions: { include: { type: { select: deductionTypeSelect } }, orderBy: { id: "asc" as const } },
   documents: { where: { userId: FINANCE_USER_ID, type: "PAY_STUB" as const }, orderBy: { id: "desc" as const } },
 } satisfies Prisma.FinancialIncomeRecordInclude;
@@ -34,6 +36,7 @@ function serialize(row: Row): FinanceIncome {
     account: row.account, category: row.category, currency: row.currency, grossAmount, netAmount, deductions, ...incomeAmounts(grossAmount, deductions, netAmount), notes: row.notes, updatedAt: row.updatedAt.toISOString(),
     document: document ? { id: document.id, originalName: document.originalName, mimeType: document.mimeType, byteSize: document.byteSize } : null,
     transaction: transaction ? { id: transaction.id, description: transaction.description, date: transaction.occurredOn.toISOString().slice(0, 10), amount: transaction.amount.toFixed(4), currency: transaction.currency, accountId: transaction.accountId, type: transaction.type } : null,
+    allocations: row.matches.map(link => ({ id: link.id, transactionId: link.transactionId, amount: link.amount.toFixed(4) })),
     linkWarning: row.transaction && (!transaction || transaction.type !== "INCOME" || transaction.accountId !== row.accountId || transaction.currency !== row.currency || !transaction.amount.equals(row.netAmount)) ? "The linked deposit differs from this record's account, currency, net amount or type. Income record edits never change the bank transaction; review or unlink the deposit." : null,
   };
 }
@@ -59,6 +62,7 @@ export async function saveIncome(input: IncomeInput, file: PreparedReceiptFile |
             }
           }
           const current = id === undefined ? null : await rowById(db, id);
+          await guardSupportingEdit(db, "INCOME", current, input);
           if (current && current.updatedAt.getTime() !== Date.parse(input.expectedUpdatedAt!)) throw new FinanceValidationError("This income record changed. Reload before saving.", 409);
           const source = await db.financialIncomeSource.findFirst({ where: { id: input.sourceId, userId: FINANCE_USER_ID } });
           if (!source || (!source.active && current?.sourceId !== source.id)) throw new FinanceValidationError("Choose an active income source belonging to you.");
@@ -95,6 +99,7 @@ export async function saveIncome(input: IncomeInput, file: PreparedReceiptFile |
           const saved = current ? await db.financialIncomeRecord.update({ where: { id: current.id, userId: FINANCE_USER_ID }, data }) : await db.financialIncomeRecord.create({ data: { ...data, userId: FINANCE_USER_ID, requestKey: input.requestKey, requestFingerprint: fingerprint } });
           if (current) await db.financialIncomeDeduction.deleteMany({ where: { incomeRecordId: current.id } });
           if (input.deductions.length) await db.financialIncomeDeduction.createMany({ data: input.deductions.map(line => ({ incomeRecordId: saved.id, ...line })) });
+          await syncSupportingMatch(db, "INCOME", saved, current?.transactionId ?? null);
           const oldKeys: string[] = [];
           if (file && storageKey) {
             if (current?.documents.length) {
@@ -123,7 +128,7 @@ export async function deleteIncome(id: number, documentOnly = false, expectedUpd
     if (!expectedUpdatedAt || Date.parse(expectedUpdatedAt) !== row.updatedAt.getTime()) throw new FinanceValidationError("This income record changed. Reload before deleting.", 409);
     await db.financialDocument.deleteMany({ where: { userId: FINANCE_USER_ID, incomeRecordId: id, type: "PAY_STUB" } });
     if (documentOnly) await db.financialIncomeRecord.update({ where: { id, userId: FINANCE_USER_ID }, data: { updatedAt: new Date() } });
-    else await db.financialIncomeRecord.delete({ where: { id, userId: FINANCE_USER_ID } });
+    else { await unlinkSupportingMatches(db, "INCOME", id); await db.financialIncomeRecord.delete({ where: { id, userId: FINANCE_USER_ID } }); }
     return row.documents.map(document => document.storageKey);
   }, { isolationLevel: "Serializable" });
   await Promise.all(keys.map(removeDocument));
@@ -140,8 +145,8 @@ export async function listIncome(params: URLSearchParams) {
     if (search.length > 200) throw new FinanceValidationError("Search must not exceed 200 characters.");
     where.OR = [{ description: { contains: search, mode: "insensitive" } }, { notes: { contains: search, mode: "insensitive" } }, { source: { name: { contains: search, mode: "insensitive" } } }];
   }
-  if (params.get("status") === "unmatched") where.transactionId = null;
-  else if (params.get("status") === "linked") where.transactionId = { not: null };
+  if (params.get("status") === "unmatched") where.AND = [{ transactionId: null }, { matches: { none: { status: "CONFIRMED" } } }];
+  else if (params.get("status") === "linked") where.AND = [{ OR: [{ transactionId: { not: null } }, { matches: { some: { status: "CONFIRMED" } } }] }];
   else if (params.get("status")) throw new FinanceValidationError("Invalid deposit status filter.");
   for (const [param, field] of [["account", "accountId"], ["source", "sourceId"]] as const) if (params.get(param)) where[field] = financeId(params.get(param)!);
   const from = params.get("from"), to = params.get("to");

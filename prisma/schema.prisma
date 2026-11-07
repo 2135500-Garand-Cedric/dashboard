@@ -45,6 +45,8 @@ model User {
   financialDeductionTypes FinancialDeductionType[]
   financialDocuments FinancialDocument[]
   financialImports FinancialImport[]
+  financialMatches FinancialMatch[]
+  financialMatchEvents FinancialMatchEvent[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -324,6 +326,8 @@ model FinanceCategory {
 
 // Transactions are the canonical ledger. Signed amounts: inflow positive,
 // outflow negative. Transfers/adjustments remain distinct from income/expenses.
+// Counted movement = sign(amount) * (abs(amount) - excludedAmount).
+// Confirmed duplicate allocations exclude amounts without deleting original facts.
 model FinancialTransaction {
   id          Int                        @id @default(autoincrement())
   userId      Int
@@ -351,6 +355,9 @@ model FinancialTransaction {
   incomeRecords FinancialIncomeRecord[]
   documents   FinancialDocument[]
   importEntries FinancialImportEntry[]
+  excludedAmount Decimal @default(0) @db.Decimal(19, 4)
+  matchSources FinancialMatch[] @relation("MatchSource")
+  matchTargets FinancialMatch[] @relation("MatchTarget")
 
   @@index([userId, occurredOn])
   @@index([accountId, occurredOn])
@@ -394,6 +401,7 @@ model FinancialReceipt {
   category      FinanceCategory?      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   transaction   FinancialTransaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
   documents     FinancialDocument[]
+  matches FinancialMatch[]
 
   @@index([userId, purchasedOn])
   @@index([accountId])
@@ -428,6 +436,7 @@ model FinancialIncomeRecord {
   documents     FinancialDocument[]
   source        FinancialIncomeSource? @relation(fields: [sourceId], references: [id], onDelete: Restrict)
   deductions    FinancialIncomeDeduction[]
+  matches FinancialMatch[]
 
   @@index([userId, paidOn])
   @@index([accountId])
@@ -508,6 +517,7 @@ model FinancialImportEntry {
   transactionId Int?
   import        FinancialImport       @relation(fields: [importId], references: [id], onDelete: Cascade)
   transaction   FinancialTransaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  matches FinancialMatch[]
 
   @@unique([importId, rowKey])
   @@index([transactionId])
@@ -572,4 +582,72 @@ enum FinancialImportAction {
   CREATE
   MATCH
   SKIP
+}
+
+enum FinancialMatchKind {
+  RECEIPT
+  INCOME
+  DUPLICATE
+  REFUND
+  STATEMENT
+}
+
+enum FinancialMatchStatus {
+  CONFIRMED
+  REJECTED
+  UNLINKED
+}
+
+// Suggestions are computed, never treated as confirmed allocations.
+model FinancialMatch {
+  id                  Int                    @id @default(autoincrement())
+  userId              Int
+  kind                FinancialMatchKind
+  pairKey             String
+  receiptId           Int?
+  incomeRecordId      Int?
+  sourceTransactionId Int?
+  importEntryId       Int?
+  transactionId       Int?
+  amount              Decimal                @db.Decimal(19, 4)
+  currency            String                 @db.Char(3)
+  status              FinancialMatchStatus
+  revision            Int                    @default(1)
+  note                String?
+  sourceSnapshot      Json
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  user                User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  receipt             FinancialReceipt?      @relation(fields: [receiptId], references: [id], onDelete: SetNull)
+  incomeRecord        FinancialIncomeRecord? @relation(fields: [incomeRecordId], references: [id], onDelete: SetNull)
+  sourceTransaction   FinancialTransaction?  @relation("MatchSource", fields: [sourceTransactionId], references: [id], onDelete: SetNull)
+  transaction         FinancialTransaction?  @relation("MatchTarget", fields: [transactionId], references: [id], onDelete: SetNull)
+  importEntry         FinancialImportEntry?  @relation(fields: [importEntryId], references: [id], onDelete: SetNull)
+  events              FinancialMatchEvent[]
+
+  @@unique([userId, pairKey])
+  @@index([userId, status, kind])
+  @@index([receiptId, status])
+  @@index([incomeRecordId, status])
+  @@index([sourceTransactionId, status])
+  @@index([transactionId, status])
+  @@index([importEntryId, status])
+}
+
+// Append-only snapshots survive unlinking and deletion of original supporting records.
+model FinancialMatchEvent {
+  id                 Int            @id @default(autoincrement())
+  userId             Int
+  matchId            Int
+  requestKey         String         @db.Uuid
+  requestFingerprint String
+  action             String
+  details            Json
+  createdAt          DateTime       @default(now())
+  user               User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  match              FinancialMatch @relation(fields: [matchId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, requestKey])
+  @@index([userId, createdAt])
+  @@index([matchId])
 }

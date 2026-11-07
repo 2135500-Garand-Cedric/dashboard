@@ -12,6 +12,8 @@ const include = {
   receipts: { where: { userId: FINANCE_USER_ID }, select: { id: true, merchant: true, purchasedOn: true }, orderBy: [{ purchasedOn: "desc" as const }, { id: "desc" as const }] },
   incomeRecords: { where: { userId: FINANCE_USER_ID }, select: { id: true, description: true, paidOn: true }, orderBy: [{ paidOn: "desc" as const }, { id: "desc" as const }] },
   _count: { select: { importEntries: true } },
+  matchSources: { where: { userId: FINANCE_USER_ID, status: "CONFIRMED" as const } },
+  matchTargets: { where: { userId: FINANCE_USER_ID, status: "CONFIRMED" as const }, include: { receipt: { select: { id: true, merchant: true, purchasedOn: true } }, incomeRecord: { select: { id: true, description: true, paidOn: true } }, sourceTransaction: { select: { receipts: { where: { userId: FINANCE_USER_ID }, select: { id: true, merchant: true, purchasedOn: true } }, incomeRecords: { where: { userId: FINANCE_USER_ID }, select: { id: true, description: true, paidOn: true } } } } } },
   transfer: { include: { transactions: { where: { userId: FINANCE_USER_ID }, include: { account: { select: accountSelect }, _count: { select: { importEntries: true } } } } } },
 } satisfies Prisma.FinancialTransactionInclude;
 type Row = Prisma.FinancialTransactionGetPayload<{ include: typeof include }>;
@@ -38,11 +40,12 @@ export function serializeTransaction(row: Row): FinanceTransaction {
     id: row.id, date: row.occurredOn.toISOString().slice(0, 10), description: row.description,
     amount: row.amount.toFixed(4), currency: row.currency, type: row.type,
     account: row.account, category: row.category, counterparty: row.counterparty, notes: row.notes,
-    editable: row.source === "MANUAL" && !row._count.importEntries && incoming?.source !== "IMPORTED" && !incoming?._count.importEntries,
+    editable: row.source === "MANUAL" && !row._count.importEntries && incoming?.source !== "IMPORTED" && !incoming?._count.importEntries && !row.matchSources.length && !row.matchTargets.some(link => ["DUPLICATE", "REFUND", "STATEMENT"].includes(link.kind)),
+    ledgerAmount: row.amount.isNegative() ? row.amount.plus(row.excludedAmount).toFixed(4) : row.amount.minus(row.excludedAmount).toFixed(4), excludedAmount: row.excludedAmount.toFixed(4),
     source: row.source, updatedAt: row.updatedAt.toISOString(),
-    receipts: row.receipts.map(receipt => ({ id: receipt.id, merchant: receipt.merchant, date: receipt.purchasedOn.toISOString().slice(0, 10) })),
-    incomeRecords: row.incomeRecords.map(record => ({ id: record.id, description: record.description, date: record.paidOn.toISOString().slice(0, 10) })),
-    transfer: incoming ? { id: row.transferId!, transactionId: incoming.id, account: incoming.account, amount: incoming.amount.toFixed(4), currency: incoming.currency } : null,
+    receipts: [...new Map([...row.receipts, ...row.matchTargets.flatMap(link => [...(link.receipt ? [link.receipt] : []), ...(link.kind === "DUPLICATE" ? link.sourceTransaction?.receipts ?? [] : [])])].map(receipt => [receipt.id, { id: receipt.id, merchant: receipt.merchant, date: receipt.purchasedOn.toISOString().slice(0, 10) }])).values()],
+    incomeRecords: [...new Map([...row.incomeRecords, ...row.matchTargets.flatMap(link => [...(link.incomeRecord ? [link.incomeRecord] : []), ...(link.kind === "DUPLICATE" ? link.sourceTransaction?.incomeRecords ?? [] : [])])].map(record => [record.id, { id: record.id, description: record.description, date: record.paidOn.toISOString().slice(0, 10) }])).values()],
+    transfer: incoming ? { id: row.transferId!, transactionId: incoming.id, account: incoming.account, amount: incoming.amount.toFixed(4), ledgerAmount: incoming.amount.minus(incoming.excludedAmount).toFixed(4), currency: incoming.currency } : null,
   };
 }
 
@@ -83,6 +86,7 @@ async function references(db: DB, input: TransactionInput, current?: Row) {
 function assertEditable(row: Row) {
   const incoming = peer(row);
   if (row.source !== "MANUAL" || incoming?.source === "IMPORTED" || row._count.importEntries || incoming?._count.importEntries) throw new FinanceValidationError("This entry is imported or linked to an import. It cannot be changed through manual transaction management.", 409);
+  if (row.matchSources.length || row.matchTargets.some(link => ["DUPLICATE", "REFUND", "STATEMENT"].includes(link.kind))) throw new FinanceValidationError("Unlink this transaction's confirmed reconciliation decisions before changing it.", 409);
 }
 
 export async function saveTransaction(input: TransactionInput, id?: number) {
@@ -122,6 +126,13 @@ export async function saveTransactionInDb(db: DB, input: TransactionInput, id?: 
     if (duplicate) throw new TransactionConflict("A matching manual entry already exists for these accounts, date, type, amount, description, and counterparty. Review it before saving another.", "DUPLICATE_TRANSACTION", duplicate.id);
   }
   const amount = new Prisma.Decimal(input.amount);
+  if (current?.matchTargets.length) {
+    for (const kind of ["RECEIPT", "INCOME"] as const) {
+      const links = current.matchTargets.filter(link => link.kind === kind);
+      const used = links.reduce((total, link) => total.plus(link.amount), new Prisma.Decimal(0));
+      if (links.length && (input.accountId !== current.accountId || input.currency !== current.currency || input.type !== (kind === "RECEIPT" ? "EXPENSE" : "INCOME") || used.greaterThan(amount.abs()))) throw new FinanceValidationError("These changes conflict with confirmed payment allocations. Correct or unlink them in Reconciliation first.", 409);
+    }
+  }
   const signedAmount = input.type === "EXPENSE" || input.type === "TRANSFER" ? amount.negated() : amount;
   const data = {
     accountId: input.accountId, categoryId: input.categoryId, occurredOn: new Date(`${input.date}T00:00:00Z`),
@@ -154,6 +165,7 @@ export async function deleteTransaction(id: number) {
   await prisma.$transaction(async db => {
     const row = await rowById(db, id);
     assertEditable(row);
+    if (row.matchTargets.length || row.matchSources.length) throw new FinanceValidationError("Unlink confirmed reconciliation allocations before deleting this transaction.", 409);
     if (row.transferId) await db.financialTransfer.delete({ where: { id: row.transferId, userId: FINANCE_USER_ID } });
     else await db.financialTransaction.delete({ where: { id: row.id, userId: FINANCE_USER_ID } });
   }, { isolationLevel: "Serializable" });

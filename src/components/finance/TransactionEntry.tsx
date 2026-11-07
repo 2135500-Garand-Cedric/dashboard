@@ -70,6 +70,7 @@ function EntryForm({ initialDate, existing }: { initialDate: string; existing?: 
 
   return <div className="space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-2xl font-semibold">{existing ? readOnly ? "Transaction details" : "Edit transaction" : "New transaction"}</h2><Link href="/finance/transactions" className={secondaryButton}>← Transaction history</Link></div>
+    {existing && <section className="card space-y-3"><Link href={`/finance/reconciliation?kind=${existing.type === "REFUND" ? "REFUND" : "DUPLICATE"}&source=${existing.id}`} className={secondaryButton}>Reconcile / view matches</Link>{existing.excludedAmount && existing.excludedAmount !== "0.0000" && <p className="text-sm text-amber-500">Counted amount: {existing.ledgerAmount} {existing.currency}. {existing.excludedAmount} is confirmed duplicate activity retained for audit.</p>}</section>}
     {!!existing?.receipts?.length && <section className="card max-w-5xl space-y-3"><h3 className="text-lg font-semibold">Linked receipts ({existing.receipts.length})</h3><div className="flex flex-wrap gap-2">{existing.receipts.map(receipt => <Link key={receipt.id} href={`/finance/receipts/${receipt.id}`} className={`${secondaryButton} max-w-full break-words`}>
       {existing.receipts.length === 1 ? "View receipt" : `View receipt #${receipt.id} — ${receipt.merchant || "Receipt"} · ${receipt.date}`}
     </Link>)}</div></section>}
