@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import { secondaryButton } from "./shared";
 
-export default function ReceiptPdfPreview({ url }: { url: string }) {
+export default function ReceiptPdfPreview({ url, label = "Receipt" }: { url: string; label?: string }) {
   const container = useRef<HTMLDivElement>(null), canvas = useRef<HTMLCanvasElement>(null);
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
   const [page, setPage] = useState(1), [width, setWidth] = useState(300), [error, setError] = useState("");
@@ -52,6 +52,6 @@ export default function ReceiptPdfPreview({ url }: { url: string }) {
   return <div className="space-y-3" ref={container}>
     {document && <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm">Page {page} of {document.numPages}</p><div className="flex gap-2"><button type="button" className={secondaryButton} disabled={page === 1} onClick={() => setPage(page - 1)}>Previous page</button><button type="button" className={secondaryButton} disabled={page === document.numPages} onClick={() => setPage(page + 1)}>Next page</button></div></div>}
     {rendering && <p role="status" className="text-sm text-gray-400">Loading PDF preview…</p>}{error && <p role="alert" className="text-sm text-amber-500">{error}</p>}
-    <canvas ref={canvas} role="img" aria-label={`Receipt PDF preview, page ${page}`} hidden={!!error || !document} className="w-full rounded-lg bg-white" />
+    <canvas ref={canvas} role="img" aria-label={`${label} PDF preview, page ${page}`} hidden={!!error || !document} className="w-full rounded-lg bg-white" />
   </div>;
 }

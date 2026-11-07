@@ -66,7 +66,8 @@ export async function saveReceipt(input: ReceiptInput, file: PreparedReceiptFile
           if (!category || (!category.active && current?.categoryId !== category.id)) throw new FinanceValidationError("Choose an active expense category belonging to you.");
           if (receiptDifference(input.subtotal, input.tax, input.tip, input.total) !== "0.0000" && !input.acknowledgeMismatch) throw new FinanceValidationError("Subtotal + tax + tip does not equal total. Review the amounts or confirm that you want to keep this difference.");
           if (file) {
-            const duplicate = await db.financialDocument.findFirst({ where: { userId: FINANCE_USER_ID, contentHash: file.contentHash, ...(current ? { receiptId: { not: current.id } } : {}) }, select: { receiptId: true } });
+            const duplicate = await db.financialDocument.findFirst({ where: { userId: FINANCE_USER_ID, contentHash: file.contentHash, ...(current ? { OR: [{ receiptId: null }, { receiptId: { not: current.id } }] } : {}) }, select: { receiptId: true, incomeRecordId: true } });
+            if (duplicate?.incomeRecordId) throw new ReceiptConflict("This file is already stored as an income document. Choose another file.", "DUPLICATE_DOCUMENT");
             if (duplicate) throw new ReceiptConflict("This original file is already attached to a receipt. Review that receipt instead of uploading it again.", "DUPLICATE_RECEIPT", duplicate.receiptId ?? undefined);
           }
           let transactionId: number | null = null;

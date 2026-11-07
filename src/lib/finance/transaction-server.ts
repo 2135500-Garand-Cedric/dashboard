@@ -10,6 +10,7 @@ type DB = Prisma.TransactionClient;
 const include = {
   account: { select: accountSelect }, category: { select: categorySelect },
   receipts: { where: { userId: FINANCE_USER_ID }, select: { id: true, merchant: true, purchasedOn: true }, orderBy: [{ purchasedOn: "desc" as const }, { id: "desc" as const }] },
+  incomeRecords: { where: { userId: FINANCE_USER_ID }, select: { id: true, description: true, paidOn: true }, orderBy: [{ paidOn: "desc" as const }, { id: "desc" as const }] },
   _count: { select: { importEntries: true } },
   transfer: { include: { transactions: { where: { userId: FINANCE_USER_ID }, include: { account: { select: accountSelect }, _count: { select: { importEntries: true } } } } } },
 } satisfies Prisma.FinancialTransactionInclude;
@@ -39,6 +40,7 @@ export function serializeTransaction(row: Row): FinanceTransaction {
     account: row.account, category: row.category, counterparty: row.counterparty, notes: row.notes,
     source: row.source, updatedAt: row.updatedAt.toISOString(),
     receipts: row.receipts.map(receipt => ({ id: receipt.id, merchant: receipt.merchant, date: receipt.purchasedOn.toISOString().slice(0, 10) })),
+    incomeRecords: row.incomeRecords.map(record => ({ id: record.id, description: record.description, date: record.paidOn.toISOString().slice(0, 10) })),
     transfer: incoming ? { id: row.transferId!, transactionId: incoming.id, account: incoming.account, amount: incoming.amount.toFixed(4), currency: incoming.currency } : null,
   };
 }

@@ -41,6 +41,8 @@ model User {
   financialTransfers FinancialTransfer[]
   financialReceipts FinancialReceipt[]
   financialIncomeRecords FinancialIncomeRecord[]
+  financialIncomeSources FinancialIncomeSource[]
+  financialDeductionTypes FinancialDeductionType[]
   financialDocuments FinancialDocument[]
   financialImports FinancialImport[]
 
@@ -403,6 +405,13 @@ model FinancialReceipt {
 model FinancialIncomeRecord {
   id            Int                   @id @default(autoincrement())
   userId        Int
+  sourceId      Int?
+  periodStart   DateTime?             @db.Date
+  periodEnd     DateTime?             @db.Date
+  notes         String?
+  requestKey    String?               @db.Uuid
+  requestFingerprint String?          @db.VarChar(64)
+  updatedAt     DateTime              @updatedAt
   accountId     Int?
   categoryId    Int?
   transactionId Int?
@@ -417,11 +426,15 @@ model FinancialIncomeRecord {
   category      FinanceCategory?      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   transaction   FinancialTransaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
   documents     FinancialDocument[]
+  source        FinancialIncomeSource? @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  deductions    FinancialIncomeDeduction[]
 
   @@index([userId, paidOn])
   @@index([accountId])
   @@index([categoryId])
   @@index([transactionId])
+  @@index([sourceId])
+  @@unique([userId, requestKey])
 }
 
 // Storage keys identify private objects, never publicly served file URLs.
@@ -486,3 +499,50 @@ model FinancialImportEntry {
   @@index([transactionId])
 }
 
+
+// Source details and deduction labels are owner-managed; values remain on each pay record.
+enum FinancialIncomeKind {
+  EMPLOYMENT
+  FREELANCE
+  INTEREST
+  GIFT
+  REIMBURSEMENT
+  OTHER
+}
+
+model FinancialIncomeSource {
+  id             Int @id @default(autoincrement())
+  userId         Int
+  name           String
+  normalizedName String
+  kind           FinancialIncomeKind
+  active         Boolean @default(true)
+  user           User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  records        FinancialIncomeRecord[]
+
+  @@unique([userId, normalizedName])
+}
+
+model FinancialDeductionType {
+  id             Int @id @default(autoincrement())
+  userId         Int
+  name           String
+  normalizedName String
+  active         Boolean @default(true)
+  user           User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  deductions     FinancialIncomeDeduction[]
+
+  @@unique([userId, normalizedName])
+}
+
+model FinancialIncomeDeduction {
+  id             Int @id @default(autoincrement())
+  incomeRecordId Int
+  typeId         Int
+  amount         Decimal @db.Decimal(19, 4)
+  incomeRecord   FinancialIncomeRecord @relation(fields: [incomeRecordId], references: [id], onDelete: Cascade)
+  type           FinancialDeductionType @relation(fields: [typeId], references: [id], onDelete: Restrict)
+
+  @@unique([incomeRecordId, typeId])
+  @@index([typeId])
+}

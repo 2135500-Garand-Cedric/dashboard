@@ -47,20 +47,21 @@ export async function storeReceiptFile(file: PreparedReceiptFile) {
 }
 export async function removeReceiptFile(key: string) {
   try { await unlink(receiptStoragePath(key)); }
-  catch (error) { if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) console.error("Finance: unable to remove a private receipt file."); }
+  catch (error) { if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) console.error("Finance: unable to remove a private financial file."); }
 }
 export async function readReceiptFile(key: string) {
   try { return await readFile(receiptStoragePath(key)); }
-  catch { throw new FinanceValidationError("The receipt file is unavailable. Replace the document or restore it from backup.", 404); }
+  catch { throw new FinanceValidationError("The document is unavailable. Replace the document or restore it from backup.", 404); }
 }
 
 // Bound the actual stream, not just an untrusted Content-Length header, before parsing multipart.
-export async function receiptFormData(request: Request) {
+// Shared bounded multipart reader for receipts and income documents.
+export async function receiptFormData(request: Request, label = "Receipt") {
   const limit = MAX_RECEIPT_BYTES + 65536;
   if (Number(request.headers.get("content-length")) > limit) throw new FinanceValidationError("The upload is too large. Maximum file size is 15 MB.", 413);
-  if (!request.headers.get("content-type")?.startsWith("multipart/form-data;")) throw new FinanceValidationError("Use a multipart receipt form.");
+  if (!request.headers.get("content-type")?.startsWith("multipart/form-data;")) throw new FinanceValidationError(`Use a multipart ${label.toLowerCase()} form.`);
   const reader = request.body?.getReader();
-  if (!reader) throw new FinanceValidationError("Receipt form is missing.");
+  if (!reader) throw new FinanceValidationError(`${label} form is missing.`);
   const chunks: Uint8Array[] = []; let size = 0;
   try {
     while (true) {
@@ -72,11 +73,11 @@ export async function receiptFormData(request: Request) {
   } finally { reader.releaseLock(); }
   let form: FormData;
   try { form = await new Response(Buffer.concat(chunks), { headers: { "Content-Type": request.headers.get("content-type")! } }).formData(); }
-  catch { throw new FinanceValidationError("Invalid receipt upload form."); }
-  if ([...form.keys()].some(key => !["details", "file"].includes(key)) || form.getAll("details").length !== 1 || form.getAll("file").length > 1) throw new FinanceValidationError("Unexpected receipt form fields.");
+  catch { throw new FinanceValidationError(`Invalid ${label.toLowerCase()} upload form.`); }
+  if ([...form.keys()].some(key => !["details", "file"].includes(key)) || form.getAll("details").length !== 1 || form.getAll("file").length > 1) throw new FinanceValidationError(`Unexpected ${label.toLowerCase()} form fields.`);
   const details = form.get("details");
-  if (typeof details !== "string" || details.length > 16000) throw new FinanceValidationError("Receipt details are missing or too large.");
+  if (typeof details !== "string" || details.length > 16000) throw new FinanceValidationError(`${label} details are missing or too large.`);
   const file = form.get("file");
-  if (file !== null && typeof file === "string") throw new FinanceValidationError("Choose a valid receipt file.");
+  if (file !== null && typeof file === "string") throw new FinanceValidationError("Choose a valid image or PDF file.");
   return { details: JSON.parse(details), file: file ? await prepareReceiptFile(file) : null };
 }

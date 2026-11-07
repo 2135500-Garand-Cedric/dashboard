@@ -60,6 +60,10 @@ async function main() {
     });
   }
 
+  if (user.id === 1 && await prisma.financialDeductionType.count({ where: { userId: 1 } }) === 0) {
+    await prisma.financialDeductionType.createMany({ data: ["Income tax", "QPP/CPP", "EI", "QPIP", "Other deductions"].map(name => ({ userId: 1, name, normalizedName: name.toLocaleLowerCase("en-CA") })), skipDuplicates: true });
+  }
+
   const activities = [
     [1, "Kanji to English speaking"],
     [2, "English to Japanese speaking"],
