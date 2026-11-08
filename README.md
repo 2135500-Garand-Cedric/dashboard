@@ -53,6 +53,14 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 
+## Honorific verb ending
+
+When adding or editing vocabulary in the **Verb** category, select **Honorific irregular (いらっしゃる → いらっしゃいます)** for いらっしゃる, おっしゃる, なさる, くださる/下さる and ござる. Add the honorific word as its own dictionary entry, independently of the ordinary verb. All 13 supported forms and their practice records are generated, including polite negatives/past, て, た, potential, volitional, たい, ば and なければ. Kanji spelling and kana readings are retained separately.
+
+Only the four ます-family endings use the special い stem; other forms follow regular godan conjugation (for example いらっしゃって, いらっしゃれば and いらっしゃりたい). Other honorific verbs such as 召し上がる use the existing U-verb type. No database migration or new form-type seed is required because the verb ending is stored as text and the existing form types are reused. Changing an existing verb's type regenerates its forms and initializes their practice statuses to WEAK, following the existing edit behavior.
+
+Verification: `node --test tests/conjugation.test.mjs tests/backfill-verb-conditionals.test.mjs`. Development database/API checks: `RUN_HONORIFIC_VERB_DB_TEST=1 node --test tests/honorific-verbs.integration.mjs` inside the development container; test records roll back. Covers independent ordinary/honorific entries, add/edit, all 13 generated forms, exercise links and invalid-ending rollback.
+
 ## Kanji writing selection and percentages
 
 With no category selected, Kanji writing uses vocabulary from any category. A word must contain at least one known kanji and every remaining character must be another known kanji, hiragana, or katakana (including the long-vowel mark). Known kanji are the individual kanji characters found in the user's Kanji-category vocabulary. Explicit category and starred selections narrow that same eligible pool. Only dictionary forms are included; conjugated forms never enter Kanji writing. Answers show an animation for each kanji separately, with kana alongside it.

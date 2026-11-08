@@ -95,3 +95,10 @@ test("bad readings and conjugator failures are reported instead of generating fo
   assert.equal(failed.skipped, 2);
   assert.equal(database.writes(), 0);
 });
+
+test("conditional backfill recognizes the honorific ending type", async () => {
+  const database = fixture(); database.verbs[0] = { id: 1, japanese: "いらっしゃる", hiragana: "いらっしゃる", verbType: "honorific" };
+  let seen = false;
+  const result = await backfill(database.prisma, (base, reading, type) => { assert.equal(type, "honorific"); seen = true; return conjugate(); }, { log: () => {} });
+  assert.equal(seen, true); assert.equal(result.skipped, 1); assert.equal(result.affected, 1);
+});

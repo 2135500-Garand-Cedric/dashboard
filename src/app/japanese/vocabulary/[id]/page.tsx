@@ -1,5 +1,7 @@
 "use client";
 
+import { VERB_TYPES } from "@/lib/japanese/conjugation";
+
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { PencilSquareIcon, CheckIcon, TrashIcon, ArrowLeftIcon, Bars3Icon } from "@heroicons/react/24/solid";
@@ -91,8 +93,8 @@ export default function VocabularyEditPage() {
       setCategoryDraft(vocabData.categoryId);
       setStarredDraft(vocabData.starred);
       setSelectedVerbType(vocabData.verbType);
-    } catch (err: any) {
-      showMessage(`Failed to load vocabulary: ${err.message || err}`);
+    } catch (err: unknown) {
+      showMessage(`Failed to load vocabulary: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -107,9 +109,9 @@ export default function VocabularyEditPage() {
         return;
       }
       setCategories(data.categories || []);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Unexpected error loading categories:", err);
-      showMessage(`Failed to load categories: ${err.message || err}`);
+      showMessage(`Failed to load categories: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -144,8 +146,8 @@ export default function VocabularyEditPage() {
       setEditMode(false);
       await loadVocabulary();
       showMessage("Vocabulary updated successfully!");
-    } catch (err: any) {
-      showMessage(`Failed to update vocabulary: ${err.message || err}`);
+    } catch (err: unknown) {
+      showMessage(`Failed to update vocabulary: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -314,12 +316,7 @@ export default function VocabularyEditPage() {
 
               {editMode ? (
                 <div className="flex flex-wrap gap-4">
-                  {[
-                    { label: "U-verb", value: "u" },
-                    { label: "Ru-verb", value: "ru" },
-                    { label: "する-verb", value: "suru" },
-                    { label: "来る-verb", value: "kuru" },
-                  ].map((verb) => (
+                  {VERB_TYPES.map((verb) => (
                     <label key={verb.value} className="flex items-center space-x-2 cursor-pointer">
                       <input
                         type="radio"
@@ -335,15 +332,7 @@ export default function VocabularyEditPage() {
                 </div>
               ) : (
                 <p>
-                  {(() => {
-                    const mapping = {
-                      u: "U-verb",
-                      ru: "Ru-verb",
-                      suru: "する-verb",
-                      kuru: "来る-verb",
-                    };
-                    return vocab.verbType ? mapping[vocab.verbType as keyof typeof mapping] : "No verb type selected";
-                  })()}
+                  {VERB_TYPES.find(type => type.value === vocab.verbType)?.label ?? "No verb type selected"}
                 </p>
               )}
             </div>

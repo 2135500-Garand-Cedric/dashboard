@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const formNames = ["ba", "nakereba"];
-const verbTypes = ["ru", "u", "suru", "kuru"];
+const verbTypes = ["ru", "u", "suru", "kuru", "honorific"];
 
 export async function backfill(prisma, conjugateVerb, { apply = false, log = console.log } = {}) {
   const verbs = await prisma.vocabulary.findMany({
@@ -20,7 +20,7 @@ export async function backfill(prisma, conjugateVerb, { apply = false, log = con
     try {
       if (!verbTypes.includes(verbType)) throw new Error("missing or unsupported verb type");
       if (!japanese || !hiragana) throw new Error("missing Japanese spelling or reading");
-      const ending = verbType === "suru" ? "する" : verbType === "kuru" ? "くる" : verbType === "ru" ? "る" : null;
+      const ending = verbType === "suru" ? "する" : verbType === "kuru" ? "くる" : (verbType === "ru" || verbType === "honorific") ? "る" : null;
       if (ending && !hiragana.endsWith(ending)) throw new Error(`reading does not end in ${ending}`);
       const forms = conjugateVerb(japanese, hiragana, verbType);
       let missingForms = 0;

@@ -40,3 +40,24 @@ for (const [base, reading, type, ba, baReading, negative, negativeReading] of ex
     assert.ok(forms.masu && forms.te && forms.ta);
   });
 }
+
+test("honorific irregular verbs generate all supported forms of いらっしゃる", () => {
+  const expected = {
+    masu: "いらっしゃいます", masen: "いらっしゃいません", nai: "いらっしゃらない",
+    ta: "いらっしゃった", nakatta: "いらっしゃらなかった", mashita: "いらっしゃいました",
+    masen_deshita: "いらっしゃいませんでした", te: "いらっしゃって", volitional: "いらっしゃろう",
+    potential: "いらっしゃれる", tai: "いらっしゃりたい", ba: "いらっしゃれば", nakereba: "いらっしゃらなければ",
+  };
+  assert.deepEqual(conjugateVerb("いらっしゃる", "いらっしゃる", "honorific"), Object.fromEntries(Object.entries(expected).map(([name, value]) => [name, { form: value, reading: value }])));
+});
+test("honorific endings preserve kanji and prefixes and change only the polite endings", () => {
+  for (const [base, reading, masu] of [["おっしゃる", "おっしゃる", "おっしゃいます"], ["なさる", "なさる", "なさいます"], ["下さる", "くださる", "下さいます"], ["ござる", "ござる", "ございます"], ["ご覧なさる", "ごらんなさる", "ご覧なさいます"]]) {
+    const forms = conjugateVerb(base, reading, "honorific"), regular = conjugateVerb(base, reading, "u");
+    assert.equal(forms.masu.form, masu); assert.equal(forms.masu.reading, reading.slice(0, -1) + "います");
+    assert.deepEqual(Object.keys(forms).sort(), Object.keys(regular).sort());
+    for (const name of ["nai", "ta", "nakatta", "te", "volitional", "potential", "tai", "ba", "nakereba"]) assert.deepEqual(forms[name], regular[name]);
+    assert.equal(forms.masen.form, base.slice(0, -1) + "いません"); assert.equal(forms.mashita.form, base.slice(0, -1) + "いました"); assert.equal(forms.masen_deshita.form, base.slice(0, -1) + "いませんでした");
+  }
+  assert.throws(() => conjugateVerb("行く", "いく", "honorific"), /ending in る/);
+  assert.throws(() => conjugateVerb("下さる", "ください", "honorific"), /ending in る/);
+});

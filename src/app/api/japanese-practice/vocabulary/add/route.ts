@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { torontoDayRange } from "@/lib/japanese/dates";
 import { recordJapaneseProgress } from "@/lib/japanese/progress-history";
 import { ActivityVocabStatus } from "@/generated/prisma";
-import { conjugateVerb } from "@/lib/japanese/conjugation";
+import { conjugateVerb, VerbConjugationError } from "@/lib/japanese/conjugation";
 
 // POST /api/japanese-practice/vocabulary/add
 export async function POST(req: Request) {
@@ -96,6 +96,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true, vocabulary: result });
   } catch (error: unknown) {
+    if (error instanceof VerbConjugationError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+    }
     console.error(error);
     const code = error && typeof error === "object" && "code" in error ? error.code : null;
     if (code === "P2002") {

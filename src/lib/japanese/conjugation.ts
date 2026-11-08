@@ -1,7 +1,31 @@
-type VerbType = "ru" | "u" | "suru" | "kuru";
+export const VERB_TYPES = [
+  { label: "U-verb", value: "u" },
+  { label: "Ru-verb", value: "ru" },
+  { label: "する-verb", value: "suru" },
+  { label: "来る-verb", value: "kuru" },
+  { label: "Honorific irregular (いらっしゃる → いらっしゃいます)", value: "honorific" },
+] as const;
+export type VerbType = typeof VERB_TYPES[number]["value"];
+export class VerbConjugationError extends Error {}
+
 
 export function conjugateVerb(base: string, reading: string, type: VerbType) {
   const forms: Record<string, { form: string; reading: string }> = {};
+
+  // These honorific verbs use い before ます, but retain regular godan
+  // conjugations elsewhere (including りたい, った, れば and らなければ).
+  // Rule reference: https://guidetojapanese.org/learn/grammar/honorific
+  if (type === "honorific") {
+    if (!base.endsWith("る") || !reading.endsWith("る")) {
+      throw new VerbConjugationError("Honorific irregular verbs must use a dictionary form and reading ending in る, such as いらっしゃる.");
+    }
+    const honorific = conjugateGodan(base, reading);
+    const stem = base.slice(0, -1) + "い", readingStem = reading.slice(0, -1) + "い";
+    for (const [name, suffix] of [["masu", "ます"], ["masen", "ません"], ["mashita", "ました"], ["masen_deshita", "ませんでした"]] as const) {
+      honorific[name] = { form: stem + suffix, reading: readingStem + suffix };
+    }
+    return honorific;
+  }
 
   // Ichidan (ru)
   if (type === "ru") {

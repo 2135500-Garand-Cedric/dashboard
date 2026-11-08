@@ -4,7 +4,7 @@ import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { recordJapaneseProgress } from "@/lib/japanese/progress-history";
-import { conjugateVerb } from "@/lib/japanese/conjugation";
+import { conjugateVerb, VerbConjugationError } from "@/lib/japanese/conjugation";
 import { calculateActivityStats } from "@/lib/japanese/utils"; // import the util
 import { getKnownKanji, isKanjiWritingEligible, getApplicableActivityIds } from "@/lib/japanese/kanji-writing";
 import { ActivityVocabStatus, type Prisma } from "@/generated/prisma";
@@ -245,6 +245,9 @@ export async function PATCH(
 
     return NextResponse.json({ success: true, vocabulary: result });
   } catch (error: unknown) {
+    if (error instanceof VerbConjugationError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+    }
     console.error(error);
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : "An unexpected error occurred" },

@@ -1,5 +1,7 @@
 "use client";
 
+import { VERB_TYPES } from "@/lib/japanese/conjugation";
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeftIcon } from "@heroicons/react/24/solid";
@@ -212,12 +214,7 @@ export default function AddVocabularyPage() {
             <div className="mt-4">
               <label className="block mb-2">Verb Ending Type:</label>
               <div className="flex flex-wrap gap-4">
-                {[
-                  { label: "U-verb", value: "u" },
-                  { label: "Ru-verb", value: "ru" },
-                  { label: "する-verb", value: "suru" },
-                  { label: "来る-verb", value: "kuru" },
-                ].map((verbType) => (
+                {VERB_TYPES.map((verbType) => (
                   <label key={verbType.value} className="flex items-center space-x-2">
                     <input
                       type="radio"
