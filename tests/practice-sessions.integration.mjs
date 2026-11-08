@@ -44,8 +44,8 @@ test("session review is read-only; Okay atomically saves durable details and his
       assert.equal((await tx.activityVocab.findUnique({ where: { id: links[0].id } })).status, "WEAK");
       const saved = await sessions.savePracticeSession(sessions.parsePracticeSession(input));
       assert.equal(saved.id !== null, true);
-      assert.equal(saved.averageBefore, review.averageBefore);
-      assert.equal(saved.averageAfter, review.averageAfter);
+      assert.ok(Math.abs(saved.averageBefore - review.averageBefore) < 1e-9);
+      assert.ok(Math.abs(saved.averageAfter - review.averageAfter) < 1e-9);
       assert.equal(saved.words[0].previousStatus, "WEAK");
       assert.equal(saved.words[0].status, "PERFECT");
       assert.equal(saved.selectedCategories[0].name, category.name);

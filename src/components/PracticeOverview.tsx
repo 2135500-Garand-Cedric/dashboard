@@ -1,5 +1,6 @@
 "use client";
 
+import { vocabularyReadings } from "@/lib/japanese/readings";
 import { useEffect, useRef, type ReactNode } from "react";
 import type { PracticeSessionReview, PracticeStatus } from "@/lib/japanese/practice-session-types";
 import { formatPracticeDuration } from "@/lib/japanese/practice-session-types";
@@ -70,7 +71,7 @@ export default function PracticeOverview({ review, actions, navigation }: { revi
           return <section key={group.status} className="card flex min-h-0 min-w-0 flex-col !p-0 overflow-hidden">
             <h2 className={`flex shrink-0 items-center justify-between p-2 text-lg font-semibold md:p-4 md:text-xl ${group.color} ${group.background}`}><span>{group.label}</span><span>{review[group.count]}</span></h2>
             {words && <ul tabIndex={0} aria-label={`${group.label} words`} style={{ scrollbarGutter: "stable", scrollbarWidth: "thin", scrollbarColor: "#64748b transparent" }} className="flex-none divide-y divide-card-border overflow-visible lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain">
-              {words.map(word => <li key={word.activityVocabId} className="p-3 space-y-1 break-words md:p-5"><p className="font-medium">{word.english}</p><p lang="ja" className="text-xl">{word.japanese}</p><p lang="ja" className="text-sm text-gray-500">{word.hiragana}</p>{word.categoryName && <p className="text-xs text-gray-500">{word.categoryName}</p>}</li>)}
+              {words.map(word => <li key={word.activityVocabId} className="p-3 space-y-1 break-words md:p-5"><p className="font-medium">{word.english}</p><p lang="ja" className="text-xl">{word.japanese}</p><p lang="ja" className="text-sm text-gray-500">{vocabularyReadings(word).join(" / ")}</p>{word.categoryName && <p className="text-xs text-gray-500">{word.categoryName}</p>}</li>)}
             </ul>}
             {words?.length === 0 && <p className="p-5 text-sm text-gray-500">No words</p>}
           </section>;

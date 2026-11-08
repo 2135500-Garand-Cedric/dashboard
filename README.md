@@ -79,6 +79,16 @@ Dashboard daily totals and statistics buckets use America/Toronto, including day
 
 Development statistics vocabulary uses 56 distinct noun entries checked against [JLPT Sensei's N5 list](https://jlptsensei.com/jlpt-n5-nouns-vocabulary-list/) and [N4 list](https://jlptsensei.com/jlpt-n4-nouns-vocabulary-list/). Readings, meanings, study levels, and source URLs are stored in `prisma/statistics-vocabulary.json`. The seed matches Japanese spelling plus reading, preserves existing progress, and removes the old dated statistics-demo clones. Practice totals and past average snapshots remain illustrative development data.
 
+## Multiple Kanji readings
+
+Kanji-category vocabulary supports one or more readings on both add and edit pages. Add/remove reading fields as needed; empty readings are rejected and duplicates are removed. The first reading remains the primary `hiragana` value for compatibility and uniqueness; `Vocabulary.readings` stores the full list. The additive `20261108120000_add_kanji_readings` migration copies existing primary readings into the list and runs through the normal `prisma migrate deploy` deployment command.
+
+Vocabulary display/search and all practice answer displays include every saved reading. Typed Japanese answers accept any saved reading or the Japanese spelling (ignoring surrounding whitespace and normalizing Unicode). Practice snapshots retain the readings from that session; older snapshots fall back to their primary reading. Every exercise shows the vocabulary category under its prompt, including listening without revealing the answer.
+
+History summaries show total recorded practice time and the sum of each session's signed average change in percentage points for the selected activity group/day. Monthly history also shows these totals for each day. This excludes unrelated list changes between sessions. Missing legacy timing/averages are marked as unrecorded or partial rather than assumed zero. Development statistics examples include 100 days of detailed sessions with real word snapshots, alternate Kanji readings, durations, before/after averages, and category filters. Their average changes are illustrative; seeding preserves live practice ratings and does not duplicate sample sessions.
+
+Checks: `node --test tests/kanji-readings.test.mjs tests/practice-sessions.test.mjs`; development database checks: `RUN_KANJI_READINGS_DB_TEST=1 node tests/kanji-readings.integration.mjs` (fixtures and seed changes roll back). Optional Playwright checks: `RUN_KANJI_READINGS_BROWSER_TEST=1 node tests/kanji-readings.browser.mjs`; form/practice writes are mocked, with desktop and phone coverage.
+
 ## Practice reviews and history
 
 Rating the final word opens a practice overview. **Okay** commits the ratings, practice session, and progress snapshot in one transaction. The overview includes the activity, status groups with word spellings/readings, total words, selected categories (or no category filter), starred filter, and elapsed time from pressing Start Practice to rating the final word. Reading the overview and time spent reviewing it do not extend that duration. Failed saves retain the overview for retry; a unique session key prevents duplicate sessions if the response is lost.

@@ -1,3 +1,4 @@
+import { validateReadings, VocabularyReadingError } from "@/lib/japanese/readings";
 import { requireOwner } from "@/lib/require-owner";
 // GET /api/japanese-practice/vocabulary/[id]
 // Fetches a specific vocabulary entry with verb forms and activity status
@@ -88,6 +89,7 @@ export async function GET(
       english: vocab.english,
       japanese: vocab.japanese,
       hiragana: vocab.hiragana,
+      readings: vocab.readings,
       categoryId: vocab.category?.id,
       worst_status: worstStatus,
       percentage,
@@ -127,7 +129,8 @@ export async function PATCH(
     }
 
     const body = await req.json();
-    const { english, japanese, hiragana, categoryId, starred, verbType } = body;
+    const { english, japanese, categoryId, starred, verbType } = body;
+    let { hiragana } = body;
 
     const result = await prisma.$transaction(async (tx) => {
       // 1️⃣ Get existing vocab
@@ -139,8 +142,14 @@ export async function PATCH(
         throw new Error("Vocabulary not found");
       }
 
+      const category = await tx.category.findUnique({ where: { id: categoryId ?? existing.categoryId ?? 0 } });
+      const isKanji = category?.name.trim().toLowerCase() === "kanji";
+      const readingInput = body.readings !== undefined ? body.readings : (hiragana !== undefined ? [hiragana] : isKanji ? (existing.readings.length ? existing.readings : [existing.hiragana]) : [existing.hiragana]);
+      const readings = validateReadings(readingInput, hiragana ?? existing.hiragana, isKanji);
+      hiragana = readings[0];
       // 2️⃣ Detect changes
       const changes = {
+        readings: JSON.stringify(readings) !== JSON.stringify(existing.readings),
         english: english !== undefined && english !== existing.english,
         japanese: japanese !== undefined && japanese !== existing.japanese,
         hiragana: hiragana !== undefined && hiragana !== existing.hiragana,
@@ -158,6 +167,7 @@ export async function PATCH(
 
       // 4️⃣ Build update object ONLY with changed fields
       const data: Prisma.VocabularyUpdateInput = {};
+      if (changes.readings) data.readings = readings;
       if (changes.english) data.english = english;
       if (changes.japanese) data.japanese = japanese;
       if (changes.hiragana) data.hiragana = hiragana;
@@ -245,7 +255,7 @@ export async function PATCH(
 
     return NextResponse.json({ success: true, vocabulary: result });
   } catch (error: unknown) {
-    if (error instanceof VerbConjugationError) {
+    if (error instanceof VerbConjugationError || error instanceof VocabularyReadingError) {
       return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     }
     console.error(error);

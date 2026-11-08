@@ -1,5 +1,6 @@
 "use client";
 
+import VocabularyReadingsInput from "@/components/VocabularyReadingsInput";
 import { VERB_TYPES } from "@/lib/japanese/conjugation";
 
 import { useEffect, useState } from "react";
@@ -18,11 +19,12 @@ export default function AddVocabularyPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [english, setEnglish] = useState("");
   const [japanese, setJapanese] = useState("");
-  const [hiragana, setHiragana] = useState("");
+  const [readings, setReadings] = useState<string[]>([""]);
   const [selectedVerbType, setSelectedVerbType] = useState<string | null>(null);
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [starred, setStarred] = useState(false);
   const { showMessage } = useSnackbar();
+  const isKanji = categories.find(cat => cat.id === categoryId)?.name.trim().toLowerCase() === "kanji";
 
   // Fetch categories from API
   useEffect(() => {
@@ -66,7 +68,8 @@ export default function AddVocabularyPage() {
         body: JSON.stringify({
           english,
           japanese,
-          hiragana,
+          hiragana: readings[0],
+          readings: isKanji ? readings : readings.slice(0, 1),
           categoryId,
           verbType: selectedVerbType,
           starred,
@@ -88,7 +91,7 @@ export default function AddVocabularyPage() {
       showMessage("Vocabulary added successfully!");
       setEnglish("");
       setJapanese("");
-      setHiragana("");
+      setReadings([""]);
       setCategoryId(categories[0]?.id || null);
       setSelectedVerbType(null);
       setStarred(false);
@@ -172,22 +175,7 @@ export default function AddVocabularyPage() {
             />
           </div>
 
-          <div>
-            <label className="block mb-1">Hiragana:</label>
-            <input
-              type="text"
-              value={hiragana}
-              onChange={(e) => setHiragana(e.target.value)}
-              required
-              autoComplete="off"
-              className="w-full border rounded px-3 py-2 focus:outline-none"
-              style={{
-                borderColor: "var(--color-card-border)",
-                backgroundColor: "var(--color-card-bg)",
-                color: "var(--color-foreground)",
-              }}
-            />
-          </div>
+          <VocabularyReadingsInput values={readings} onChange={setReadings} multiple={isKanji} />
 
           <div>
             <label className="block mb-1">Category:</label>

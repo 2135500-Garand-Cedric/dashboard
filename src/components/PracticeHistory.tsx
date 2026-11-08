@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import PracticeOverview from "./PracticeOverview";
 import type { PracticeSessionReview, PracticeSessionSummary } from "@/lib/japanese/practice-session-types";
-import { formatPracticeDuration } from "@/lib/japanese/practice-session-types";
+import { formatPracticeDuration, practiceHistoryTotals } from "@/lib/japanese/practice-session-types";
 import { torontoDateKey } from "@/lib/japanese/dates";
 
 const backButtonClassName = "inline-flex items-center justify-center gap-2 rounded-lg border border-card-border bg-card-bg px-4 py-2 text-sm font-medium text-foreground shadow-sm transition-colors hover:border-blue-500 hover:bg-blue-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500";
@@ -38,6 +38,16 @@ function LoadState({ error, retry }: { error: string; retry: () => void }) {
   return <div className="card space-y-3">{error ? <><p role="alert" className="text-rose-500">{error}</p><button type="button" onClick={retry} className="rounded-lg border border-card-border px-4 py-2">Retry</button></> : <p role="status">Loading practice history…</p>}</div>;
 }
 
+function HistoryTotals({ sessions }: { sessions: PracticeSessionSummary[] }) {
+  const totals = practiceHistoryTotals(sessions);
+  return <div className="flex flex-wrap gap-3">
+    <span className="rounded-lg border border-card-border px-4 py-2">{sessions.length} sessions</span>
+    <span className="rounded-lg border border-card-border px-4 py-2">{sessions.reduce((sum, session) => sum + session.wordCount, 0)} words practiced</span>
+    <span className="rounded-lg border border-card-border px-4 py-2">Time practiced: {formatPracticeDuration(totals.durationSeconds)}</span>
+    <span className="rounded-lg border border-card-border px-4 py-2">Improvement: {totals.percentagePoints === null ? "Not recorded" : `${totals.percentagePoints > 0 ? "+" : ""}${totals.percentagePoints.toFixed(2)} percentage points`}</span>
+  </div>;
+}
+
 export default function PracticeHistory({ date, kind, range }: { date: string; kind: string; range: string }) {
   const query = new URLSearchParams({ date, kind, range });
   const { data, error, retry } = useHistoryData<{ sessions: PracticeSessionSummary[] }>(`/api/japanese-practice/practice-sessions?${query}`);
@@ -52,13 +62,11 @@ export default function PracticeHistory({ date, kind, range }: { date: string; k
     <Link href="/japanese/statistics" className={backButtonClassName}>← Japanese Statistics</Link>
     <header><h1 className="text-3xl font-bold">{kind === "kanji" ? "Kanji writing" : "Vocabulary"} practice history</h1><p className="mt-2 text-lg text-gray-500">{titleDate}</p></header>
     {data ? <>
-      <div className="flex flex-wrap gap-3">
-        <span className="rounded-lg border border-card-border px-4 py-2">{data.sessions.length} sessions</span>
-        <span className="rounded-lg border border-card-border px-4 py-2">{data.sessions.reduce((sum, session) => sum + session.wordCount, 0)} words practiced</span>
-      </div>
+      <HistoryTotals sessions={data.sessions} />
       {data.sessions.length === 0 && <p className="card text-gray-500">No saved practice sessions for this {range === "month" ? "month" : "day"}.</p>}
       {[...groups].map(([day, sessions]) => <section key={day} className="space-y-3">
         {range === "month" && <h2 className="text-lg font-semibold">{new Date(`${day}T12:00:00Z`).toLocaleDateString("en-CA", { timeZone: "America/Toronto", dateStyle: "long" })}</h2>}
+        {range === "month" && <HistoryTotals sessions={sessions} />}
         {sessions.map(session => <article key={session.id} className="card">
           <div className="flex flex-wrap justify-between gap-3"><h2 className="text-lg font-semibold">{session.activityName}</h2><span className="text-sm text-gray-500">{new Date(session.date).toLocaleTimeString("en-CA", { timeZone: "America/Toronto", hour: "2-digit", minute: "2-digit" })}</span></div>
           <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm"><span>{session.wordCount} words</span><span>{formatPracticeDuration(session.durationSeconds)}</span>{session.averageBefore !== null && session.averageAfter !== null && <span>Average {session.averageBefore.toFixed(2)}% → {session.averageAfter.toFixed(2)}%</span>}</div>

@@ -38,13 +38,13 @@ export async function buildPracticeReview(db: Prisma.TransactionClient, input: P
   if (categories.length !== input.categories.length) throw new PracticeSessionError("A selected category no longer exists. Please refresh the page.");
   const available = new Map<number, Omit<PracticeWordResult, "status">>();
   for (const word of vocabulary) {
-    const base = { vocabId: word.id, english: word.english, japanese: word.japanese || "", hiragana: word.hiragana, categoryName: word.category?.name ?? null };
+    const base = { vocabId: word.id, english: word.english, japanese: word.japanese || "", hiragana: word.hiragana, readings: word.readings?.length ? word.readings : [word.hiragana], categoryName: word.category?.name ?? null };
     for (const link of word.activityVocab.filter(link => link.activityId === input.activity)) {
       available.set(link.id, { ...base, english: word.category?.name.trim().toLowerCase() === "verb" ? `${word.english} (dictionary form)` : word.english, activityVocabId: link.id, previousStatus: link.status });
     }
     if (input.activity !== 5) for (const form of word.verbForms) {
       for (const link of form.activityVocab.filter(link => link.activityId === input.activity)) {
-        available.set(link.id, { ...base, english: `${word.english} (${form.formType.name})`, japanese: form.form, hiragana: form.reading, activityVocabId: link.id, previousStatus: link.status });
+        available.set(link.id, { ...base, english: `${word.english} (${form.formType.name})`, japanese: form.form, hiragana: form.reading, readings: [form.reading], activityVocabId: link.id, previousStatus: link.status });
       }
     }
   }

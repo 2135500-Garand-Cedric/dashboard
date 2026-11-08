@@ -20,7 +20,7 @@ test("honorific vocabulary stays independent and add/edit generate all forms and
         catch (error) { await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT ${name}`); await tx.$executeRawUnsafe(`RELEASE SAVEPOINT ${name}`); throw error; }
       } };
       const conjugation = load("../src/lib/japanese/conjugation.ts"), next = { NextResponse: { json: (data, init) => Response.json(data, init) } };
-      const dependencies = { "@/lib/require-owner": { requireOwner: async () => null }, "next/server": next, "@/lib/prisma": { prisma: db }, "@/generated/prisma": generated, "@/lib/japanese/conjugation": conjugation, "@/lib/japanese/dates": {}, "@/lib/japanese/progress-history": { recordJapaneseProgress: async () => {} }, "@/lib/japanese/utils": {}, "@/lib/japanese/kanji-writing": {} };
+      const dependencies = { "@/lib/japanese/readings": load("../src/lib/japanese/readings.ts"), "@/lib/require-owner": { requireOwner: async () => null }, "next/server": next, "@/lib/prisma": { prisma: db }, "@/generated/prisma": generated, "@/lib/japanese/conjugation": conjugation, "@/lib/japanese/dates": {}, "@/lib/japanese/progress-history": { recordJapaneseProgress: async () => {} }, "@/lib/japanese/utils": {}, "@/lib/japanese/kanji-writing": {} };
       const add = load("../src/app/api/japanese-practice/vocabulary/add/route.ts", dependencies), edit = load("../src/app/api/japanese-practice/vocabulary/[id]/route.ts", dependencies);
       const english = `__honorific_${randomUUID()}`, activities = await tx.activity.findMany(); assert.ok(activities.length > 0);
       const request = (body, method = "POST") => new Request("http://localhost/api/japanese-practice/vocabulary/add", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });

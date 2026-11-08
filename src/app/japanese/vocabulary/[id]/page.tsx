@@ -1,5 +1,7 @@
 "use client";
 
+import VocabularyReadingsInput from "@/components/VocabularyReadingsInput";
+import { vocabularyReadings } from "@/lib/japanese/readings";
 import { VERB_TYPES } from "@/lib/japanese/conjugation";
 
 import { useEffect, useState } from "react";
@@ -23,6 +25,7 @@ type Vocabulary = {
   english: string;
   japanese: string;
   hiragana: string;
+  readings?: string[];
   worst_status: string;
   percentage: string;
   categoryId: number;
@@ -65,7 +68,7 @@ export default function VocabularyEditPage() {
   const [editMode, setEditMode] = useState(false);
   const [englishDraft, setEnglishDraft] = useState("");
   const [japaneseDraft, setJapaneseDraft] = useState("");
-  const [hiraganaDraft, setHiraganaDraft] = useState("");
+  const [readingsDraft, setReadingsDraft] = useState<string[]>([""]);
   const [categoryDraft, setCategoryDraft] = useState<number | "">("");
   const [starredDraft, setStarredDraft] = useState(false);
   const [showVerbForms, setShowVerbForms] = useState(false);
@@ -89,7 +92,7 @@ export default function VocabularyEditPage() {
       setVocab(vocabData);
       setEnglishDraft(vocabData.english);
       setJapaneseDraft(vocabData.japanese);
-      setHiraganaDraft(vocabData.hiragana);
+      setReadingsDraft(vocabularyReadings(vocabData));
       setCategoryDraft(vocabData.categoryId);
       setStarredDraft(vocabData.starred);
       setSelectedVerbType(vocabData.verbType);
@@ -130,7 +133,8 @@ export default function VocabularyEditPage() {
         body: JSON.stringify({
           english: englishDraft,
           japanese: japaneseDraft,
-          hiragana: hiraganaDraft,
+          hiragana: readingsDraft[0],
+          readings: categories.find(cat => cat.id === categoryDraft)?.name.trim().toLowerCase() === "kanji" ? readingsDraft : readingsDraft.slice(0, 1),
           categoryId: categoryDraft,
           starred: starredDraft,
           verbType: selectedVerbType,
@@ -177,7 +181,7 @@ export default function VocabularyEditPage() {
             <button
               onClick={async () => {
                 if (editMode) await saveVocabulary();
-                setEditMode(!editMode);
+                else setEditMode(true);
                 setShowVerbForms(false);
               }}
               className="flex items-center gap-1 border rounded px-3 py-1 hover:bg-gray-100 hover:text-black cursor-pointer"
@@ -266,13 +270,9 @@ export default function VocabularyEditPage() {
           <div>
             <label className="block text-sm text-gray-500 mb-1">Hiragana</label>
             {editMode ? (
-              <input
-                value={hiraganaDraft}
-                onChange={(e) => setHiraganaDraft(e.target.value)}
-                className="w-full border rounded px-3 py-2"
-              />
+              <VocabularyReadingsInput values={readingsDraft} onChange={setReadingsDraft} multiple={categories.find(cat => cat.id === categoryDraft)?.name.trim().toLowerCase() === "kanji"} />
             ) : (
-              <p>{vocab.hiragana}</p>
+              <p>{vocabularyReadings(vocab).join(" / ")}</p>
             )}
           </div>
 

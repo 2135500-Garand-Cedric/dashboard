@@ -27,18 +27,6 @@ module.exports = async function seedStatisticsDemo(prisma, user, categories, act
     const date = new Date(`${today}T16:00:00Z`);
     date.setUTCDate(date.getUTCDate() - (historyDays - 1) + index);
     const day = date.toISOString().slice(0, 10);
-    for (const activityId of [1, 3, 5]) {
-      const perfectCount = 3 + (index * 3 + activityId) % 15;
-      const goodCount = 2 + (index + activityId) % 7;
-      const weakCount = 1 + (index * 2 + activityId) % 5;
-      const practiceDate = new Date(date);
-      practiceDate.setUTCHours(15 + activityId, 17, 0, 0);
-      const existing = await prisma.practice.findFirst({ where: { activityId, date: practiceDate } });
-      if (!existing) await prisma.practice.create({ data: {
-        activityId, date: practiceDate, perfectCount, goodCount, weakCount,
-        wordCount: perfectCount + goodCount + weakCount,
-      } });
-    }
     for (const { english, japanese, hiragana, wordIndex } of scheduledWords.get(index) || []) {
       // Match the actual word rather than the English gloss or a date label.
       const existing = await prisma.vocabulary.findFirst({
@@ -74,6 +62,60 @@ module.exports = async function seedStatisticsDemo(prisma, user, categories, act
         }),
       },
     });
+  }
+  // All sample sessions have real vocabulary snapshots; no live progress is changed.
+  const alternateReadings = { "日": ["にち", "じつ", "ひ", "か"], "人": ["じん", "にん", "ひと"], "学": ["がく", "まなぶ"], "生": ["せい", "しょう", "いきる", "うまれる", "なま"] };
+  for (const [japanese, examples] of Object.entries(alternateReadings)) {
+    const entries = await prisma.vocabulary.findMany({ where: { userId: user.id, japanese, categoryId: categories.Kanji.id } });
+    for (const entry of entries) if (entry.readings.length <= 1) {
+      await prisma.vocabulary.update({ where: { id: entry.id }, data: { readings: [...new Set([entry.hiragana, ...examples])] } });
+    }
+  }
+  const vocabulary = await prisma.vocabulary.findMany({ where: { userId: user.id }, include: { category: true, activityVocab: true } });
+  const known = new Set(vocabulary.filter(word => word.categoryId === categories.Kanji.id).flatMap(word => Array.from(word.japanese || "").filter(char => /^\p{Unified_Ideograph}$/u.test(char))));
+  const eligible = word => {
+    const chars = Array.from(word.japanese || "");
+    return chars.some(char => known.has(char)) && chars.every(char => known.has(char) || /^[\p{Script=Hiragana}\p{Script=Katakana}ー\u3099\u309a]$/u.test(char));
+  };
+  for (let index = 0; index < historyDays; index++) {
+    const date = new Date(`${today}T16:00:00Z`);
+    date.setUTCDate(date.getUTCDate() - (historyDays - 1) + index);
+    const day = date.toISOString().slice(0, 10);
+    for (const activityId of [1, 3, 5]) {
+      const perfectCount = 3 + (index * 3 + activityId) % 15;
+      const goodCount = 2 + (index + activityId) % 7;
+      const weakCount = 1 + (index * 2 + activityId) % 5;
+      const completedAt = new Date(date);
+      completedAt.setUTCHours(15 + activityId, 17, 0, 0);
+      const durationSeconds = 90 + (index * 37 + activityId * 19) % 900;
+      const filtered = index % 3 === 0;
+      const pool = vocabulary.filter(word => (activityId !== 5 || eligible(word)) && (!filtered || word.categoryId === categories.Kanji.id) && word.activityVocab.some(link => link.activityId === activityId));
+      const count = Math.min(pool.length, perfectCount + goodCount + weakCount);
+      const results = Array.from({ length: count }, (_, i) => {
+        const word = pool[(index + i) % pool.length];
+        return {
+          activityVocabId: word.activityVocab.find(link => link.activityId === activityId).id,
+          vocabId: word.id, english: word.categoryId === categories.Verb.id ? `${word.english} (dictionary form)` : word.english,
+          japanese: word.japanese || "", hiragana: word.hiragana, readings: word.readings.length ? word.readings : [word.hiragana],
+          categoryName: word.category?.name || null, previousStatus: "WEAK",
+          status: i < weakCount ? "WEAK" : i < weakCount + goodCount ? "GOOD" : "PERFECT",
+        };
+      });
+      const sessionKey = require("node:crypto").createHash("sha256").update(`japanese-statistics-demo:${user.id}:${day}:${activityId}`).digest("hex").slice(0, 32).replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, "$1-$2-$3-$4-$5");
+      const averageBefore = Number((10 + index * 0.25 + activityId * 0.1).toFixed(2));
+      const data = {
+        userId: user.id, activityId, activityName: activities.find(([id]) => id === activityId)[1],
+        sessionKey, date: completedAt, completedAt, startedAt: new Date(completedAt.getTime() - durationSeconds * 1000), durationSeconds,
+        averageBefore, averageAfter: Number((averageBefore + (index % 5 === 0 ? -0.12 : 0.18 + activityId * 0.03)).toFixed(2)),
+        wordCount: count, weakCount: results.filter(word => word.status === "WEAK").length,
+        goodCount: results.filter(word => word.status === "GOOD").length, perfectCount: results.filter(word => word.status === "PERFECT").length,
+        selectedCategories: filtered ? [{ id: categories.Kanji.id, name: "Kanji" }] : [], starredOnly: false, words: results,
+      };
+      // Upgrade only the exact old count-only fixture, leaving actual practices alone.
+      const legacy = await prisma.practice.findFirst({ where: { userId: user.id, activityId, date: completedAt, sessionKey: null, words: { equals: require("../src/generated/prisma").Prisma.DbNull }, perfectCount, goodCount, weakCount } });
+      if (legacy) await prisma.practice.update({ where: { id: legacy.id }, data });
+      else await prisma.practice.upsert({ where: { sessionKey }, create: data, update: data });
+    }
   }
   console.log("Created or verified 56 distinct N5/N4 words and 100 days of development statistics examples.");
 };

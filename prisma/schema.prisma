@@ -203,6 +203,7 @@ model Vocabulary {
   english       String
   japanese      String?
   hiragana      String
+  readings      String[] @default([])
   userId        Int
   categoryId    Int?
   readHiragana  Boolean  @default(false)

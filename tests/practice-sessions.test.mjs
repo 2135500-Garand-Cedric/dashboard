@@ -24,7 +24,7 @@ test("session validation rejects missing timing, repeated words, invalid ratings
 function fixture() {
   const link = (id, activityId, status = "WEAK") => ({ id, activityId, status });
   const vocabulary = [
-    { id: 1, english: "learn", japanese: "学ぶ", hiragana: "まなぶ", category: { id: 1, name: "Verb" }, activityVocab: [link(11, 1), link(12, 5)], verbForms: [{ form: "学べば", reading: "まなべば", formType: { name: "ba" }, activityVocab: [link(13, 1)] }] },
+    { id: 1, english: "learn", japanese: "学ぶ", hiragana: "まなぶ", readings: ["まなぶ", "がく"], category: { id: 1, name: "Verb" }, activityVocab: [link(11, 1), link(12, 5)], verbForms: [{ form: "学べば", reading: "まなべば", formType: { name: "ba" }, activityVocab: [link(13, 1)] }] },
     { id: 2, english: "study", japanese: "学", hiragana: "がく", category: { id: 3, name: "Kanji" }, activityVocab: [], verbForms: [] },
   ];
   return {
@@ -47,6 +47,8 @@ test("read-only overview uses the same whole-list average, including verb forms 
   assert.equal(review.averageAfter, 8.125);
   assert.equal(review.words[1].english, "learn (ba)");
   assert.equal(review.words[1].japanese, "学べば");
+  assert.deepEqual(review.words[0].readings, ["まなぶ", "がく"]);
+  assert.deepEqual(review.words[1].readings, ["まなべば"]);
   assert.deepEqual(review.selectedCategories, []);
   assert.deepEqual(vocabulary, before, "preview must not mutate progress or the supplied records");
 });

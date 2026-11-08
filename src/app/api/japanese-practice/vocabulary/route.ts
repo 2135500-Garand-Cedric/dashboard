@@ -33,7 +33,7 @@ export async function GET() {
 
   const progress = vocabularyProgress(vocab, activityIds);
   const result = vocab.map((v, index) => ({
-    id: v.id, english: v.english, japanese: v.japanese, hiragana: v.hiragana,
+    id: v.id, english: v.english, japanese: v.japanese, hiragana: v.hiragana, readings: v.readings,
     category_name: v.category?.name, starred: v.starred,
     worst_status: progress[index].worstStatus,
     percentage: progress[index].percentage.toFixed(2),
@@ -217,6 +217,7 @@ export async function POST(req: Request) {
       english: string;
       japanese: string;
       hiragana: string | null;
+      readings: string[];
       read_hiragana: boolean;
       category_name: string | null;
       status: "WEAK" | "GOOD" | "PERFECT";
@@ -230,6 +231,7 @@ export async function POST(req: Request) {
           english: av.verbForm.baseVocab.english + " (" + av.verbForm.formType.name + ")",
           japanese: av.verbForm.form,
           hiragana: av.verbForm.reading,
+          readings: [av.verbForm.reading],
           read_hiragana: av.verbForm.baseVocab.readHiragana,
           category_name: av.verbForm.baseVocab.category?.name || null,
           status: av.status,
@@ -244,6 +246,7 @@ export async function POST(req: Request) {
           english: english,
           japanese: av.vocab.japanese || "",
           hiragana: av.vocab.hiragana || null,
+          readings: av.vocab.readings,
           read_hiragana: av.vocab.readHiragana,
           category_name: av.vocab.category?.name || null,
           status: av.status,

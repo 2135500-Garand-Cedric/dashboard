@@ -1,5 +1,7 @@
 "use client";
 
+import { vocabularyReadings } from "@/lib/japanese/readings";
+
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -18,6 +20,7 @@ interface Vocabulary {
   english: string;
   japanese: string;
   hiragana: string;
+  readings?: string[];
   worst_status: string;
   percentage: string;
   category_name: string;
@@ -121,7 +124,7 @@ export default function VocabularyPage() {
       const matchesSearch =
         v.english.toLowerCase().includes(lowerSearch) ||
         v.japanese.toLowerCase().includes(lowerSearch) ||
-        v.hiragana.toLowerCase().includes(lowerSearch);
+        vocabularyReadings(v).join(" ").toLowerCase().includes(lowerSearch);
 
       const matchesCategory =
         selectedCategories.length === 0 ||
@@ -287,7 +290,7 @@ export default function VocabularyPage() {
                   </td>
                   <td className="px-4 py-2">{v.english}</td>
                   <td className="px-4 py-2">{v.japanese}</td>
-                  <td className="px-4 py-2">{v.hiragana}</td>
+                  <td className="px-4 py-2">{vocabularyReadings(v).join(" / ")}</td>
                   <td className="px-4 py-2">
                     <span
                       className={`inline-block w-3 h-3 rounded-full ${statusColor}`}

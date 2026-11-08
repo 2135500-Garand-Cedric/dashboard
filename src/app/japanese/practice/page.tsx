@@ -1,5 +1,7 @@
 "use client";
 
+import { vocabularyReadings, acceptsJapaneseAnswer } from "@/lib/japanese/readings";
+
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { isKanji } from "@/lib/japanese/kanji-writing";
@@ -14,6 +16,7 @@ interface Word {
   english: string;
   japanese: string;
   hiragana: string;
+  readings?: string[];
   read_hiragana: boolean;
   status: string;
   category_name: string | null;
@@ -173,7 +176,10 @@ export default function PracticePage() {
     }
   };
 
-  const showTranslation = () => setShowingTranslation(true);
+  const showTranslation = () => {
+    setShowingTranslation(true);
+    if (selectedActivity === 3 && currentWord) setInputColor(acceptsJapaneseAnswer(userInput, currentWord) ? "border-green-500 focus:ring-green-500" : "border-red-500 focus:ring-red-500");
+  };
 
   const setStatus = async (status: PracticeStatus) => {
     if (savingRef.current || finishingRef.current) return;
@@ -258,11 +264,6 @@ export default function PracticePage() {
       if (e.key === "Enter") {
         e.preventDefault();
         showTranslation();
-        if (userInput === currentWord?.hiragana || userInput === currentWord?.japanese) {
-          setInputColor("border-green-500 focus:ring-green-500");
-        } else {
-          setInputColor("border-red-500 focus:ring-red-500");
-        }
       } else if (showingTranslation) {
         if (e.key === "F1") {
           e.preventDefault();
@@ -394,11 +395,13 @@ export default function PracticePage() {
             {selectedActivity !== 4 && (
               <div>
                 <h3 className="practice-word text-xl font-bold">{getWordDisplay()}</h3>
-                {selectedActivity === 5 && currentWord.category_name && (
+                {currentWord.category_name && (
                   <p className="mt-1 text-sm text-gray-400">{currentWord.category_name}</p>
                 )}
               </div>
             )}
+
+            {selectedActivity === 4 && currentWord.category_name && <p className="mt-1 text-sm text-gray-400">{currentWord.category_name}</p>}
 
             {/* Input box for English → Japanese writing */}
             {selectedActivity === 3 && (
@@ -440,7 +443,7 @@ export default function PracticePage() {
                   <>
                     <h3 className="text-xl">{currentWord.english}</h3>
                     <h3 className="text-xl">{currentWord.japanese}</h3>
-                    <h3 className="text-xl">{currentWord.hiragana}</h3>
+                    <h3 className="text-xl">{vocabularyReadings(currentWord).join(" / ")}</h3>
                   </>
                 ) : selectedActivity === 5 ? ( // For kanji writing
                   <>
@@ -449,12 +452,12 @@ export default function PracticePage() {
                         <KanjiStroke key={`${currentWord.id}-${index}`} character={character} />
                       ) : <span key={`${currentWord.id}-${index}`} className="text-3xl">{character}</span>)}
                     </div>
-                    <h3 lang="ja" className="mt-3 text-xl">{currentWord.hiragana}</h3>
+                    <h3 lang="ja" className="mt-3 text-xl">{vocabularyReadings(currentWord).join(" / ")}</h3>
                   </>
                 ) : (
                   <>
                     <h3 className="text-xl">{getTranslation()}</h3>
-                    <h3 className="text-xl">{currentWord.hiragana}</h3>
+                    <h3 className="text-xl">{vocabularyReadings(currentWord).join(" / ")}</h3>
                   </>
                 )}
               </div>

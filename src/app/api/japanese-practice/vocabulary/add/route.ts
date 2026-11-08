@@ -1,3 +1,4 @@
+import { validateReadings, VocabularyReadingError } from "@/lib/japanese/readings";
 import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -13,11 +14,12 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { english, japanese, hiragana, categoryId, starred, verbType } = body;
+    const { english, japanese, categoryId, starred, verbType } = body;
+    let { hiragana } = body;
 
     const userId = 1;
 
-    if (!english || !japanese || !hiragana || !categoryId) {
+    if (!english || !japanese || !(hiragana || body.readings) || !categoryId) {
       return NextResponse.json(
         { success: false, error: "All fields are required" },
         { status: 400 }
@@ -25,12 +27,16 @@ export async function POST(req: Request) {
     }
 
     const result = await prisma.$transaction(async (tx) => {
+      const category = await tx.category.findUnique({ where: { id: categoryId } });
+      const readings = validateReadings(body.readings, hiragana, category?.name.trim().toLowerCase() === "kanji");
+      hiragana = readings[0];
       // 1️⃣ Create base vocab (dictionary form)
       const vocab = await tx.vocabulary.create({
         data: {
           english,
           japanese,
           hiragana,
+          readings,
           categoryId,
           userId,
           starred,
@@ -96,7 +102,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true, vocabulary: result });
   } catch (error: unknown) {
-    if (error instanceof VerbConjugationError) {
+    if (error instanceof VerbConjugationError || error instanceof VocabularyReadingError) {
       return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     }
     console.error(error);
