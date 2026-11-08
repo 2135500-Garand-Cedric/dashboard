@@ -83,6 +83,20 @@ The `20261105150000_add_practice_session_details` migration adds these details t
 
 Optional browser layout coverage: `RUN_PRACTICE_BROWSER_TEST=1 node tests/practice-overview.browser.mjs` with the development app running and Playwright/Chromium available. `NODE_PATH` can point to a separate temporary Playwright installation. It checks independent status-list scrolling on desktop, whole-page scrolling with stacked Weak/Good/Perfect sections below 1024px, and access to all seven Good words using browser-only fixtures; it does not change database records.
 
+## Whole database backup on the NAS
+
+From your NAS repository directory, run:
+
+```sh
+sudo sh scripts/backup-database.sh /volume1/backups/dashboard
+```
+
+This creates a dated `dashboard-*.dump` file containing **every database table and its data**: Japanese vocabulary/practice/history, finance, calendar, todos, users and Prisma migration history. It requires Docker Compose, not Node.js installed on the NAS. The app stays running. Each run creates a new backup, checks that PostgreSQL can read the archive, and removes incomplete files if the command fails. Existing backups are kept; the command does not restore or change database records. Archive validation is not a full restore rehearsal.
+
+The directory is created if needed. Choose a path on your NAS; `/volume1/backups/dashboard` is an example. For a development backup, add `docker-compose.dev.yml` as the second argument. The command uses the Compose `dashboard-db` service and its configured database credentials.
+
+Uploaded receipt/pay-stub images and PDFs are stored outside PostgreSQL and are **not** in this database-only dump; the existing combined backup procedure in [Finance maintenance](docs/FINANCE_MAINTENANCE.md) includes those files. Keep your NAS `.env` separately as well. Copy a backup to another device when convenient so losing the NAS does not also lose every backup.
+
 ## Personal finance — Phases 1–6
 
 The sidebar's **Finance** section provides an overview, financial accounts, and customizable Income/Expense categories. Accounts support chequing, savings, credit card, cash, and other types; each has an explicit currency, optional masked identifier, and active/inactive status. Names are trimmed and normalized for duplicate detection. Account names are unique for the owner; category names are unique within Income or Expense. Identifiers accept only the last four characters with optional masking symbols. Full account/card numbers, CVVs, and banking credentials have no fields or supported workflow.

@@ -10,3 +10,7 @@ Dockerfile*
 docker-compose*.yml
 
 private
+
+# Database backups
+backups/
+*.dump

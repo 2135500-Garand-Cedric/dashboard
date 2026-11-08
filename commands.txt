@@ -60,3 +60,14 @@ IMPORTANT:
 - Do not run `prisma migrate dev` against production. Use `prisma migrate deploy`.
 - Do not run the demo seed in production. The production Compose file intentionally runs migrations only.
 - If the migration fails, do not delete the database container or volume. Read the logs, fix the migration, and rerun the deployment.
+
+
+NAS: BACK UP THE WHOLE DATABASE (Japanese, finance, calendar, todos, users, everything)
+
+From /volume1/docker/dashboard:
+
+sudo sh scripts/backup-database.sh /volume1/backups/dashboard
+
+Creates a new dated .dump file each run. The app stays running.
+Uploaded documents are separate files; use the combined backup procedure in
+README.md / docs/FINANCE_MAINTENANCE.md to include them as well.

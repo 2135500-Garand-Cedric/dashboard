@@ -47,3 +47,7 @@ next-env.d.ts
 
 # Private financial originals
 /private/
+
+# Database backups
+backups/
+*.dump

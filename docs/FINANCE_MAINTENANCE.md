@@ -31,6 +31,14 @@ Receipt/pay-stub details offer **Open original** and **Download original**. Impo
 - Prisma query logging is disabled, and Next development access logging excludes Finance pages/API URLs. Finance error logs contain fixed operation descriptions, not bodies, filenames, queries or raw Prisma errors. Configure reverse-proxy/hosting/access logs to omit query strings for `/finance` and `/api/finance`; application code cannot enforce external logging policy. Never log sessions or export contents.
 - Keep authentication secrets, database credentials and backups out of source control. Review dependency security updates regularly, especially Next/Auth.js, Prisma, Sharp and PDF.js.
 
+## Simple whole-database backup on the NAS
+
+```sh
+sudo sh scripts/backup-database.sh /volume1/backups/dashboard
+```
+
+This Docker-only command backs up every database table, including Japanese and all other dashboard data, without stopping the app. It writes a unique dated custom-format PostgreSQL dump and checks the archive with `pg_restore --list`. A failed dump is removed. This validates archive readability, not a complete recovery. Original uploads and `.env` are outside the database; use the combined procedure below when you also want the uploaded files. No backups are deleted automatically.
+
 ## Backup and restore rehearsal
 
 Run from the repository on a host with Docker access, the matching Compose environment and a pre-existing **private parent directory**. Example paths below must be outside public files and the live upload directory. Backups include the **entire dashboard database**, not just finance, and all original finance files. They contain sensitive information. Use an encrypted filesystem/archive and an off-host encrypted copy with restricted access and a retention policy. The script sets restrictive permissions but does not perform encryption or scheduling.
