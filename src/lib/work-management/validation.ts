@@ -31,13 +31,13 @@ export function workCommand(request: Request, existing = true): WorkCommand {
   if (!match) throw new WorkValidationError("Reload this record before saving; its version is required.", 428);
   return { requestKey, revision: workId(match[1] || match[2]) };
 }
-export async function workResponse(action: () => Promise<unknown>, status = 200) {
+export async function workResponse(action: () => Promise<unknown>, status = 200, operation: "save" | "load" = "save") {
   try { return NextResponse.json(await action(), { status, headers: { "Cache-Control": "no-store" } }); }
   catch (error) {
     if (error instanceof WorkValidationError) return NextResponse.json({ error: error.message }, { status: error.status, headers: { "Cache-Control": "no-store" } });
     if (error instanceof SyntaxError) return NextResponse.json({ error: "Enter a valid request." }, { status: 400 });
     // Never log request bodies, Prisma errors/parameters, notes or contact data.
     console.error("Work management: operation failed.");
-    return NextResponse.json({ error: "Unable to save this change. Reload the record and try again." }, { status: 500 });
+    return NextResponse.json({ error: operation === "load" ? "Unable to load this data. Reload the page and try again." : "Unable to save this change. Reload the record and try again." }, { status: 500 });
   }
 }

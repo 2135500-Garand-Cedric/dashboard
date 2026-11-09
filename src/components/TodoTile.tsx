@@ -1,115 +1,20 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import { useMemory } from "@/context/MemoryContext";
-
-type Subtask = { id: number; title: string; done: boolean };
-type Todo = {
-  id: number;
-  title: string;
-  status: "TODO" | "IN_PROGRESS" | "DONE";
-  priority?: 1 | 2 | 3;
-  subtasks?: Subtask[];
-  updatedAt: string; // ensure updatedAt is included from API
-};
-
+import { workRead } from "@/lib/work-management/client";
+import { isClosed, priorityOf, PRIORITY_LABELS, STATUS_LABELS, taskReference, type WorkTodo } from "@/lib/work-management/types";
 export default function TodoDashboardTile() {
   const { pageRouter } = useMemory();
-  const [todos, setTodos] = useState<Todo[]>([]);
-
-  const loadTodos = async () => {
-    const res = await fetch("/api/todos");
-    const data: Todo[] = await res.json();
-    // Only show "IN_PROGRESS" todos and sort by updatedAt descending
-    const inProgressTodos = data
-      .filter((t) => t.status === "IN_PROGRESS")
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-
-    setTodos(inProgressTodos);
-  };
-
+  const [todos, setTodos] = useState<WorkTodo[]>([]), [error, setError] = useState("");
   useEffect(() => {
-    loadTodos();
+    let active = true;
+    const rank = { URGENT: 0, HIGH: 1, NORMAL: 2, LOW: 3 };
+    void workRead<WorkTodo[]>("/api/todos").then(data => {
+      if (active) setTodos(data.filter(task => !task.archivedAt && !isClosed(task.status)).sort((a, b) => (rank[priorityOf(a) ?? "NORMAL"] - rank[priorityOf(b) ?? "NORMAL"]) || new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()));
+    }).catch(error => { if (active) setError(error instanceof Error ? error.message : "Unable to load tasks."); });
+    return () => { active = false; };
   }, []);
-
-  const getPriorityColor = (priority?: number) => {
-    switch (priority) {
-      case 1:
-        return "bg-green-500";
-      case 2:
-        return "bg-yellow-500";
-      case 3:
-        return "bg-red-500";
-      default:
-        return "bg-gray-300";
-    }
-  };
-
-  if (todos.length === 0) {
-    return (
-      <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-4 shadow max-w-md">
-        <h2
-          className="text-lg font-semibold"
-          style={{ color: "var(--color-foreground)" }}
-        >
-          In Progress Todos
-        </h2>
-        <p className="text-sm text-gray-500 mt-2">No tasks in progress.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl shadow p-4 max-w-md">
-      <h2
-        className="text-lg font-semibold mb-3"
-        style={{ color: "var(--color-foreground)" }}
-      >
-        In Progress Todos
-      </h2>
-
-      <ul
-        className={`space-y-3 ${
-          todos.length > 4 ? "max-h-[18rem] overflow-y-auto" : ""
-        }`}
-      >
-        {todos.map((todo) => {
-          const completed = todo.subtasks?.filter((s) => s.done).length ?? 0;
-          const total = todo.subtasks?.length ?? 0;
-          const progress = total === 0 ? 0 : Math.round((completed / total) * 100);
-
-          return (
-            <li
-              key={todo.id}
-              onClick={() => pageRouter('/', `/todos/${todo.id}`)}
-              className="flex flex-col p-3 rounded hover:bg-[var(--hover-bg)] transition border border-[var(--card-border)] cursor-pointer"
-            >
-              <div className="flex justify-between items-center">
-                <h3 className="font-medium text-[var(--color-foreground)]">{todo.title}</h3>
-                {todo.priority && (
-                  <span
-                    className={`inline-block w-3 h-3 rounded-full ${getPriorityColor(
-                      todo.priority
-                    )}`}
-                    title={`Priority: ${["Low", "Medium", "High"][todo.priority - 1]}`}
-                  />
-                )}
-              </div>
-
-              {total > 0 && (
-                <div className="mt-2">
-                  <div className="w-full h-2 bg-gray-200 rounded">
-                    <div
-                      style={{ width: `${progress}%` }}
-                      className="h-2 bg-[var(--color-accent)] rounded"
-                    />
-                  </div>
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
+  return <div className="max-w-md rounded-xl border border-card-border bg-card-bg p-4 shadow"><div className="mb-4 flex items-center justify-between gap-3"><h2 className="text-lg font-semibold">Tasks</h2><button type="button" onClick={() => pageRouter('/', '/todos')} className="text-sm text-blue-500">View all</button></div>
+    {error ? <p role="alert" className="text-rose-500">{error}</p> : !todos.length ? <p className="text-sm text-gray-500">No active tasks.</p> : <ul className="space-y-2">{todos.slice(0, 6).map(task => { const priority = priorityOf(task); return <li key={task.id}><button type="button" onClick={() => pageRouter('/', `/todos/${task.id}`)} className="w-full min-w-0 rounded-lg border border-card-border p-3 text-left hover:bg-blue-500/5"><p className="mb-1 text-xs text-gray-500">{task.reference ?? taskReference(task.id)} · {task.context?.name ?? "Unclassified"}</p><p className="break-words font-medium">{task.title}</p><div className="mt-1 flex flex-wrap gap-x-3 text-sm"><span>{STATUS_LABELS[task.status] ?? task.status}</span>{priority && <span className={priority === "URGENT" ? "text-rose-500" : "text-gray-500"}>{PRIORITY_LABELS[priority]}</span>}</div>{task.nextAction && <p className="mt-1 break-words text-sm">{task.nextAction}</p>}{!!task.subtasks?.length && <p className="mt-1 text-xs text-gray-500">{task.subtasks.filter(item => item.done).length}/{task.subtasks.length} steps completed</p>}</button></li>; })}</ul>}
+  </div>;
 }

@@ -34,6 +34,9 @@ test("preservation comparison checks row identity/content and schema, allowing o
 test("work HTTP errors never expose internal exception contents", async () => {
   const response = await validation.workResponse(async () => { throw new Error("private-note-secret"); });
   assert.equal(response.status, 500); assert.ok(!JSON.stringify(await response.json()).includes("private-note-secret"));
+  const readResponse = await validation.workResponse(async () => { throw new Error("private-query-secret"); }, 200, "load");
+  assert.equal(readResponse.status, 500);
+  assert.deepEqual(await readResponse.json(), { error: "Unable to load this data. Reload the page and try again." });
 });
 test("browser retries retain the same replay key after lost/unreadable responses", async () => {
   const { createWorkWriter } = load("../src/lib/work-management/client.ts");

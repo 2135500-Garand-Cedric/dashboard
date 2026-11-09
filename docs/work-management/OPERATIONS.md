@@ -1,4 +1,4 @@
-# Phase 01 operations and compatibility
+# Work-management operations and compatibility
 
 Use CONTEXT.md and the assigned phase as the execution boundary. These commands
 are development/disposable procedures, not permission to operate on production.
@@ -6,7 +6,7 @@ Never combine the standalone work-test Compose file with production Compose.
 
 ## What changed
 
-- `src/lib/work-management/server.ts` owns the current three-status task/event/
+- `src/lib/work-management/server.ts` owns the current seven-status task/event/
   checklist commands. Every writer takes the same PostgreSQL transaction-scoped
   owner lock (namespace 62019, stored owner user 1), then reads/validates/writes.
 - `validation.ts` handles IDs, bodies, values, revision/replay headers and sanitized
@@ -15,7 +15,8 @@ Never combine the standalone work-test Compose file with production Compose.
 - The additive `20261109120000_work_mutation_safety` migration adds task/event/
   checklist revisions, task reward-accounting state and WorkMutationReceipt. No
   original field, timestamp, status, priority, link or User balance is rewritten.
-- No new task statuses, task dates, contexts, projects or work documents exist yet.
+- Phase 02 adds task statuses, contexts, metadata, closure/archive and automatic
+  activity. Task dates, projects and work documents remain later phases.
 - Base development Compose no longer seeds automatically. Existing demo seeding
   is an explicit operator action; never run it against restored user data.
 
@@ -75,8 +76,11 @@ contains counts/issues only. Output is exclusive-create, mode 0600, outside publ
 use unique filenames. Container-created private files may need to be read through
 the container because host/container user mappings differ; do not make them public.
 
-Comparison permits only this phase's technical columns/new receipt table while
-checking existing row hashes/counts and retained schema. Unknown owners/statuses/
+Default comparison permits Phase 01 technical additions. Phase 02 requires a fresh
+format-2 baseline and `--phase 02`; it permits only the reviewed Phase 02 columns,
+catalog/activity tables, enum additions and future status default while checking
+every original column, row ID, relation, timestamp, balance, FK and index.
+New WorkActivity must be empty immediately after migration. Unknown owners/statuses/
 priorities, orphan/cross-owner links, negative legacy rewards, cycles, failed or
 checksum-mismatched migrations are reported for review. Exit 2 means review/diff;
 exit 1 means capture failed. No repair or mapping is applied by inventory.
@@ -152,7 +156,8 @@ when migrations must also remain explicit for baseline/preservation work.
 
 ```sh
 docker compose -f docker-compose.dev.yml exec -T dashboard npx prisma migrate deploy
-docker compose -f docker-compose.dev.yml -f docker-compose.work-dev.yml up -d dashboard
+docker compose -f docker-compose.dev.yml exec -T dashboard npx prisma generate
+docker compose -f docker-compose.dev.yml -f docker-compose.work-dev.yml up -d --force-recreate --no-deps dashboard
 ```
 
 No production deployment is performed by these procedures. For a later authorized
@@ -178,5 +183,92 @@ With Playwright/Chromium available, run
 NODE_PATH/PLAYWRIGHT_BROWSERS_PATH may point to a temporary installation. Stop the
 temporary browser app when finished. Never publish it on all interfaces.
 
-Keep exact executed evidence and outstanding checks in PROGRESS.md. Phase 02 is
-not started by completing these operations.
+Keep exact executed evidence and outstanding checks in PROGRESS.md. Later phases
+are not started by completing these operations.
+
+
+## Phase 02 compatibility and lifecycle
+
+`20261109130000_work_status_values` must commit before
+`20261109130100_canonical_task_foundation` uses New as the future default.
+Use `prisma migrate deploy`; never replay raw SQL or edit applied migration files.
+Phase 02 rehearsal used project `dashboard-work-phase02` and fresh format-2
+inventories. Add `--phase 02` to the after-versus-before comparison above. A
+comparison never classifies legacy rows or repairs unsupported values.
+
+- Canonical `Todo.priorityLevel` is Urgent/High/Normal/Low; raw `Todo.priority`
+  remains preserved historical input. Migration maps 1/2/3/null to
+  Low/Normal/High/Normal; other values stay unknown for review. API DTO `priority`
+  projects 1/2/3/null (Urgent has no legacy equivalent); `legacyPriority` exposes
+  the original value. An old numeric write maps to the named field without
+  rewriting history; conflicting aliases are rejected. A legacy null write to an
+  Urgent task returns 409 instead of silently downgrading it.
+- New capture defaults New/Normal/Task and visibly selected Personal. Existing
+  tasks retain original status, unknown context/kind and unknown closure dates.
+  Work, School and Personal definitions do not authorize sample task seeding.
+  If Personal is inactive, capture defaults to Unclassified. Contexts can be
+  created, renamed, deactivated and reactivated, not deleted through normal APIs.
+- `GET /api/todos` excludes archived records. `?archived=all` includes them;
+  direct task URLs continue to work. Cancelled tasks remain accessible through
+  the board's closed section. Archive neither completes a task nor changes rewards,
+  checklists, dependencies or independent event associations. Restore before
+  changing an archived task's status. Cancelled prerequisites do not count Done.
+- Entering Done sets a server completion time; Cancelled sets a cancellation time.
+  Legacy Done keeps unknown completion time on ordinary metadata edits. Explicit
+  reopening clears the current closure fields, while audit retains previous facts.
+  Accepted-workaround closure requires persisted/supplied workaround, explicit
+  confirmation and a completion explanation. Summary is optional otherwise.
+  Do not erase required workaround evidence while a task remains closed that way.
+- Automatic WorkActivity is written in the same locked transaction as tasks,
+  rewards and replay receipts. No normal update/delete audit API exists. Privileged
+  DB maintenance remains possible; this is application append-only history, not
+  tamper-proof storage. Deleting a task preserves facts and its TASK-0001 reference
+  while detaching the nullable FK. Context rename does not rewrite old snapshots.
+  Recent changes exposes the latest 100 entries; full notes/timeline is later work.
+- New guarded endpoints: `/api/work-contexts` GET/POST,
+  `/api/work-contexts/[id]` PATCH, `/api/todos/[id]/activity` GET. All require owner
+  authorization; context writes use the same revision/replay protocol.
+- Title-only capture remains available. Metadata controls are a foundation;
+  full list/detail redesign and contacts belong to Phase 03. Existing calendar
+  events stay independent and no task deadline is inferred from an event.
+
+Additional guarded tests:
+
+```sh
+node tests/work-foundation.test.mjs
+docker compose -p dashboard-work-phase02 -f docker-compose.work-test.yml run --rm runner node --test tests/work-foundation.integration.mjs
+RUN_WORK_FOUNDATION_BROWSER_TEST=1 node tests/work-foundation.browser.mjs
+```
+
+The foundation browser test writes/cleans synthetic zero-reward tasks in the
+isolated app only. Audit facts intentionally survive their deletion there. The
+migration edge-case test requires a separate restored `work_legacy_fixtures` DB
+and `RUN_WORK_FOUNDATION_MIGRATION_TEST=1`, as guarded in its source; do not run it
+against the primary development DB. Stop temporary browser/DB containers after
+verification, keeping volumes and private evidence for review.
+
+
+## Development Prisma cache after schema changes
+
+The development singleton in `src/lib/prisma.ts` intentionally survives hot reload.
+After changing/generated Prisma models, the running process may therefore still
+use its previous client. `docker compose up -d` can leave an unchanged container
+running; it does not guarantee a fresh process. Symptoms include task/context GET
+500 responses while fresh-process database reads work correctly.
+
+After explicit migration and `prisma generate`, force-recreate the development
+app with the no-startup-mutation override as above. For an already-running app
+that already uses that override, `docker compose -f docker-compose.dev.yml restart dashboard`
+also clears the cached client without running migrations or seeds. A restart
+uses the container's current startup command, so inspect that command first if
+its origin is uncertain. Never remove database volumes to resolve a client cache.
+
+Run the live owner check afterward, not just anonymous-denial checks:
+
+```sh
+docker compose -f docker-compose.dev.yml exec -T -e RUN_AUTH_HTTP_TEST=1 dashboard node tests/auth-security.integration.mjs
+```
+
+This checks authenticated task lists, contexts and (when a task exists) details and
+activity, as well as the other access-control checks. All requests are read-only
+or preview-only; it does not create test tasks in the primary development DB.

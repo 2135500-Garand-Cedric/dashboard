@@ -1,3 +1,4 @@
+import { loadTaskFoundation } from "./helpers/task-foundation.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { createRequire } from "node:module";
@@ -20,13 +21,14 @@ test("Phase 01: owner scope, atomic/replay-safe rewards, graph races, safe delet
   const { PrismaClient } = require("../src/generated/prisma/index.js"), prisma = new PrismaClient();
   const validation = load("../src/lib/work-management/validation.ts", { "next/server": { NextResponse: { json: (data, options) => Response.json(data, options) } } });
   const dates = load("../src/lib/event-dates.ts");
-  const dependencies = { "@/lib/prisma": { prisma }, "@/lib/owner-policy": { OWNER_DATABASE_USER_ID: 1 }, "@/lib/event-dates": dates, "./validation": validation };
+  const dependencies = { "@/lib/prisma": { prisma }, "@/lib/owner-policy": { OWNER_DATABASE_USER_ID: 1, OWNER_GITHUB_ID: "89470930" }, "@/lib/event-dates": dates, ...loadTaskFoundation(validation), "./validation": validation };
   const api = load("../src/lib/work-management/server.ts", dependencies);
   const prefix = `__work_phase01_${randomUUID()}`;
   const original = await prisma.user.findUniqueOrThrow({ where: { id: 1 }, select: { totalXp: true, coins: true, updatedAt: true } });
   const keys = [];
+  const taskIds = new Set();
   const command = row => { const requestKey = randomUUID(); keys.push(requestKey); return { requestKey, ...(row ? { revision: row.revision } : {}) }; };
-  const task = (extra = {}) => prisma.todo.create({ data: { userId: 1, title: prefix, ...extra } });
+  const task = async (extra = {}) => { const row = await prisma.todo.create({ data: { userId: 1, title: prefix, status: "TODO", ...extra } }); taskIds.add(row.id); return row; };
   const event = (extra = {}) => prisma.event.create({ data: { userId: 1, title: prefix, ...extra } });
   const fresh = row => prisma.todo.findUniqueOrThrow({ where: { id: row.id } });
   const balances = () => prisma.user.findUniqueOrThrow({ where: { id: 1 }, select: { totalXp: true, coins: true } });
@@ -119,6 +121,7 @@ test("Phase 01: owner scope, atomic/replay-safe rewards, graph races, safe delet
       assert.equal(await prisma.todo.count(), count);
       const row = await event();
       const [first, second] = await Promise.all([api.createLinkedTodo(row.id, { title: prefix }, command(row)), api.createLinkedTodo(row.id, { title: prefix }, command(row))]);
+      taskIds.add(first.linkedTodoId);
       assert.equal(first.linkedTodoId, second.linkedTodoId); assert.equal(await prisma.todo.count(), count + 1);
       await api.createLinkedTodo(row.id, { title: "must not overwrite" }, command(row));
       assert.equal((await prisma.todo.findUnique({ where: { id: first.linkedTodoId } })).title, prefix);
@@ -151,12 +154,13 @@ test("Phase 01: owner scope, atomic/replay-safe rewards, graph races, safe delet
       await rejects(api.patchEvent(row.id, { completed: "yes" }, command(updated)), 400);
       await rejects(api.patchEvent(row.id, { date: null }, command(updated)), 400);
       await rejects(api.createTodo({ title: " " }, command()), 400);
-      await rejects(api.patchTodo((await task()).id, { status: "NEW" }, command({ revision: 1 })), 400);
+      await rejects(api.patchTodo((await task()).id, { status: "UNKNOWN" }, command({ revision: 1 })), 400);
     });
   } finally {
     await prisma.$transaction(async db => {
       await db.$executeRaw`SELECT pg_advisory_xact_lock(62019, 1)`;
-      const ids = (await db.todo.findMany({ where: { title: prefix }, select: { id: true } })).map(row => row.id);
+      const ids = [...new Set([...(await db.todo.findMany({ where: { title: prefix }, select: { id: true } })).map(row => row.id), ...taskIds])];
+      await db.workActivity.deleteMany({ where: { userId: 1, todoReference: { in: ids.map(id => `TASK-${String(id).padStart(4, "0")}`) } } });
       await db.event.deleteMany({ where: { title: prefix } });
       await db.todo.updateMany({ where: { id: { in: ids } }, data: { dependsOnId: null } });
       await db.subtask.deleteMany({ where: { todoId: { in: ids } } });

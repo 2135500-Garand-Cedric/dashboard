@@ -4,15 +4,14 @@
 
 Updated: 2026-11-09 (America/Toronto).
 
-Phase 01 is implemented and verified in development. Production is untouched.
-Next assignment: Phase 02,
-which has not started. The architecture is not a production migration approval.
+Phases 01 and 02 are implemented and verified in development. Production is untouched.
+Next assignment: Phase 03, which has not started. The architecture is not a production migration approval.
 
 | Phase | Status | Evidence |
 | --- | --- | --- |
 | 00 | Discovery recorded; migration rehearsal not performed | Chat discovery summarized in phases/00-architecture-and-migration-plan.md |
 | 01 | Verified in development | See Phase 01 evidence below and OPERATIONS.md |
-| 02 | Not started | — |
+| 02 | Verified in development | See Phase 02 evidence below and OPERATIONS.md |
 | 03 | Not started | — |
 | 04 | Not started | — |
 | 05 | Not started | — |
@@ -206,3 +205,163 @@ Receipts currently have no automatic retention cleanup. Original real-data
 inventories/dumps remain private for review; disposable test DB is separate.
 
 Next phase: 02 (canonical task foundation), not started automatically.
+
+## Phase 02 — Canonical task foundation
+
+Date: 2026-11-09 (America/Toronto).
+
+Status: implemented and verified in development; production untouched.
+
+### Scope and implementation
+
+- Re-read CONTEXT, Phase 02, progress, acceptance and actual Phase 01 source.
+  Retained the existing `Todo`, IDs, URLs, checklist/dependency/event relations,
+  revision/idempotency protocol and owner mapping. The pre-existing AppShell
+  development-banner change remains intact.
+- Added `NEW`, `BACKLOG`, `WAITING`, `CANCELLED`; kept original status meanings.
+  New captures default to New/Normal/Task with a visible Personal context choice.
+  Configurable owner-scoped WorkContext definitions start with Work, School and
+  Personal; these are definitions, not sample tasks. Existing tasks stay
+  Unclassified with unknown kind and closure dates. Inactive Personal defaults to
+  Unclassified rather than invisibly assigning an inactive context.
+- Added canonical named priority, optional kind, company/course/system labels,
+  tags, desired outcome, next action, waiting information and workaround. Preserved
+  the raw numeric priority column. Added explicit closure, reopen and archive
+  operations with server timestamps. Accepted-workaround completion requires both
+  explanation and confirmation; its evidence cannot be erased while still closed.
+- Added transactional WorkActivity with actor, owner, stable task reference,
+  server-created timestamp and before/after facts. Task/checklist changes, rewards
+  and replay receipts commit together. Failed commands and identical retries add
+  no duplicate history. No history was fabricated for existing records.
+- Added owner-guarded context APIs and read-only task activity endpoint. Adapted
+  board, cards, detail and dashboard tile; all seven statuses remain retrievable,
+  archived tasks have a separate view and Urgent undated work stays visible.
+  Added title/reference search, context filtering and minimal metadata/context UI.
+  Personal reward values remain stored and functional; other contexts de-emphasize
+  their presentation. No new dependencies.
+- New source: `task-foundation.ts`, `types.ts`, TaskFoundationFields,
+  TaskClosureDialog, WorkContextManager, TaskActivityPreview; updated service,
+  task routes/pages/components and TodoTile. No contacts, projects, notes editor,
+  dates, sessions, attachments or Phase 03 list redesign were implemented.
+
+### Migration, mappings and preservation
+
+Migrations, applied in order:
+
+1. `20261109130000_work_status_values`: commits new enum values independently.
+2. `20261109130100_canonical_task_foundation`: additive columns/catalog/activity,
+   constraints/indexes and future defaults; does not alter historical migrations.
+
+Legacy numeric priorities map 1→Low, 2→Normal, 3→High, null→Normal. Unknown raw
+values remain unchanged with unknown named priority and an explicit review marker.
+Only the new canonical field is writable; the original numeric column remains
+historical. DTO `priority` is a compatibility projection, not a second authority.
+Existing TODO is never reset to New; existing Done gets no invented completedAt.
+
+- Updated inventory to format 2 with exact full SQL row text, including Phase 01
+  reward accounting/revisions. `--phase 02` permits only reviewed additions and
+  the future default change, compares original columns/IDs/links/schema and flags
+  unknown values. A fresh format-2 baseline is required for Phase 02 comparisons.
+- Created private whole-development DB dump `phase02-dev-before.dump`; restored
+  into separate project `dashboard-work-phase02`, work-db/work_test, without seeds.
+  `phase02-dev-before.json` → `phase02-copy-before.json`: no differences.
+  `phase02-copy-before.json` → `phase02-copy-after.json`: no differences in original
+  data/schema; WorkContext has three definitions, WorkActivity is empty.
+- Fresh development cutover inventories `phase02-dev-cutover-before.json` →
+  `phase02-dev-cutover-after.json` also report no issues/differences or pending
+  migrations. Original 3 tasks, 5 checklists, 17 events, all balances and unrelated
+  Japanese/finance records retained. Development app uses the no-seed override.
+- Separate guarded `work_legacy_fixtures` database tested null/unknown priorities,
+  a custom legacy status, historical timestamps, checklist/dependency/event links,
+  raw columns and balances through the real migrations. All preserved; custom
+  values remain flagged for review. Repeat migrate deploy is a no-op.
+- Schema diff still reports only the known pre-existing ActivityVocab.lastPracticed
+  database/model difference. It was preserved, not removed or synchronized.
+
+### Executed checks
+
+- `node --test tests/*.test.mjs`: all 23 test files passed.
+- `node tests/work-foundation.test.mjs`: all 5 pure validation/lifecycle/inventory
+  tests passed; `node tests/work-management.test.mjs`: all 5 passed.
+- Disposable combined regression:
+  `docker compose -p dashboard-work-phase02 -f docker-compose.work-test.yml run --rm -e RUN_EVENT_DB_TEST=1 runner node --test --test-concurrency=1 tests/work-management.integration.mjs tests/work-foundation.integration.mjs tests/event-completion.integration.mjs`:
+  20 TAP checks passed. Includes all statuses, explicit workaround closure,
+  archive/reopen, dependency distinction, owner checks, replay, audit-write rollback,
+  legacy Done dates, reward behavior and preserved independent events.
+- `tests/work-foundation-migration.mjs` executed against the isolated restored
+  `work_legacy_fixtures` DB: passed real migration and repeat-execution assertions.
+  Runner used `-e DATABASE_URL=postgresql://work_test:work_test_local_only@work-db:5432/work_legacy_fixtures -e RUN_WORK_FOUNDATION_MIGRATION_TEST=1`
+  (these credentials are explicit disposable test values).
+- `RUN_WORK_FOUNDATION_BROWSER_TEST=1 node tests/work-foundation.browser.mjs`
+  using temporary Playwright/library/browser paths: real isolated UI/API workflow
+  passed at 390×844, 844×390, 1440×900 and 2560×1440. Covers capture/defaults,
+  metadata, Waiting, accepted workaround, history, reopen/archive/restore,
+  cancellation/reference search and width fit with touch/keyboard.
+- `RUN_WORK_MANAGEMENT_BROWSER_TEST=1 node tests/work-management.browser.mjs`
+  using the same temporary paths: Phase 01 mocked-write conflict/checklist/reward/
+  event regression passed at the same four viewports, adapted to explicit closure.
+- `docker compose -f docker-compose.dev.yml exec -T -e RUN_AUTH_HTTP_TEST=1 dashboard node tests/auth-security.integration.mjs`: passed against development, verifying
+  100 protected API handlers, redirects, denied identities, forged cookies, owner
+  reads and read-only practice preview.
+- `npx tsc --noEmit -p /tmp/work-tsconfig.json`: passed source type checking.
+- `npx eslint src/lib/work-management src/components/todos src/components/TodoTile.tsx src/app/todos src/app/api/todos src/app/api/work-contexts`: passed without warnings.
+- `npm --prefix /tmp/dashboard-work-build run build`: passed production build,
+  type validation and route generation using a separate build directory.
+
+- `npx prisma validate`, `git diff --check` and local-link/code-fence validation
+  of all 16 work-management Markdown files passed. Both standalone test Compose
+  and development + no-seed override passed `config --quiet`.
+- Stopped the temporary phase02 browser app and isolated work-db; retained volumes
+  and private evidence. Development app stays running.
+
+The real browser test initially exposed capture before the context catalog finished
+loading; New is now disabled until loading completes, and the rerun passed. An
+initial browser launch was blocked by the sandbox; the permitted external launch
+passed. The old regression harness also needed to expect closed status controls to
+be disabled and use the explicit completion dialog. Failures were not counted as
+successful checks.
+
+### Acceptance and limits
+
+Verified for this scope: A01–A10, A12, automatic audit backbone of A13, applicable
+A29 regressions and A31. Notes/revisions/timeline UI in A13 remain Phase 04;
+expanded dependencies, contacts, projects, dates and views remain later phases.
+
+Audit is append-only through application actions: no update/delete endpoint exists.
+Explicit task deletion detaches its audit FK while retaining reference/facts;
+there is no deleted-record history browser yet. Database administrators can still
+perform privileged maintenance. Recent changes displays the latest 100 entries;
+full notes/timeline filtering is deferred. Context rename/deactivation preserves
+assignments and existing audit snapshots, rather than rewriting historical names.
+
+Not verified: production records/schema/deployment, physical phones, historical
+actual XP payouts or finance document-byte restoration. Private inventories/dumps
+are ignored and retained. Recovery follows OPERATIONS.md; do not reset or seed,
+re-enable old reward writers, or blindly restore an old backup after new writes.
+
+Next phase: 03, not started automatically.
+
+## Phase 02 follow-up — Development client cache
+
+The live development task/context reads were later found returning 500 despite
+successful fresh-process Prisma reads of the three tasks and three contexts.
+The earlier `up -d` had left the existing development process running with its
+pre-schema-change Prisma singleton. Explicitly restarting dashboard-dev (already
+using the no-migration/no-seed command) cleared it: both authenticated endpoints
+returned 200 with the expected counts. No task, context, migration or user data was
+changed to fix the failure. This was a cutover verification gap, not a dependency
+on later phases. The prior anonymous handler checks did not exercise owner-only
+Prisma queries on these routes.
+
+Added owner-success assertions for task list, context list, task detail and task
+activity to the live auth regression. Read failures now say Unable to load rather
+than Unable to save on these endpoints; sanitized error handling remains intact.
+Updated OPERATIONS.md to explicitly generate the client and force-recreate the app
+after schema changes, plus a safe restart procedure for the no-mutation override.
+
+Executed follow-up checks: all 23 unit-test files, five individual work-management
+unit tests, source TypeScript check, targeted ESLint and `git diff --check` passed.
+`docker compose -f docker-compose.dev.yml exec -T -e RUN_AUTH_HTTP_TEST=1 dashboard node tests/auth-security.integration.mjs`
+passed against the restarted app: 100 protected handlers plus successful owner
+reads of task list, contexts, task detail and activity, other module reads and
+preview-only practice checks. Production remains untouched.

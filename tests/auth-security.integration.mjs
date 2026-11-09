@@ -47,6 +47,22 @@ test("live app denies all anonymous data routes, rejects other identities, and a
   assert.equal((await fetch(`${base}/api/events`, { headers: { cookie: "next-auth.session-token=forged" } })).status, 401);
   const headers = { cookie: await cookie(owner) };
   assert.equal((await fetch(`${base}/api/events`, { headers })).status, 200);
+  // Auth rejection alone does not exercise the running Prisma client's schema.
+  const taskResponse = await fetch(`${base}/api/todos?archived=all`, { headers });
+  assert.equal(taskResponse.status, 200, "owner task reads must work after schema changes");
+  const tasks = await taskResponse.json();
+  assert.ok(Array.isArray(tasks));
+  const contexts = await fetch(`${base}/api/work-contexts`, { headers });
+  assert.equal(contexts.status, 200, "owner context reads must work after schema changes");
+  assert.ok(Array.isArray(await contexts.json()));
+  if (tasks.length) {
+    const detail = await fetch(`${base}/api/todos/${tasks[0].id}`, { headers });
+    assert.equal(detail.status, 200);
+    assert.equal((await detail.json()).id, tasks[0].id);
+    const activity = await fetch(`${base}/api/todos/${tasks[0].id}/activity`, { headers });
+    assert.equal(activity.status, 200);
+    assert.ok(Array.isArray(await activity.json()));
+  }
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const historyUrl = `${base}/api/japanese-practice/practice-sessions?date=${today}&kind=vocab`;
   const history = await fetch(historyUrl, { headers });

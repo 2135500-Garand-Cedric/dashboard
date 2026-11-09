@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const technical = { Todo: ["revision", "rewardAppliedXp", "rewardAppliedCoins", "rewardAccountingBasis"], Event: ["revision"], Subtask: ["revision"] };
+const foundationColumns = ["priorityLevel", "kind", "contextId", "company", "course", "system", "tags", "desiredOutcome", "nextAction", "waitingOn", "waitingReason", "workaround", "completionSummary", "closureType", "completedAt", "cancelledAt", "archivedAt"];
+const knownStatuses = ["TODO", "IN_PROGRESS", "DONE", "NEW", "BACKLOG", "WAITING", "CANCELLED"];
+const newEnums = { WorkPriority: ["URGENT", "HIGH", "NORMAL", "LOW"], WorkTaskKind: ["TASK", "ISSUE", "REQUEST", "IMPROVEMENT", "MAINTENANCE"], WorkClosureType: ["OUTCOME_ACHIEVED", "ACCEPTED_WORKAROUND", "CANCELLED"] };
 const hash = value => createHash("sha256").update(value).digest("hex");
 const identifier = value => `"${value.replace(/"/g, '""')}"`;
 
@@ -15,8 +18,8 @@ export function inventoryIssues(todos, subtasks, events, users, statuses) {
   if (!users.some(row => row.id === 1)) issues.push("Configured owner user 1 is missing.");
   if (todos.some(row => row.userId !== 1) || events.some(row => row.userId !== 1)) issues.push("Unexpected task/event owners require review; no rows were reassigned.");
   if (["TODO", "IN_PROGRESS", "DONE"].some(value => !statuses.includes(value))) issues.push("Expected task enum values are missing; review schema drift.");
-  if (statuses.some(value => !["TODO", "IN_PROGRESS", "DONE"].includes(value))) issues.push("Unrecognized task enum values require reviewed mapping.");
-  if (todos.some(row => !["TODO", "IN_PROGRESS", "DONE"].includes(row.status))) issues.push("Unrecognized task statuses require reviewed mapping.");
+  if (statuses.some(value => !knownStatuses.includes(value))) issues.push("Unrecognized task enum values require reviewed mapping.");
+  if (todos.some(row => !knownStatuses.includes(row.status))) issues.push("Unrecognized task statuses require reviewed mapping.");
   if (todos.some(row => row.priority !== null && ![1, 2, 3].includes(row.priority))) issues.push("Unrecognized priorities require reviewed mapping.");
   if (todos.some(row => row.rewardXp < 0 || row.rewardCoins < 0)) issues.push("Negative legacy task rewards require review.");
   if (subtasks.some(row => !tasks.has(row.todoId))) issues.push("Orphan checklist rows require review.");
@@ -33,16 +36,42 @@ export function inventoryIssues(todos, subtasks, events, users, statuses) {
   }
   return [...new Set(issues)];
 }
-export function compareInventories(before, after) {
-  const differences = [];
+export function compareInventories(before, after, phase = "01") {
+  const differences = [], foundation = phase === "02";
+  if (foundation && before.format !== 2) return ["Capture a fresh format-2 baseline before Phase 02 migration."];
+  const allowedTables = foundation ? ["WorkMutationReceipt", "WorkContext", "WorkActivity"] : ["WorkMutationReceipt"];
+  const allowedColumns = (table, column) => technical[table]?.includes(column) || (foundation && table === "Todo" && foundationColumns.includes(column));
   for (const [name, table] of Object.entries(before.tables)) {
-    if (!after.tables[name] || table.hash !== after.tables[name].hash || table.count !== after.tables[name].count) differences.push(`Original records changed: ${name}`);
+    const current = after.tables[name];
+    if (current && table.count === current.count && table.hash === current.hash) continue;
+    let equal = false;
+    if (current && table.count === current.count && ["Todo", "Event", "Subtask"].includes(name) && table.rows && current.rows) {
+      const added = after.columns.filter(column => column.table_name === name && !before.columns.some(old => old.table_name === name && old.column_name === column.column_name)).map(column => column.column_name);
+      if (added.every(column => allowedColumns(name, column))) {
+        const excluded = before.format === 1 ? [...added, ...(technical[name] ?? [])] : added;
+        const canonical = (rows, strip) => rows.map(raw => {
+          const row = JSON.parse(raw);
+          return JSON.stringify(Object.fromEntries(Object.entries(row).filter(([key]) => !strip.includes(key)).sort(([a], [b]) => a.localeCompare(b))));
+        }).sort();
+        equal = JSON.stringify(canonical(table.rows, [])) === JSON.stringify(canonical(current.rows, excluded));
+      }
+    }
+    if (!equal) differences.push(`Original records changed: ${name}`);
   }
-  for (const name of Object.keys(after.tables)) if (!(name in before.tables) && name !== "WorkMutationReceipt") differences.push(`Unexpected new table: ${name}`);
-  for (const column of before.columns) if (!after.columns.some(value => JSON.stringify(value) === JSON.stringify(column))) differences.push(`Original column changed: ${column.table_name}.${column.column_name}`);
-  for (const column of after.columns) if (!before.columns.some(value => value.table_name === column.table_name && value.column_name === column.column_name) && column.table_name !== "WorkMutationReceipt" && !technical[column.table_name]?.includes(column.column_name)) differences.push(`Unexpected new column: ${column.table_name}.${column.column_name}`);
+  for (const name of Object.keys(after.tables)) if (!(name in before.tables) && !allowedTables.includes(name)) differences.push(`Unexpected new table: ${name}`);
+  if (foundation && !("WorkActivity" in before.tables) && after.tables.WorkActivity?.count) differences.push("Unexpected historical work activity backfill.");
+  for (const column of before.columns) {
+    const current = after.columns.find(value => value.table_name === column.table_name && value.column_name === column.column_name);
+    if (JSON.stringify(column) === JSON.stringify(current)) continue;
+    const statusDefault = foundation && column.table_name === "Todo" && column.column_name === "status" && current && /'TODO'/.test(column.column_default) && /'NEW'/.test(current.column_default) && JSON.stringify({ ...column, column_default: null }) === JSON.stringify({ ...current, column_default: null });
+    if (!statusDefault) differences.push(`Original column changed: ${column.table_name}.${column.column_name}`);
+  }
+  for (const column of after.columns) if (!before.columns.some(value => value.table_name === column.table_name && value.column_name === column.column_name) && !allowedTables.includes(column.table_name) && !allowedColumns(column.table_name, column.column_name)) differences.push(`Unexpected new column: ${column.table_name}.${column.column_name}`);
   for (const index of before.indexes ?? []) if (!(after.indexes ?? []).some(value => JSON.stringify(value) === JSON.stringify(index))) differences.push(`An original index changed: ${index.indexname}`);
-  if (JSON.stringify(before.enums) !== JSON.stringify(after.enums)) differences.push("Enum values changed.");
+  for (const row of before.enums) if (!after.enums.some(value => JSON.stringify(value) === JSON.stringify(row))) differences.push("An original enum value changed.");
+  for (const row of after.enums) if (!before.enums.some(value => JSON.stringify(value) === JSON.stringify(row))) {
+    if (!foundation || !(row.typname === "TodoStatus" ? ["NEW", "BACKLOG", "WAITING", "CANCELLED"].includes(row.enumlabel) : newEnums[row.typname]?.includes(row.enumlabel))) differences.push("Unexpected enum values added.");
+  }
   for (const key of before.foreignKeys) if (!after.foreignKeys.some(value => JSON.stringify(value) === JSON.stringify(key))) differences.push("An original foreign key changed.");
   return [...new Set(differences)];
 }
@@ -54,9 +83,8 @@ export async function captureInventory(prisma) {
     const names = await db.$queryRawUnsafe("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
     for (const { tablename } of names) {
       if (tablename === "_prisma_migrations") continue;
-      const excluded = technical[tablename] ?? [];
-      // SQL text retains exact decimals/timestamps instead of coercing JSON numbers.
-      const rows = await db.$queryRawUnsafe(`SELECT (to_jsonb(t) - ARRAY[${excluded.map(key => `'${key}'`).join(",")}]::text[])::text AS row FROM public.${identifier(tablename)} t ORDER BY 1`);
+      // Full SQL JSON text keeps exact money and phase-01 accounting baselines.
+      const rows = await db.$queryRawUnsafe(`SELECT to_jsonb(t)::text AS row FROM public.${identifier(tablename)} t ORDER BY 1`);
       const values = rows.map(row => row.row);
       tables[tablename] = { count: values.length, hash: hash(values.join("\n")), rows: values };
     }
@@ -79,16 +107,17 @@ export async function captureInventory(prisma) {
       if (!local.includes(row.migration_name)) issues.push(`Applied migration is absent locally: ${row.migration_name}`);
       else if (hash(await readFile(path.join(migrationRoot, row.migration_name, "migration.sql"))) !== row.checksum) issues.push(`Migration checksum differs: ${row.migration_name}`);
     }
-    return { format: 1, capturedAt: new Date().toISOString(), ownerDatabaseUserId: 1, tables, columns, enums, foreignKeys, indexes, migrations, pendingMigrations: local.filter(name => /^\d/.test(name) && !migrations.some(row => row.migration_name === name && row.finished_at)), issues };
+    return { format: 2, capturedAt: new Date().toISOString(), ownerDatabaseUserId: 1, tables, columns, enums, foreignKeys, indexes, migrations, pendingMigrations: local.filter(name => /^\d/.test(name) && !migrations.some(row => row.migration_name === name && row.finished_at)), issues };
   }, { timeout: 60000 });
 }
 async function main() {
   if (process.env.WORK_MANAGEMENT_INVENTORY !== "1" || process.env.NODE_ENV === "production" || !process.env.DATABASE_URL) throw new Error("Explicit nonproduction inventory environment required.");
   const args = process.argv.slice(2); const options = {};
   for (let i = 0; i < args.length; i += 2) {
-    if (!["--output", "--compare"].includes(args[i]) || !args[i + 1] || options[args[i]]) throw new Error("Use --output <private-file> [--compare <before-file>].");
-    options[args[i]] = path.resolve(args[i + 1]);
+    if (!["--output", "--compare", "--phase"].includes(args[i]) || !args[i + 1] || options[args[i]]) throw new Error("Use --output <private-file> [--compare <before-file>].");
+    options[args[i]] = args[i] === "--phase" ? args[i + 1] : path.resolve(args[i + 1]);
   }
+  if (options["--phase"] && !["01", "02"].includes(options["--phase"])) throw new Error("Choose a supported phase.");
   if (!options["--output"]) throw new Error("A private output path is required.");
   const output = options["--output"];
   await mkdir(path.dirname(output), { recursive: true, mode: 0o700 });
@@ -98,7 +127,7 @@ async function main() {
   const prisma = new PrismaClient({ log: [] });
   try {
     const inventory = await captureInventory(prisma);
-    const differences = options["--compare"] ? compareInventories(JSON.parse(await readFile(options["--compare"], "utf8")), inventory) : [];
+    const differences = options["--compare"] ? compareInventories(JSON.parse(await readFile(options["--compare"], "utf8")), inventory, options["--phase"] ?? "01") : [];
     const file = await open(output, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
     try { await file.writeFile(JSON.stringify(inventory)); } finally { await file.close(); }
     console.log(JSON.stringify({ tables: Object.fromEntries(Object.entries(inventory.tables).map(([name, value]) => [name, value.count])), issues: inventory.issues, pendingMigrations: inventory.pendingMigrations, differences }, null, 2));

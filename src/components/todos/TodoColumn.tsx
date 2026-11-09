@@ -2,16 +2,7 @@
 
 import TodoCard from "./TodoCard";
 
-type Subtask = { id: number; title: string; done: boolean; todoId: number };
-type Todo = {
-  id: number;
-  title: string;
-  description?: string;
-  status: "TODO" | "IN_PROGRESS" | "DONE";
-  updatedAt: string;
-  subtasks?: Subtask[];
-  dependsOn?: { id: number; title: string } | null;
-};
+import type { WorkTodo as Todo } from "@/lib/work-management/types";
 
 export default function TodoColumn({
   title,

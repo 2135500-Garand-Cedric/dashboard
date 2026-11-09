@@ -58,7 +58,7 @@ test("Phase 01 controls work on touch/keyboard, keep drafts on failure and send 
       const card = page.getByRole("button", { name: /Phone task.*XP/ }); await card.focus(); await page.keyboard.press("Enter");
       const status = page.getByRole("combobox", { name: "Task status", exact: true });
       await status.selectOption("IN_PROGRESS"); await page.waitForFunction(() => document.querySelector('[aria-label="Task status"]').value === "IN_PROGRESS" && !document.querySelector('[aria-label="Task status"]').disabled);
-      await status.selectOption("DONE"); await page.waitForFunction(() => document.querySelector('[aria-label="Task status"]').value === "DONE" && !document.querySelector('[aria-label="Task status"]').disabled);
+      await status.selectOption("DONE"); await activate(page.getByRole("dialog").getByRole("button", { name: "Complete task", exact: true })); await page.waitForFunction(() => document.querySelector('[aria-label="Task status"]').value === "DONE");
       assert.equal(user.totalXp, 220); assert.equal(user.coins, 25);
       await activate(page.getByRole("button", { name: "Edit", exact: true }));
       await page.getByRole("textbox").first().fill("Unsaved task title");
@@ -78,7 +78,8 @@ test("Phase 01 controls work on touch/keyboard, keep drafts on failure and send 
       assert.ok(await page.getByRole("button", { name: "Save", exact: true }).isVisible());
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "task detail/edit fits screen width");
       await page.goto(`${base}/todos/999902`); await page.getByRole("combobox", { name: "Task status", exact: true }).selectOption("DONE");
-      await page.getByText("Complete the prerequisite before starting or completing this task.", { exact: true }).waitFor();
+      await activate(page.getByRole("dialog").getByRole("button", { name: "Complete task", exact: true }));
+      await page.getByRole("dialog").getByRole("alert").waitFor();
       assert.equal(user.totalXp, 220); assert.equal(user.coins, 25); assert.equal(tasks[1].status, "TODO");
       await page.goto(`${base}/events/999911`);
       await activate(page.getByRole("button", { name: "Mark completed", exact: true }));

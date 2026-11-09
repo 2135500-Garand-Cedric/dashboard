@@ -70,3 +70,19 @@ record preservation and live auth evidence; this is not a claim that every finan
 or Japanese browser workflow was re-tested. A31 scope boundaries were retained.
 All later feature acceptance remains pending. Production and physical-device/file
 recovery checks were not performed in Phase 01.
+
+## Phase 02 evidence (2026-11-09)
+
+See PROGRESS.md for commands and preservation artifacts. A01–A05 were rechecked
+through whole-database restore, exact before/after migration comparisons,
+owner-scoped transactional integration tests, rollback/replay checks and existing
+regressions. A06 now includes archive preserving checklist/dependency/event links.
+A07–A10 cover canonical Todo IDs/references, seven statuses, visible capture
+context/defaults, unknown legacy metadata and undated Urgent work. A12 covers
+explicit accepted-workaround closure, retained audit through reopen/archive and
+personal reward accounting. A13 is accepted only for the automatic append-only
+application audit backbone; notes/editor/revisions/timeline work remains pending.
+A29 has existing cross-module unit regression, preserved full original rows,
+isolated production build and four-viewport browser checks, not exhaustive finance
+or Japanese UI retesting. A31 phase boundaries are retained. Phase 03 and all
+later feature acceptance remain pending; production has not been operated on.

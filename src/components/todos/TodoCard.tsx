@@ -3,18 +3,7 @@
 import { useMemo } from "react";
 import { ChevronRightIcon, FlagIcon, CurrencyDollarIcon } from "@heroicons/react/24/solid";
 
-type Subtask = { id: number; title: string; done: boolean; todoId: number };
-type Todo = {
-  id: number;
-  title: string;
-  description?: string;
-  status: "TODO" | "IN_PROGRESS" | "DONE";
-  subtasks?: Subtask[];
-  dependsOn?: { id: number; title: string } | null;
-  priority?: number; // 1 = low, 2 = medium, 3 = high
-  rewardXp?: number;
-  rewardCoins?: number;
-};
+import { type WorkTodo as Todo, priorityOf, PRIORITY_LABELS, taskReference } from "@/lib/work-management/types";
 
 export default function TodoCard({ todo, onOpen }: { todo: Todo; onOpen: () => void }) {
   const completed = useMemo(() => todo.subtasks?.filter((s) => s.done).length ?? 0, [todo]);
@@ -25,13 +14,12 @@ export default function TodoCard({ todo, onOpen }: { todo: Todo; onOpen: () => v
     e.dataTransfer.setData("text/plain", String(todo.id));
   };
 
-  // Priority color mapping
-  const priorityColor =
-    todo.priority === 3 ? "text-red-500" : todo.priority === 2 ? "text-yellow-500" : "text-green-500";
+  const priority = priorityOf(todo);
+  const priorityColor = priority === "URGENT" ? "text-rose-500" : priority === "HIGH" ? "text-red-500" : priority === "NORMAL" ? "text-yellow-500" : "text-green-500";
 
   return (
     <div
-      draggable
+      draggable={!todo.archivedAt}
       role="button"
       tabIndex={0}
       onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } }}
@@ -39,20 +27,23 @@ export default function TodoCard({ todo, onOpen }: { todo: Todo; onOpen: () => v
       className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded p-3 cursor-grab hover:shadow"
       onClick={onOpen}
     >
-      <div className="flex justify-between items-start">
-        <div>
-          <div className="flex items-center gap-2">
-            {todo.priority && <FlagIcon className={`w-4 h-4 ${priorityColor}`} />}
-            <div className="font-medium" style={{ color: "var(--color-foreground)" }}>
+      <div className="flex min-w-0 justify-between items-start">
+        <div className="min-w-0">
+          <p className="mb-1 text-xs text-gray-500">{todo.reference ?? taskReference(todo.id)} · {todo.context?.name ?? "Unclassified"}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            {priority && <FlagIcon aria-label={PRIORITY_LABELS[priority]} className={`w-4 h-4 ${priorityColor}`} />}
+            <div className="min-w-0 break-words font-medium" style={{ color: "var(--color-foreground)" }}>
               {todo.title}
             </div>
-            <div className="text-xs text-gray-600 flex items-center gap-1 flex-nowrap whitespace-nowrap">
+            {(!todo.context || todo.context.key === "personal") && <div className="text-xs text-gray-500 flex items-center gap-1 flex-nowrap whitespace-nowrap">
               <span>+{todo.rewardXp ?? 0} XP</span>
               <span className="flex items-center gap-0.5">
                 +{todo.rewardCoins ?? 0} <CurrencyDollarIcon className="w-3 h-3 text-yellow-600" />
               </span>
-            </div>
+            </div>}
           </div>
+          {todo.nextAction && <p className="mt-2 break-words text-sm">{todo.nextAction}</p>}
+          {todo.status === "WAITING" && <p className="mt-1 break-words text-sm text-amber-500">Waiting{todo.waitingOn ? ` on ${todo.waitingOn}` : ""}{todo.waitingReason ? ` · ${todo.waitingReason}` : ""}</p>}
           {todo.dependsOn && (
             <div className="text-xs text-gray-500">Depends on: {todo.dependsOn.title}</div>
           )}

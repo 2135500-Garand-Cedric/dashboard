@@ -7,7 +7,7 @@ type Context = { params: Promise<{ id: string }> };
 export async function GET(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  return workResponse(async () => getTodo(workId((await context.params).id)));
+  return workResponse(async () => getTodo(workId((await context.params).id)), 200, "load");
 }
 export async function PATCH(request: Request, context: Context) {
   const accessError = await requireOwner(request);

@@ -1,3 +1,4 @@
+import { loadTaskFoundation } from "./helpers/task-foundation.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
@@ -22,8 +23,8 @@ test("event completion persists without moving or deleting an event and can be u
       const validation = load("../src/lib/work-management/validation.ts");
       const service = load("../src/lib/work-management/server.ts", {
         "@/lib/prisma": { prisma: { ...tx, $transaction: callback => callback(tx) } },
-        "@/lib/owner-policy": { OWNER_DATABASE_USER_ID: 1 },
-        "@/lib/event-dates": load("../src/lib/event-dates.ts"), "./validation": validation,
+        "@/lib/owner-policy": { OWNER_DATABASE_USER_ID: 1, OWNER_GITHUB_ID: "89470930" },
+        "@/lib/event-dates": load("../src/lib/event-dates.ts"), ...loadTaskFoundation(validation), "./validation": validation,
       });
       const dependencies = {
         "@/lib/require-owner": { requireOwner: async () => null },

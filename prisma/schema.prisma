@@ -10,6 +10,10 @@ datasource db {
 }
 
 enum TodoStatus {
+  NEW
+  BACKLOG
+  WAITING
+  CANCELLED
   TODO
   IN_PROGRESS
   DONE
@@ -31,6 +35,8 @@ model User {
   coins     Int       @default(0)     // current coin balance
   
   // Relations
+  workContexts WorkContext[]
+  workActivity WorkActivity[]
   workMutationReceipts WorkMutationReceipt[]
   todos     Todo[]
   events    Event[]
@@ -82,7 +88,26 @@ model Todo {
   id           Int        @id @default(autoincrement())
   title        String
   description  String?    
-  status       TodoStatus @default(TODO)
+  status       TodoStatus @default(NEW)
+  priorityLevel WorkPriority? @default(NORMAL)
+  kind WorkTaskKind? @default(TASK)
+  contextId Int?
+  context WorkContext? @relation(fields: [contextId], references: [id], onDelete: Restrict)
+  company String?
+  course String?
+  system String?
+  tags String[] @default([])
+  desiredOutcome String?
+  nextAction String?
+  waitingOn String?
+  waitingReason String?
+  workaround String?
+  completionSummary String?
+  closureType WorkClosureType?
+  completedAt DateTime?
+  cancelledAt DateTime?
+  archivedAt DateTime?
+  activity WorkActivity[]
   priority     Int?
 
   // XP & coin rewards for completing this todo
@@ -109,6 +134,64 @@ model Todo {
 
   @@index([userId, createdAt])
   @@index([dependsOnId])
+  @@index([userId, archivedAt, status])
+  @@index([contextId])
+}
+
+enum WorkPriority {
+  URGENT
+  HIGH
+  NORMAL
+  LOW
+}
+
+enum WorkTaskKind {
+  TASK
+  ISSUE
+  REQUEST
+  IMPROVEMENT
+  MAINTENANCE
+}
+
+enum WorkClosureType {
+  OUTCOME_ACHIEVED
+  ACCEPTED_WORKAROUND
+  CANCELLED
+}
+
+model WorkContext {
+  id Int @id @default(autoincrement())
+  userId Int
+  key String
+  name String @db.VarChar(80)
+  normalizedName String @db.VarChar(80)
+  active Boolean @default(true)
+  revision Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  todos Todo[]
+
+  @@unique([userId, key])
+  @@unique([userId, normalizedName])
+}
+
+// Facts are appended by successful commands; there are no edit/delete activity APIs.
+// Explicit task deletion may detach the FK, retaining its immutable reference/facts.
+model WorkActivity {
+  id Int @id @default(autoincrement())
+  userId Int
+  actorGithubId String
+  todoId Int?
+  todoReference String
+  action String
+  changes Json
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  todo Todo? @relation(fields: [todoId], references: [id], onDelete: SetNull)
+
+  @@index([userId, todoId, createdAt])
+  @@index([userId, todoReference, createdAt])
 }
 
 model Subtask {

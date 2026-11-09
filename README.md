@@ -2,7 +2,7 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 Work-management redesign: [roadmap](docs/work-management/README.md),
 [progress](docs/work-management/PROGRESS.md), and
-[Phase 01 operations](docs/work-management/OPERATIONS.md). Development startup no
+[Work-management operations](docs/work-management/OPERATIONS.md). Development startup no
 longer seeds example data automatically. Use the documented no-migration override
 for preservation work, and run demo seeding only explicitly on isolated data.
 

@@ -9,7 +9,7 @@ every phase, together with applicable repository instructions,
 and the relevant current code. These plans describe proposed changes, not claims
 about features already implemented. Recheck the repository before acting.
 
-Phase 01 operational details and recovery limits: [OPERATIONS.md](OPERATIONS.md).
+Phases 01–02 operational details and recovery limits: [OPERATIONS.md](OPERATIONS.md).
 
 ## Execution order
 
