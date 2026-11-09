@@ -1,0 +1,59 @@
+# Shared acceptance and verification contract
+
+Read with CONTEXT.md and the assigned phase. This is a checklist of required
+behavior, not evidence that the behavior exists. Phase-specific checks are in
+each phase file. Record executed commands and evidence in PROGRESS.md; leave
+unexecuted checks pending. Final acceptance requires all applicable items below.
+
+| ID | Required behavior | Introduced / verified |
+| --- | --- | --- |
+| A01 | Existing task/event IDs, URLs, original values, checklist IDs, dependency directions and event associations survive migration | 01 baseline; each migration; 10 rehearsal |
+| A02 | No reset, guessed conversion, fabricated historical timestamps/notes, retrospective reward replay or automatic real-data seeding | Every phase |
+| A03 | Existing User XP/coins and unrelated module records remain unchanged by migration | 01, 02, 10 |
+| A04 | Pages/APIs/search/files deny anonymous and non-owner access; related records are owner-scoped | Every phase |
+| A05 | Mutations validate on the server, reject stale writes, are atomic, and protect repeat submissions where duplication/accounting is possible | 01 onward |
+| A06 | Event deletion never deletes tasks; task archival preserves independent events and sessions | 01, 02, 07 |
+| A07 | `Todo` is canonical; internal IDs/references are stable; list/board/project/calendar views never copy tasks | 02 onward |
+| A08 | New/Backlog/To do/In progress/Waiting/Done/Cancelled work correctly; existing states map explicitly; new captures default to New/Normal | 02, 03 |
+| A09 | Existing unclassified context and unknown historical fields remain identifiable; simple title-only capture stays possible | 02, 03 |
+| A10 | Priority is independent of deadline; urgent undated work stays discoverable | 02, 03, 09 |
+| A11 | Contacts are not users; optional requester, affected people and waiting-on information remain lightweight | 03 |
+| A12 | Closing/reopening/archive preserve prior closure history; accepted-workaround closure is explicit; business presentation does not remove stored personal rewards | 02 onward |
+| A13 | Notes have server-created timestamps, optional occurred-at, revisions and Notes only / All activity views; automatic entries cannot be normally edited | 02 audit; 04 UI |
+| A14 | Private work images/PDFs cannot be served publicly or through finance record permissions; upload/download/delete checks and backup coverage work | 04, 10 |
+| A15 | Existing checklist rows remain checklist rows; real subtasks are independent tasks with at most one parent; hierarchy cycles are rejected | 05 |
+| A16 | Dependency direction, uniqueness and cycle prevention hold under concurrent changes; related links are symmetric and nonblocking | 01 legacy safety; 05 |
+| A17 | Blocked is distinct from Waiting; blocked start/closure requires recorded override; cancelled prerequisites need review; parent closure never silently completes children | 05 |
+| A18 | Date-only deadlines and follow-ups preserve local calendar dates; exact times and DST behavior use the configured zone, default Toronto | 06, 07 |
+| A19 | Deadline, follow-up, key date, event and work-session times each have one authoritative source; follow-up completion/snooze never completes a task | 06, 07 |
+| A20 | Existing calendar shows independently toggleable/context-filtered layers with labels/icons; markers open their source; edits target that source | 07 |
+| A21 | Legacy-event conversion is previewed, explicit, retry-safe and reversible where feasible; original data/provenance survive and duplicate deadline display is suppressed | 07 |
+| A22 | Event/session time passing never completes a task; closed-task dates lose outstanding-action indicators while history/sessions remain; reopening uses original deadline | 06, 07 |
+| A23 | Projects are optional groups, stages are not statuses, tasks have at most one primary project, and cross-project links do not duplicate tasks | 08 |
+| A24 | Project/task progress shows completed counts or explicit milestones; closure with unfinished work warns without hidden cascading changes | 05, 08 |
+| A25 | My Work includes New intake, focus, due/overdue work, waiting/blocked work, follow-ups, sessions and no-deadline tasks across combined/separate contexts | 09 |
+| A26 | Today focus is a planning choice independent of task deadline and status | 09 |
+| A27 | All Work defaults to a compact searchable list, retains optional board, shared filters and searchable closed/archived history | 03 onward |
+| A28 | Desktop details and phone full-screen details share the same record/URL; touch and keyboard status controls work without drag-and-drop | 03 onward |
+| A29 | Finance/Japanese/auth/calendar/personal-reward regressions are checked appropriately; sensitive content is not placed in logs | Every phase; 10 cross-module |
+| A30 | Repeat migration/backfill and isolated restore preserve data; failed deployment recovery is documented without implying production readiness was tested | 10 |
+| A31 | No AI, external ingestion/notifications, new recurrence engine, enterprise ticketing, grading or other context non-goals are introduced | Every phase |
+
+## Evidence rules
+
+- Separate source inspection, mocked/unit checks, database integration checks,
+  browser/manual checks and actual restore verification. One does not prove the
+  others.
+- DB tests that write use disposable development databases or rollback-controlled
+  fixtures with an explicit environment guard, never production.
+- Before/after inventories compare IDs and relationship tuples as well as counts;
+  equal counts alone cannot prove preservation. Keep inventory contents private.
+- A backup is not verified until restored and checked in isolation. Account for
+  all private document roots, not just database records.
+- Test only implemented scope now. Add acceptance evidence as later phases arrive;
+  do not implement them to make the entire checklist green early.
+- Test phones in portrait and landscape, normal desktop, wide desktop, keyboard
+  navigation, loading/empty/error states, and direct URL entry where relevant.
+- Additional dependencies require a concrete need and review. Prefer existing
+  application patterns; do not claim a renderer or integration exists without
+  inspecting it.
