@@ -15,7 +15,7 @@ services:
     environment:
       NODE_ENV: development
       FINANCE_UPLOAD_DIR: /app/private/finance
-    command: sh -c "npx prisma migrate deploy && npm run seed && npm run dev"
+    command: sh -c "npx prisma migrate deploy && npm run dev"
     depends_on:
       dashboard-db:
         condition: service_healthy

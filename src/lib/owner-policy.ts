@@ -10,3 +10,6 @@ export function isOwnerGithubId(id: unknown): boolean {
 export function isOwnerSession(session: { ownerAccess?: boolean; githubId?: string } | null | undefined): boolean {
   return session?.ownerAccess === true && isOwnerGithubId(session.githubId);
 }
+
+// Explicit mapping for the existing single-owner application data; not an OAuth user ID.
+export const OWNER_DATABASE_USER_ID = 1;

@@ -1,0 +1,42 @@
+# Standalone disposable setup. Never combine with production Compose or its .env.
+# Uses the existing development image; no seed and no automatic migration.
+services:
+  work-db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: work_test
+      POSTGRES_PASSWORD: work_test_local_only
+      POSTGRES_DB: work_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U work_test -d work_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - work_test_data:/var/lib/postgresql/data
+  runner:
+    image: dashboard-dashboard
+    working_dir: /app
+    command: ["node", "--test", "tests/work-management.integration.mjs"]
+    depends_on:
+      work-db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://work_test:work_test_local_only@work-db:5432/work_test
+      RUN_WORK_MANAGEMENT_DB_TEST: "1"
+      WORK_MANAGEMENT_DISPOSABLE: "1"
+      WORK_MANAGEMENT_INVENTORY: "1"
+      FINANCE_UPLOAD_DIR: /work-private/finance
+      NEXTAUTH_URL: http://localhost:3002
+      NEXTAUTH_SECRET: disposable-work-browser-test-secret-not-for-production
+    volumes:
+      - .:/app
+      - work_test_node_modules:/app/node_modules
+      - work_test_build:/app/.next
+    tmpfs:
+      - /work-private
+volumes:
+  work_test_data:
+  work_test_build:
+  work_test_node_modules:

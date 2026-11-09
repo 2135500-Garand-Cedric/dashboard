@@ -1,5 +1,6 @@
 import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
+import { workTransaction, WORK_USER_ID } from "@/lib/work-management/server";
 import { prisma } from "@/lib/prisma";
 
 type Context = { params: Promise<{ id: string }> };
@@ -32,11 +33,11 @@ export async function PATCH(request: Request, context: Context) {
       data,
     });
     return NextResponse.json(activityType);
-  } catch (error: any) {
-    if (error.code === "P2002") {
+  } catch (error: unknown) {
+    if (error && typeof error === "object" && "code" in error && error.code === "P2002") {
       return NextResponse.json({ error: "That activity type already exists" }, { status: 409 });
     }
-    if (error.code === "P2025") {
+    if (error && typeof error === "object" && "code" in error && error.code === "P2025") {
       return NextResponse.json({ error: "Activity type not found" }, { status: 404 });
     }
     return NextResponse.json({ error: "Unable to update activity type" }, { status: 500 });
@@ -51,10 +52,10 @@ export async function DELETE(_: Request, context: Context) {
   const activityType = await prisma.activityType.findUnique({ where: { id: Number(id) } });
   if (!activityType) return NextResponse.json({ error: "Activity type not found" }, { status: 404 });
 
-  await prisma.$transaction([
-    prisma.event.updateMany({ where: { type: activityType.name }, data: { type: null } }),
-    prisma.activityType.delete({ where: { id: Number(id) } }),
-  ]);
+  await workTransaction(async db => {
+    await db.event.updateMany({ where: { userId: WORK_USER_ID, type: activityType.name }, data: { type: null, revision: { increment: 1 } } });
+    await db.activityType.delete({ where: { id: Number(id) } });
+  });
 
   return NextResponse.json({ success: true });
 }

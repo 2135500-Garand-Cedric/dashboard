@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   PencilSquareIcon,
@@ -10,10 +10,12 @@ import {
   TrashIcon,
 } from "@heroicons/react/24/solid";
 import { useSnackbar } from "@/context/SnackbarContext";
+import { createWorkWriter, workRead } from "@/lib/work-management/client";
 import { useMemory } from "@/context/MemoryContext";
 
-type Subtask = { id: number; title: string; done: boolean };
+type Subtask = { revision: number; id: number; title: string; done: boolean };
 type Todo = {
+  revision: number;
   id: number;
   title: string;
   description?: string;
@@ -28,8 +30,15 @@ type Todo = {
 export default function TodoPage() {
   const params = useParams();
   const todoId = Number(params.id);
+  const currentId = useRef(todoId);
+  currentId.current = todoId;
+  const loadGeneration = useRef(0);
   const router = useRouter();
   const { get } = useMemory();
+  const write = useRef(createWorkWriter());
+  const busyRef = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   const [todo, setTodo] = useState<Todo | null>(null);
   const [todos, setTodos] = useState<Todo[]>([]);
@@ -48,33 +57,37 @@ export default function TodoPage() {
 
   const { showMessage } = useSnackbar();
 
-  const load = async () => {
-    // Load the todo
-    const res = await fetch(`/api/todos/${todoId}`);
-    const data = await res.json();
-    setTodo(data);
-    setTitleDraft(data.title);
-    setDescDraft(data.description || "");
-    setPriorityDraft(data.priority ?? null);
-    setDependsOnId(data.dependsOn?.id ?? null);
-    setSubtasks(data.subtasks || []);
-    setXpDraft(data.rewardXp ?? 0);
-    setCoinsDraft(data.rewardCoins ?? 0);
-
-    // Load all todos for "depends on" select and delete check
-    const allRes = await fetch("/api/todos");
-    const allData = await allRes.json();
-    setTodos(allData.filter((t: Todo) => t.id !== todoId));
-    setCanDelete(!allData.some((t: Todo) => t.dependsOn?.id === todoId));
-  };
+  const load = useCallback(async () => {
+    if (currentId.current !== todoId) return;
+    const generation = ++loadGeneration.current;
+    const [data, allData] = await Promise.all([
+      workRead<Todo>(`/api/todos/${todoId}`), workRead<Todo[]>("/api/todos"),
+    ]);
+    if (generation !== loadGeneration.current || currentId.current !== todoId) return;
+    setTodo(data); setSubtasks(data.subtasks || []);
+    setTitleDraft(data.title); setDescDraft(data.description || "");
+    setPriorityDraft(data.priority ?? null); setDependsOnId(data.dependsOn?.id ?? null);
+    setXpDraft(data.rewardXp ?? 0); setCoinsDraft(data.rewardCoins ?? 0);
+    setTodos(allData.filter(item => item.id !== todoId));
+    setCanDelete(!allData.some(item => item.dependsOn?.id === todoId));
+  }, [todoId]);
 
   const dependentTasks = todos.filter((t) => t.dependsOn?.id === todoId);
 
   useEffect(() => {
-    load();
-  }, [todoId]);
+    setLoadError("");
+    void load().catch(error => { if (currentId.current === todoId) setLoadError(error instanceof Error ? error.message : "Unable to load task."); });
+  }, [load, todoId]);
 
-  if (!todo) return <div className="text-center py-10">Loading...</div>;
+  if (!todo || todo.id !== todoId) return <div className="text-center py-10">{loadError ? <p role="alert">{loadError} <button onClick={() => window.location.reload()} className="underline">Retry</button></p> : "Loading..."}</div>;
+
+  const perform = async (action: () => Promise<void>) => {
+    if (busyRef.current) return;
+    busyRef.current = true; setBusy(true);
+    try { await action(); }
+    catch (error) { showMessage(error instanceof Error ? error.message : "Unable to save this change."); }
+    finally { busyRef.current = false; setBusy(false); }
+  };
 
   const priorityColor =
     priorityDraft === 3
@@ -85,18 +98,11 @@ export default function TodoPage() {
 
   // Save todo fields
   const saveTodo = async () => {
-    await fetch(`/api/todos/${todoId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: titleDraft,
-        description: descDraft,
-        priority: priorityDraft,
-        dependsOnId,
-        rewardXp: xpDraft,
-        rewardCoins: coinsDraft,
-      }),
-    });
+    await write.current(`/api/todos/${todoId}`, "PATCH", {
+      title: titleDraft, description: descDraft, priority: priorityDraft,
+      dependsOnId, rewardXp: xpDraft, rewardCoins: coinsDraft,
+    }, todo.revision);
+    setEditMode(false);
     await load();
   };
 
@@ -108,51 +114,43 @@ export default function TodoPage() {
       return;
     }
 
-    const res = await fetch(`/api/todos/${todoId}`, { method: "DELETE" });
-    if (res.ok) {
-      showMessage("Todo deleted successfully");
-      router.push("/todos");
-    }
+    if (!confirm("Delete this task and its checklist? Linked calendar events will be kept.")) return;
+    await write.current(`/api/todos/${todoId}`, "DELETE", undefined, todo.revision);
+    showMessage("Todo deleted successfully"); router.push("/todos");
   };
 
   // Subtask functions
   const addSubtask = async () => {
     if (!newSubtaskTitle.trim()) return;
-    const res = await fetch(`/api/todos/${todoId}/subtasks`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: newSubtaskTitle }),
-    });
-    if (res.ok) {
-      const newSub: Subtask = await res.json();
-      setSubtasks([...subtasks, newSub]);
-      setNewSubtaskTitle("");
-    }
+    const created = await write.current<Subtask>(`/api/todos/${todoId}/subtasks`, "POST", { title: newSubtaskTitle }, todo.revision);
+    if (currentId.current !== todoId) return;
+    setSubtasks(previous => [...previous, created]); setNewSubtaskTitle("");
+    setTodo(previous => previous ? { ...previous, revision: previous.revision + 1 } : previous);
   };
 
-  const updateSubtask = async (id: number, key: keyof Subtask, value: any) => {
-    const res = await fetch(`/api/todos/subtasks/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ [key]: value }),
-    });
-    if (res.ok) {
-      setSubtasks(subtasks.map((s) => (s.id === id ? { ...s, [key]: value } : s)));
-    }
+  const updateSubtask = async (id: number, key: "title" | "done", value: string | boolean) => {
+    const row = subtasks.find(item => item.id === id);
+    if (!row) return;
+    const updated = await write.current<Subtask>(`/api/todos/subtasks/${id}`, "PATCH", { [key]: value }, row.revision);
+    if (currentId.current !== todoId) return;
+    setSubtasks(previous => previous.map(item => item.id === id ? updated : item));
+    setTodo(previous => previous ? { ...previous, revision: previous.revision + 1 } : previous);
   };
 
   const deleteSubtask = async (id: number) => {
-    const res = await fetch(`/api/todos/subtasks/${id}`, { method: "DELETE" });
-    if (res.ok) {
-      setSubtasks(subtasks.filter((s) => s.id !== id));
-    }
+    const row = subtasks.find(item => item.id === id);
+    if (!row) return;
+    await write.current(`/api/todos/subtasks/${id}`, "DELETE", undefined, row.revision);
+    if (currentId.current !== todoId) return;
+    setSubtasks(previous => previous.filter(item => item.id !== id));
+    setTodo(previous => previous ? { ...previous, revision: previous.revision + 1 } : previous);
   };
 
   return (
     <div className="flex justify-center px-4 py-8">
       <div className="w-full max-w-3xl bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-6 shadow">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <button
             onClick={() => router.push(get("prev_page", "/todos"))}
             className="flex items-center gap-1 text-gray-500 hover:text-gray-700 mr-4 cursor-pointer"
@@ -161,12 +159,12 @@ export default function TodoPage() {
             Back
           </button>
 
-          <div className="flex-1 flex justify-center items-center gap-2">
+          <div className="min-w-0 flex-1 flex justify-center items-center gap-2">
             {editMode ? (
               <input
                 value={titleDraft}
                 onChange={(e) => setTitleDraft(e.target.value)}
-                className="text-lg font-semibold border rounded px-3 py-1 flex-1 text-center"
+                className="min-w-0 w-full text-lg font-semibold border rounded px-3 py-1 flex-1 text-center"
               />
             ) : (
               <h1 className="text-xl font-semibold flex items-center gap-2">
@@ -179,10 +177,8 @@ export default function TodoPage() {
           <div className="flex gap-2">
             {/* Edit / Save button */}
             <button
-              onClick={async () => {
-                if (editMode) await saveTodo();
-                setEditMode(!editMode);
-              }}
+              onClick={() => { if (editMode) void perform(saveTodo); else setEditMode(true); }}
+              disabled={busy}
               className="flex items-center gap-1 border rounded px-3 py-1 hover:bg-gray-100 hover:text-black transition cursor-pointer ml-4"
             >
               {editMode ? (
@@ -201,8 +197,8 @@ export default function TodoPage() {
             {/* Delete button */}
             {!editMode && (
               <button
-                onClick={deleteTodo}
-                disabled={!canDelete}
+                onClick={() => void perform(deleteTodo)}
+                disabled={busy || !canDelete}
                 className={`flex items-center gap-1 border rounded px-3 py-1 transition
                   ${
                     !canDelete
@@ -217,6 +213,11 @@ export default function TodoPage() {
           </div>
         </div>
 
+        <label className="mb-6 block text-sm">Status
+          <select aria-label="Task status" value={todo.status} disabled={busy || editMode} onChange={event => { const status = event.target.value; void perform(async () => { await write.current(`/api/todos/${todoId}`, "PATCH", { status }, todo.revision); await load(); }); }} className="ml-3 rounded border border-card-border bg-card-bg px-3 py-2">
+            <option value="TODO">To do</option><option value="IN_PROGRESS">In progress</option><option value="DONE">Done</option>
+          </select>
+        </label>
         {/* Description */}
         <div className="mb-6">
           {editMode ? (
@@ -233,7 +234,7 @@ export default function TodoPage() {
         </div>
 
         {/* XP / Coins */}
-        <div className="mb-6 flex gap-6">
+        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="flex-1">
             <label className="block text-sm text-gray-500 mb-1">XP Reward:</label>
             {editMode ? (
@@ -334,19 +335,23 @@ export default function TodoPage() {
                 <input
                   type="checkbox"
                   checked={sub.done}
-                  onChange={(e) => updateSubtask(sub.id, "done", e.target.checked)}
+                  disabled={busy || editMode}
+                  onChange={(e) => void perform(() => updateSubtask(sub.id, "done", e.target.checked))}
                   className="cursor-pointer"
                 />
                 {editMode ? (
                   <>
                     <input
                       type="text"
-                      value={sub.title}
-                      onChange={(e) => updateSubtask(sub.id, "title", e.target.value)}
-                      className="border rounded px-2 py-1 flex-1"
+                      aria-label={`Subtask title: ${sub.title}`}
+                      defaultValue={sub.title}
+                      disabled={busy}
+                      onBlur={(e) => { if (e.target.value !== sub.title) void perform(() => updateSubtask(sub.id, "title", e.target.value)); }}
+                      className="min-w-0 border rounded px-2 py-1 flex-1"
                     />
                     <button
-                      onClick={() => deleteSubtask(sub.id)}
+                      disabled={busy}
+                      onClick={() => void perform(() => deleteSubtask(sub.id))}
                       className="text-red-500 hover:text-red-700 cursor-pointer"
                     >
                       <TrashIcon className="w-5 h-5" />
@@ -367,10 +372,11 @@ export default function TodoPage() {
                 value={newSubtaskTitle}
                 onChange={(e) => setNewSubtaskTitle(e.target.value)}
                 placeholder="New subtask..."
-                className="flex-1 border rounded px-2 py-1"
+                className="min-w-0 flex-1 border rounded px-2 py-1"
               />
               <button
-                onClick={addSubtask}
+                disabled={busy}
+                onClick={() => void perform(addSubtask)}
                 className="px-3 py-1 bg-[var(--accent)] text-white rounded hover:opacity-90 cursor-pointer"
               >
                 Add

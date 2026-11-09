@@ -1,73 +1,15 @@
 import { requireOwner } from "@/lib/require-owner";
-import { prisma } from "@/lib/prisma";
-import { NextResponse } from "next/server";
-
+import { workCommand, workId, workResponse } from "@/lib/work-management/validation";
 export const runtime = "nodejs";
-
-// DELETE subtask
-export async function DELETE(
-  request: Request,
-  context: { params: Promise<{ subtaskId: string }> }
-) {
+import { changeSubtask } from "@/lib/work-management/server";
+type Context = { params: Promise<{ subtaskId: string }> };
+export async function PATCH(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-
-  const { subtaskId } = await context.params;
-  const subtaskIdNumber = Number(subtaskId);
-
-  if (isNaN(subtaskIdNumber)) {
-    return NextResponse.json({ error: "Invalid subtaskId" }, { status: 400 });
-  }
-
-  try {
-    await prisma.subtask.delete({
-      where: { id: subtaskIdNumber },
-    });
-    return NextResponse.json({ success: true });
-  } catch (error: any) {
-    console.error(error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  return workResponse(async () => changeSubtask(workId((await context.params).subtaskId), await request.json(), workCommand(request)));
 }
-
-// PATCH subtask
-export async function PATCH(
-  request: Request,
-  context: { params: Promise<{ subtaskId: string }> }
-) {
+export async function DELETE(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-
-  const { subtaskId } = await context.params;
-  const subtaskIdNumber = Number(subtaskId);
-
-  if (isNaN(subtaskIdNumber)) {
-    return NextResponse.json({ error: "Invalid subtaskId" }, { status: 400 });
-  }
-
-  try {
-    const body = await request.json();
-
-    // Update subtask
-    const updatedSubtask = await prisma.subtask.update({
-      where: { id: subtaskIdNumber },
-      data: {
-        done: body.done ?? undefined,
-        title: body.title ?? undefined,
-      },
-      include: { todo: true }, // include parent todo
-    });
-
-    // Update parent todo's updatedAt
-    await prisma.todo.update({
-      where: { id: updatedSubtask.todoId },
-      data: { updatedAt: new Date() }, // force updatedAt to now
-    });
-
-    return NextResponse.json(updatedSubtask);
-  } catch (error: any) {
-    console.error(error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  return workResponse(async () => changeSubtask(workId((await context.params).subtaskId), {}, workCommand(request), true));
 }
-

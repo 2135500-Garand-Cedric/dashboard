@@ -1,0 +1,5 @@
+# Development override for preservation work. Migrate explicitly after inventory.
+# docker compose -f docker-compose.dev.yml -f docker-compose.work-dev.yml up -d dashboard
+services:
+  dashboard:
+    command: ["npm", "run", "dev"]

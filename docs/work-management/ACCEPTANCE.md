@@ -57,3 +57,16 @@ unexecuted checks pending. Final acceptance requires all applicable items below.
 - Additional dependencies require a concrete need and review. Prefer existing
   application patterns; do not claim a renderer or integration exists without
   inspecting it.
+
+## Phase 01 evidence (2026-11-09)
+
+See PROGRESS.md for exact commands and OPERATIONS.md for compatibility/recovery.
+A01–A05 are verified for this phase in development through private before/after
+inventories, restored-copy migration, replay/concurrency/failure tests and auth
+checks. A06 is verified for event deletion only; archival belongs to Phase 02.
+A16 is verified for legacy single-prerequisite graph safety only; expanded edges
+and overrides belong to Phase 05. A29 has existing unit regressions, full original
+record preservation and live auth evidence; this is not a claim that every finance
+or Japanese browser workflow was re-tested. A31 scope boundaries were retained.
+All later feature acceptance remains pending. Production and physical-device/file
+recovery checks were not performed in Phase 01.

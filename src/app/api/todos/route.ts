@@ -1,36 +1,15 @@
 import { requireOwner } from "@/lib/require-owner";
-// src/app/api/todos/route.ts
+import { workCommand, workResponse } from "@/lib/work-management/validation";
 export const runtime = "nodejs";
-
-import { prisma } from "@/lib/prisma";
-import { NextResponse } from "next/server";
+import { listTodos, createTodo } from "@/lib/work-management/server";
 
 export async function GET() {
   const accessError = await requireOwner();
   if (accessError) return accessError;
-
-  const todos = await prisma.todo.findMany({
-    include: { subtasks: true, dependsOn: true },
-    orderBy: { createdAt: "desc" },
-  });
-  return NextResponse.json(todos);
+  return workResponse(() => listTodos());
 }
-
 export async function POST(request: Request) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-
-  const { title, description, priority, dependsOnId } = await request.json();
-
-  const todo = await prisma.todo.create({
-    data: {
-      title: title ?? "no title",
-      description: description ?? "",
-      priority: priority ?? 1,
-      dependsOnId: dependsOnId ?? undefined,
-      user: { connect: { id: 1 } }, 
-    },
-  });
-
-  return NextResponse.json(todo);
+  return workResponse(async () => createTodo(await request.json(), workCommand(request, false)), 201);
 }

@@ -1,30 +1,8 @@
 import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 
-export async function POST(req: Request) {
-  const accessError = await requireOwner(req);
+export async function POST(request: Request) {
+  const accessError = await requireOwner(request);
   if (accessError) return accessError;
-
-  try {
-    // const session = await getServerSession(); // assumes next-auth
-    // if (!session?.user?.id) {
-    //   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    // }
-
-    const { xp, coins } = await req.json();
-
-    const updated = await prisma.user.update({
-      where: { id: 1 },
-      data: {
-        totalXp: { increment: xp },
-        coins: { increment: coins },
-      },
-    });
-
-    return NextResponse.json(updated);
-  } catch (err) {
-    console.error(err);
-    return NextResponse.json({ error: "Failed to update rewards" }, { status: 500 });
-  }
+  return NextResponse.json({ error: "Task rewards are applied automatically when the task status is saved. Reload the page before changing task status." }, { status: 410, headers: { "Cache-Control": "no-store" } });
 }

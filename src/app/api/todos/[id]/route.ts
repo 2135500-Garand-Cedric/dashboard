@@ -1,92 +1,21 @@
 import { requireOwner } from "@/lib/require-owner";
-// src/app/api/todos/[id]/route.ts
+import { workCommand, workId, workResponse } from "@/lib/work-management/validation";
 export const runtime = "nodejs";
+import { getTodo, patchTodo, deleteTodo } from "@/lib/work-management/server";
+type Context = { params: Promise<{ id: string }> };
 
-import { prisma } from "@/lib/prisma";
-import { NextResponse } from "next/server";
-
-export async function GET(
-  _request: Request,
-  context: { params: Promise<{ id: string }> }
-) {
-  const accessError = await requireOwner(_request);
-  if (accessError) return accessError;
-
-  const { id } = await context.params;
-
-  const todo = await prisma.todo.findUnique({
-    where: { id: Number(id) },
-    include: { subtasks: true, dependsOn: true },
-  });
-
-  if (!todo) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  return NextResponse.json(todo);
-}
-
-export async function PATCH(
-  request: Request,
-  context: { params: Promise<{ id: string }> }
-) {
+export async function GET(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-
-  const { id } = await context.params;
-  const body = await request.json();
-
-  // Check dependency before moving to IN_PROGRESS or DONE
-  if (body.status === "IN_PROGRESS" || body.status === "DONE") {
-    const item = await prisma.todo.findUnique({
-      where: { id: Number(id) },
-      include: { dependsOn: true },
-    });
-
-    if (item?.dependsOnId) {
-      const dep = await prisma.todo.findUnique({
-        where: { id: item.dependsOnId },
-      });
-
-      if (dep?.status !== "DONE") {
-        return NextResponse.json(
-          { error: `Cannot move to ${body.status}; dependency "${dep?.title}" is not completed.` },
-          { status: 400 }
-        );
-      }
-    }
-  }
-
-  const updated = await prisma.todo.update({
-    where: { id: Number(id) },
-    data: {
-      title: body.title,
-      description: body.description,
-      status: body.status,
-      priority: body.priority,
-      dependsOnId: body.dependsOnId ?? null,
-      rewardXp: body.rewardXp,
-      rewardCoins: body.rewardCoins,
-    },
-  });
-
-  return NextResponse.json(updated);
+  return workResponse(async () => getTodo(workId((await context.params).id)));
 }
-
-export async function DELETE(
-  _request: Request,
-  context: { params: Promise<{ id: string }> }
-) {
-  const accessError = await requireOwner(_request);
+export async function PATCH(request: Request, context: Context) {
+  const accessError = await requireOwner(request);
   if (accessError) return accessError;
-
-  const { id } = await context.params;
-
-  // Delete subtasks first
-  await prisma.subtask.deleteMany({ where: { todoId: Number(id) } });
-
-  // Then delete the todo
-  await prisma.todo.delete({ where: { id: Number(id) } });
-
-  return NextResponse.json({ ok: true });
+  return workResponse(async () => patchTodo(workId((await context.params).id), await request.json(), workCommand(request)));
+}
+export async function DELETE(request: Request, context: Context) {
+  const accessError = await requireOwner(request);
+  if (accessError) return accessError;
+  return workResponse(async () => deleteTodo(workId((await context.params).id), workCommand(request)));
 }

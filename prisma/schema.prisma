@@ -31,6 +31,7 @@ model User {
   coins     Int       @default(0)     // current coin balance
   
   // Relations
+  workMutationReceipts WorkMutationReceipt[]
   todos     Todo[]
   events    Event[]
   userQuests UserQuest[]
@@ -87,6 +88,10 @@ model Todo {
   // XP & coin rewards for completing this todo
   rewardXp     Int        @default(0)
   rewardCoins  Int        @default(0)
+  revision     Int        @default(1)
+  rewardAppliedXp Int    @default(0)
+  rewardAppliedCoins Int @default(0)
+  rewardAccountingBasis String @default("TRACKED")
 
   // Relations
   userId       Int
@@ -101,9 +106,13 @@ model Todo {
 
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([dependsOnId])
 }
 
 model Subtask {
+  revision  Int      @default(1)
   id        Int      @id @default(autoincrement())
   title     String
   done      Boolean  @default(false)
@@ -113,6 +122,7 @@ model Subtask {
 }
 
 model Event {
+  revision     Int      @default(1)
   id           Int      @id @default(autoincrement())
   title        String
   description  String?
@@ -130,6 +140,21 @@ model Event {
 
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+// Technical replay protection, not a historical activity or reward payout ledger.
+// No task/event FK: successful delete/create responses remain replayable.
+model WorkMutationReceipt {
+  id String @id @default(uuid()) @db.Uuid
+  userId Int
+  requestKey String @db.Uuid
+  fingerprint String @db.VarChar(64)
+  operation String
+  result Json
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, requestKey])
 }
 
 model ActivityType {

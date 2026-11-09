@@ -32,6 +32,9 @@ export default function TodoCard({ todo, onOpen }: { todo: Todo; onOpen: () => v
   return (
     <div
       draggable
+      role="button"
+      tabIndex={0}
+      onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } }}
       onDragStart={dragStart}
       className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded p-3 cursor-grab hover:shadow"
       onClick={onOpen}

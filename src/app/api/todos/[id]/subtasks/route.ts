@@ -1,28 +1,9 @@
 import { requireOwner } from "@/lib/require-owner";
-// src/app/api/todos/[id]/subtasks/route.ts
+import { workCommand, workId, workResponse } from "@/lib/work-management/validation";
 export const runtime = "nodejs";
-
-import { prisma } from "@/lib/prisma";
-import { NextResponse } from "next/server";
-
-export async function POST(
-  request: Request,
-  context: { params: Promise<{ id: string }> }
-) {
+import { createSubtask } from "@/lib/work-management/server";
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-
-  const { id } = await context.params;
-  const todoId = Number(id);
-
-  const { title } = await request.json();
-  if (!title) {
-    return NextResponse.json({ error: "Missing title" }, { status: 400 });
-  }
-
-  const subtask = await prisma.subtask.create({
-    data: { title, todoId },
-  });
-
-  return NextResponse.json(subtask);
+  return workResponse(async () => createSubtask(workId((await context.params).id), await request.json(), workCommand(request)), 201);
 }

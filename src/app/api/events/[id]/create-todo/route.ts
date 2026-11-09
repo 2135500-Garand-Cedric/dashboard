@@ -1,36 +1,9 @@
 import { requireOwner } from "@/lib/require-owner";
+import { workCommand, workId, workResponse } from "@/lib/work-management/validation";
 export const runtime = "nodejs";
-
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-
-export async function POST(
-  request: Request,
-  context: { params: Promise<{ id: string }> }
-) {
+import { createLinkedTodo } from "@/lib/work-management/server";
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-
-  const { id } = await context.params;
-  const eventId = Number(id);
-
-  const body = await request.json();
-  const { title } = body;
-
-  const todo = await prisma.todo.create({
-    data: { 
-      title: title,
-      priority: 1,
-      user: { connect: { id: 1 } }
-    },
-    
-  });
-
-  const updatedEvent = await prisma.event.update({
-    where: { id: eventId },
-    data: { linkedTodoId: todo.id },
-    include: { linkedTodo: true },
-  });
-
-  return NextResponse.json(updatedEvent);
+  return workResponse(async () => createLinkedTodo(workId((await context.params).id), await request.json(), workCommand(request)));
 }

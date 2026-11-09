@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PlusIcon } from "@heroicons/react/24/outline";
+import { createWorkWriter, workRead } from "@/lib/work-management/client";
+import { useSnackbar } from "@/context/SnackbarContext";
 import TodoColumn from "./TodoColumn";
 import { useMemory } from "@/context/MemoryContext";
 
@@ -10,6 +12,7 @@ type Subtask = { id: number; title: string; done: boolean; todoId: number };
 
 type Todo = {
   id: number;
+  revision: number;
   title: string;
   description?: string;
   status: "TODO" | "IN_PROGRESS" | "DONE";
@@ -34,19 +37,25 @@ export default function TodoBoard({
   const [creating, setCreating] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const { pageRouter } = useMemory();
+  const { showMessage } = useSnackbar();
+  const write = useRef(createWorkWriter());
+  const busyRef = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
   // Load todos from API
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetch("/api/todos");
-    const data = await res.json();
-    setTodos(data);
-    setLoading(false);
-  }
+    try {
+      const [data, user] = await Promise.all([workRead<Todo[]>("/api/todos"), workRead<{ totalXp: number; coins: number }>("/api/users")]);
+      setTodos(data); setUserXp(user.totalXp); setUserCoins(user.coins); setError("");
+    } catch (error) { setError(error instanceof Error ? error.message : "Unable to load tasks."); }
+    finally { setLoading(false); }
+  }, [setUserXp, setUserCoins]);
 
   useEffect(() => {
-    load();
-  }, []);
+    void load();
+  }, [load]);
 
   function todosByStatus(status: Todo["status"]) {
     return todos.filter((t) => t.status === status);
@@ -60,70 +69,33 @@ export default function TodoBoard({
     const todo = todos.find((t) => t.id === id);
     if (!todo) return;
 
-    const prevStatus = todo.status;
-    const rewards = {
-      xp: todo.rewardXp ?? 0,
-      coins: todo.rewardCoins ?? 0,
-    };
-
-    // Optimistically update UI
-    setTodos((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, status } : t))
-    );
-
-    // Rewards logic
-    if (prevStatus !== "DONE" && status === "DONE") {
-      setUserXp((xp) => xp + rewards.xp);
-      setUserCoins((coins) => coins + rewards.coins);
-
-      await fetch("/api/users/rewards", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ xp: rewards.xp, coins: rewards.coins }),
-      });
-    }
-
-    if (prevStatus === "DONE" && status !== "DONE") {
-      setUserXp((xp) => xp - rewards.xp);
-      setUserCoins((coins) => coins - rewards.coins);
-
-      await fetch("/api/users/rewards", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ xp: -rewards.xp, coins: -rewards.coins }),
-      });
-    }
-
-    // Update todo status in DB
-    await fetch(`/api/todos/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-
-    await load();
+    if (busyRef.current || todo.status === status) return;
+    busyRef.current = true; setBusy(true);
+    try {
+      await write.current(`/api/todos/${id}`, "PATCH", { status }, todo.revision);
+      await load();
+    } catch (error) { showMessage(error instanceof Error ? error.message : "Unable to change task status."); }
+    finally { busyRef.current = false; setBusy(false); }
   };
 
   const onDragOver = (e: React.DragEvent) => e.preventDefault();
 
   // Create a new todo
   const createTodo = async () => {
-    if (!newTitle.trim()) return;
-    await fetch("/api/todos", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: newTitle }),
-    });
-    setNewTitle("");
-    setCreating(false);
-    await load();
+    if (!newTitle.trim() || busyRef.current) return;
+    busyRef.current = true; setBusy(true);
+    try {
+      await write.current("/api/todos", "POST", { title: newTitle });
+      setNewTitle(""); setCreating(false); await load();
+    } catch (error) { showMessage(error instanceof Error ? error.message : "Unable to create task."); }
+    finally { busyRef.current = false; setBusy(false); }
   };
 
   return (
     <div>
       {/* Header: New Todo */}
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <button
             className="flex items-center gap-2 px-3 py-1 rounded bg-[var(--color-card-bg)] border border-[var(--color-card-border)] hover:bg-[var(--accent)]/8 cursor-pointer"
             onClick={() => setCreating((c) => !c)}
@@ -133,14 +105,16 @@ export default function TodoBoard({
           </button>
 
           {creating && (
-            <div className="ml-2 flex items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <input
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
-                className="px-2 py-1 border rounded"
+                className="min-w-0 w-full sm:w-48 px-2 py-1 border rounded"
+                aria-label="New todo title"
                 placeholder="New todo title"
               />
               <button
+                disabled={busy}
                 onClick={createTodo}
                 className="px-2 py-1 rounded bg-[var(--accent)] text-white hover:opacity-90 cursor-pointer"
               >
@@ -151,6 +125,7 @@ export default function TodoBoard({
         </div>
       </div>
 
+      {error && <div role="alert" className="mb-4 text-rose-500">{error} <button type="button" onClick={() => void load()} className="underline">Retry</button></div>}
       {/* Todo Columns */}
       {loading ? (
         <div>Loading...</div>

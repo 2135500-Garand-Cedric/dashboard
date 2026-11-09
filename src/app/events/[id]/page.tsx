@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createWorkWriter, workRead } from "@/lib/work-management/client";
 import { useParams, useRouter } from "next/navigation";
 import {
   PencilSquareIcon,
@@ -14,6 +15,7 @@ import { formatEventRange, toLocalDateTime, validateEventDates } from "@/lib/eve
 
 type Todo = { id: number; title: string; done: boolean };
 type EventItem = {
+  revision: number;
   id: number;
   title: string;
   completed: boolean;
@@ -28,9 +30,14 @@ type ActivityType = { id: number; name: string; color: string; active: boolean }
 export default function EventPage() {
   const params = useParams();
   const eventId = Number(params.id);
+  const currentId = useRef(eventId);
+  currentId.current = eventId;
+  const loadGeneration = useRef(0);
   const router = useRouter();
   const { get } = useMemory();
 
+  const write = useRef(createWorkWriter());
+  const [loadError, setLoadError] = useState("");
   const [event, setEvent] = useState<EventItem | null>(null);
   const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
   const [editMode, setEditMode] = useState(false);
@@ -49,12 +56,11 @@ export default function EventPage() {
   };
 
   const loadEvent = useCallback(async () => {
-    const [eventRes, typesRes] = await Promise.all([
-      fetch(`/api/events/${eventId}`),
-      fetch("/api/activity-types"),
-    ]);
-    const data = await eventRes.json();
-    setActivityTypes(await typesRes.json());
+    if (currentId.current !== eventId) return;
+    const generation = ++loadGeneration.current;
+    const [data, types] = await Promise.all([workRead<EventItem>(`/api/events/${eventId}`), workRead<ActivityType[]>("/api/activity-types")]);
+    if (generation !== loadGeneration.current || currentId.current !== eventId) return;
+    setActivityTypes(types);
 
     setEvent(data);
     setTitleDraft(data.title);
@@ -66,10 +72,11 @@ export default function EventPage() {
   }, [eventId]);
 
   useEffect(() => {
-    loadEvent();
-  }, [loadEvent]);
+    setLoadError("");
+    void loadEvent().catch(error => { if (currentId.current === eventId) setLoadError(error instanceof Error ? error.message : "Unable to load event."); });
+  }, [loadEvent, eventId]);
 
-  if (!event) return <div className="text-center py-10">Loading...</div>;
+  if (!event || event.id !== eventId) return <div className="text-center py-10">{loadError ? <p role="alert">{loadError} <button onClick={() => window.location.reload()} className="underline">Retry</button></p> : "Loading..."}</div>;
 
   const saveEvent = async () => {
     const error = validateEventDates(dateDraft || null, endDateDraft || null);
@@ -82,26 +89,11 @@ export default function EventPage() {
     setSaveError("");
     setSaving(true);
     try {
-      const res = await fetch(`/api/events/${eventId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: titleDraft,
-          description: descDraft,
-          type: typeDraft,
-          date: dateValue,
-          endDate: endDateValue,
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        setSaveError(data.error || "Unable to save event.");
-        return;
-      }
+      await write.current(`/api/events/${eventId}`, "PATCH", { title: titleDraft, description: descDraft, type: typeDraft, date: dateValue, endDate: endDateValue }, event.revision);
       setEditMode(false);
       await loadEvent();
-    } catch {
-      setSaveError("Unable to save event. Please try again.");
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Unable to save event. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -110,12 +102,8 @@ export default function EventPage() {
   const toggleCompletion = async () => {
     setCompletionSaving(true);
     try {
-      const response = await fetch(`/api/events/${eventId}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ completed: !event.completed }),
-      });
-      if (!response.ok) throw new Error("Unable to update completion.");
-      setEvent(await response.json());
+      const updated = await write.current<EventItem>(`/api/events/${eventId}`, "PATCH", { completed: !event.completed }, event.revision);
+      if (currentId.current === eventId) setEvent(updated);
     } catch {
       showMessage("Unable to update event completion. Please try again.");
     } finally {
@@ -125,29 +113,31 @@ export default function EventPage() {
 
   const deleteEvent = async () => {
     if (confirm("Are you sure you want to delete this event?")) {
-      const res = await fetch(`/api/events/${eventId}`, { method: "DELETE" });
-      if (res.ok) {
-        showMessage("Event deleted successfully");
-        router.push("/events");
-      }
+      setSaving(true);
+      try {
+        await write.current(`/api/events/${eventId}`, "DELETE", undefined, event.revision);
+        showMessage("Event deleted successfully"); router.push("/events");
+      } catch (error) { showMessage(error instanceof Error ? error.message : "Unable to delete event."); }
+      finally { setSaving(false); }
     }
   };
 
   const createLinkedTodo = async () => {
-    const title = `${titleDraft} (from event)`;
-    const res = await fetch(`/api/events/${eventId}/create-todo`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title }),
-    });
-    if (res.ok) await loadEvent();
+    if (saving) return;
+    setSaving(true);
+    try {
+      const title = `${titleDraft} (from event)`;
+      await write.current(`/api/events/${eventId}/create-todo`, "POST", { title }, event.revision);
+      await loadEvent();
+    } catch (error) { showMessage(error instanceof Error ? error.message : "Unable to create linked task."); }
+    finally { setSaving(false); }
   };
 
   return (
     <div className="flex justify-center px-4 py-8">
       <div className="w-full max-w-3xl bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-6 shadow">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <button
             onClick={() => router.push(get("prev_page", "/events"))}
             className="flex items-center gap-1 text-gray-500 hover:text-gray-700 cursor-pointer mr-4"
@@ -155,12 +145,12 @@ export default function EventPage() {
             <ArrowLeftIcon className="w-5 h-5" /> Back
           </button>
 
-          <div className="flex-1 flex justify-center items-center gap-2">
+          <div className="min-w-0 flex-1 flex justify-center items-center gap-2">
             {editMode ? (
               <input
                 value={titleDraft}
                 onChange={(e) => setTitleDraft(e.target.value)}
-                className="text-lg font-semibold border rounded px-3 py-1 flex-1 text-center"
+                className="min-w-0 w-full text-lg font-semibold border rounded px-3 py-1 flex-1 text-center"
               />
             ) : (
               <h1 className={`text-xl font-semibold ${event.completed ? "line-through text-gray-500" : ""}`}>{event.title}</h1>
@@ -191,6 +181,7 @@ export default function EventPage() {
 
             {!editMode && (
               <button
+                disabled={saving || completionSaving}
                 onClick={deleteEvent}
                 className="flex items-center gap-1 border rounded px-3 py-1 transition hover:bg-red-100 hover:text-red-600 cursor-pointer"
               >
@@ -299,6 +290,7 @@ export default function EventPage() {
               </button>
             ) : (
               <button
+                disabled={saving || completionSaving}
                 onClick={createLinkedTodo}
                 className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
               >

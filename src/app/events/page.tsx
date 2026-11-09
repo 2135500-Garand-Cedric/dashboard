@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createWorkWriter, workRead } from "@/lib/work-management/client";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
@@ -12,6 +13,7 @@ import { useMemory } from "@/context/MemoryContext";
 
 type Todo = { id: number; title: string; done: boolean };
 type EventItem = {
+  revision: number;
   id: number;
   title: string;
   completed: boolean;
@@ -24,7 +26,9 @@ type EventItem = {
 type ActivityType = { id: number; name: string; color: string; active: boolean };
 
 export default function EventsPage() {
+  const write = useRef(createWorkWriter());
   const [events, setEvents] = useState<EventItem[]>([]);
+  const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
   const [completingId, setCompletingId] = useState<number | null>(null);
   const { showMessage } = useSnackbar();
@@ -44,27 +48,24 @@ export default function EventsPage() {
 
   const { pageRouter, get, set } = useMemory();
 
-  const load = async () => {
-    setLoading(true);
-    const [eventsRes, typesRes] = await Promise.all([
-      fetch("/api/events"),
-      fetch("/api/activity-types"),
-    ]);
-    const data = await eventsRes.json();
-    const types = await typesRes.json();
-    const normalized = data.map((e: EventItem) => ({
-      ...e,
-      date: e.date ? new Date(e.date).toISOString() : null,
-      endDate: e.endDate ? new Date(e.endDate).toISOString() : null,
-    }));
-    setEvents(normalized);
-    setActivityTypes(types);
-    setLoading(false);
-  };
+  const load = useCallback(async () => {
+    setLoading(true); setLoadError("");
+    try {
+      const [data, types] = await Promise.all([workRead<EventItem[]>("/api/events"), workRead<ActivityType[]>("/api/activity-types")]);
+      const normalized = data.map((e: EventItem) => ({
+        ...e,
+        date: e.date ? new Date(e.date).toISOString() : null,
+        endDate: e.endDate ? new Date(e.endDate).toISOString() : null,
+      }));
+      setEvents(normalized);
+      setActivityTypes(types);
+    } catch (error) { setLoadError(error instanceof Error ? error.message : "Unable to load events."); }
+    finally { setLoading(false); }
+  }, []);
 
   useEffect(() => {
-    load();
-  }, []);
+    void load();
+  }, [load]);
 
   const handleEventClick = (clickInfo: EventClickArg) => {
     const id = Number(clickInfo.event.id);
@@ -128,22 +129,9 @@ export default function EventsPage() {
     setCreateError("");
     setSaving(true);
     try {
-      const res = await fetch("/api/events", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: newTitle,
-          description: newDesc,
-          date: dateValue,
-          endDate: endDateValue,
-          type: newType,
-        }),
+      await write.current("/api/events", "POST", {
+        title: newTitle, description: newDesc, date: dateValue, endDate: endDateValue, type: newType,
       });
-      if (!res.ok) {
-        const data = await res.json();
-        setCreateError(data.error || "Unable to create event.");
-        return;
-      }
       setNewTitle("");
       setNewDesc("");
       setNewDate("");
@@ -151,8 +139,8 @@ export default function EventsPage() {
       setNewType("");
       setCreating(false);
       await load();
-    } catch {
-      setCreateError("Unable to create event. Please try again.");
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : "Unable to create event. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -161,15 +149,10 @@ export default function EventsPage() {
   const toggleCompletion = async (event: EventItem) => {
     setCompletingId(event.id);
     try {
-      const response = await fetch(`/api/events/${event.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ completed: !event.completed }),
-      });
-      if (!response.ok) throw new Error("Unable to update event completion.");
-      const updated: EventItem = await response.json();
+      const updated = await write.current<EventItem>(`/api/events/${event.id}`, "PATCH", { completed: !event.completed }, event.revision);
       setEvents((current) => current.map((item) => item.id === updated.id ? updated : item));
-    } catch {
-      showMessage("Unable to update event completion. Please try again.");
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : "Unable to update event completion. Please try again.");
     } finally {
       setCompletingId(null);
     }
@@ -203,6 +186,7 @@ export default function EventsPage() {
     <div className="calendar-page flex flex-col xl:flex-row gap-6 p-2 md:p-6">
       {/* Calendar */}
       <div className="min-w-0 flex-1 bg-card rounded-xl shadow p-4 card">
+        {loadError && <p role="alert" className="mb-3 text-rose-500">{loadError} <button type="button" onClick={() => void load()} className="underline">Retry</button></p>}
         <div className="fullcalendar-theme">
           <FullCalendar
             plugins={[dayGridPlugin, interactionPlugin]}
