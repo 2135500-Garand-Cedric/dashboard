@@ -5,5 +5,7 @@ import { createLinkedTodo } from "@/lib/work-management/server";
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  return workResponse(async () => createLinkedTodo(workId((await context.params).id), await request.json(), workCommand(request)));
+  return workResponse(async () =>
+    createLinkedTodo(workId((await context.params).id), await request.json(), workCommand(request)),
+  );
 }

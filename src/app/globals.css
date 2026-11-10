@@ -217,3 +217,12 @@ body {
     padding-block: 0.75rem;
   }
 }
+
+/* Work dates are labelled point markers, not busy duration bars. */
+.fc .calendar-marker { background: transparent !important; border: 0 !important; box-shadow: none !important; color: var(--foreground); }
+.fc .calendar-marker .fc-event-title { font-weight: 500; }
+.fc-timegrid-event.calendar-marker { height: 1.6em !important; min-height: 0 !important; }
+.fc .calendar-historical { opacity: .55; }
+.fc .calendar-deadline { border-left: 3px solid #f43f5e !important; }
+.fc .calendar-followup { border-left: 3px solid #f59e0b !important; }
+.fc .calendar-keydate { border-left: 3px solid #38bdf8 !important; }

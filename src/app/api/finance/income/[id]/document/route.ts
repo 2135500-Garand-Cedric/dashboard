@@ -14,12 +14,21 @@ export async function GET(request: Request, context: Context) {
     const document = await getIncomeDocument(financeId((await context.params).id));
     const buffer = await readReceiptFile(document.storageKey);
     const download = new URL(request.url).searchParams.get("download") === "1";
-    return new NextResponse(new Uint8Array(buffer), { headers: {
-      ...financeHeaders, "Content-Type": document.mimeType, "Content-Length": String(buffer.length),
-      "Content-Disposition": `${download ? "attachment" : "inline"}; filename="pay-stub-${document.incomeRecordId}.${document.mimeType === "application/pdf" ? "pdf" : document.mimeType.split("/")[1]}"; filename*=UTF-8''${encodeURIComponent(document.originalName).replace(/'/g, "%27")}`,
-      "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox; default-src 'none'; frame-ancestors 'self'", "X-Frame-Options": "SAMEORIGIN", "Referrer-Policy": "no-referrer",
-    } });
-  } catch (error) { return incomeError(error, "load the pay stub"); }
+    return new NextResponse(new Uint8Array(buffer), {
+      headers: {
+        ...financeHeaders,
+        "Content-Type": document.mimeType,
+        "Content-Length": String(buffer.length),
+        "Content-Disposition": `${download ? "attachment" : "inline"}; filename="pay-stub-${document.incomeRecordId}.${document.mimeType === "application/pdf" ? "pdf" : document.mimeType.split("/")[1]}"; filename*=UTF-8''${encodeURIComponent(document.originalName).replace(/'/g, "%27")}`,
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "sandbox; default-src 'none'; frame-ancestors 'self'",
+        "X-Frame-Options": "SAMEORIGIN",
+        "Referrer-Policy": "no-referrer",
+      },
+    });
+  } catch (error) {
+    return incomeError(error, "load the pay stub");
+  }
 }
 export async function DELETE(request: Request, context: Context) {
   const accessError = await requireOwner(request);
@@ -27,5 +36,7 @@ export async function DELETE(request: Request, context: Context) {
   try {
     await deleteIncome(financeId((await context.params).id), true, request.headers.get("If-Match"));
     return NextResponse.json({ success: true }, { headers: financeHeaders });
-  } catch (error) { return incomeError(error, "delete the pay stub"); }
+  } catch (error) {
+    return incomeError(error, "delete the pay stub");
+  }
 }

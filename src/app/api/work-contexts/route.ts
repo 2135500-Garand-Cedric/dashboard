@@ -10,5 +10,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  return workResponse(async () => createWorkContext(await request.json(), workCommand(request, false)), 201);
+  return workResponse(
+    async () => createWorkContext(await request.json(), workCommand(request, false)),
+    201,
+  );
 }

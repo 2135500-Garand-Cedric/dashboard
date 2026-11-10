@@ -39,7 +39,7 @@ export const SnackbarProvider = ({ children }: { children: ReactNode }) => {
             transition-all duration-300 ease-in-out z-50
             ${visible ? "opacity-100 translate-y-0" : "opacity-0"}
           `}
-          style={{ border: "1px solid var(--color-card-border)"} }
+          style={{ border: "1px solid var(--color-card-border)" }}
         >
           {message}
         </div>

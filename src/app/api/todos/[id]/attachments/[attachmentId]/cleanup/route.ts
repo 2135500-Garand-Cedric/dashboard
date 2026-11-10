@@ -6,5 +6,12 @@ type Context = { params: Promise<{ id: string; attachmentId: string }> };
 export async function POST(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  return workResponse(async () => { const params = await context.params; return retryAttachmentCleanup(workId(params.id), workId(params.attachmentId), workCommand(request)); });
+  return workResponse(async () => {
+    const params = await context.params;
+    return retryAttachmentCleanup(
+      workId(params.id),
+      workId(params.attachmentId),
+      workCommand(request),
+    );
+  });
 }

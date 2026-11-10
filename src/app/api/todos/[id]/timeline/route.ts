@@ -6,5 +6,9 @@ type Context = { params: Promise<{ id: string }> };
 export async function GET(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  return workResponse(async () => taskTimeline(workId((await context.params).id), new URL(request.url).searchParams), 200, "load");
+  return workResponse(
+    async () => taskTimeline(workId((await context.params).id), new URL(request.url).searchParams),
+    200,
+    "load",
+  );
 }

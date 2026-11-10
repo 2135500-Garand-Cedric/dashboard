@@ -12,10 +12,14 @@ export async function GET(request: Request, context: Context) {
 export async function PATCH(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  return workResponse(async () => patchEvent(workId((await context.params).id), await request.json(), workCommand(request)));
+  return workResponse(async () =>
+    patchEvent(workId((await context.params).id), await request.json(), workCommand(request)),
+  );
 }
 export async function DELETE(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  return workResponse(async () => deleteEvent(workId((await context.params).id), workCommand(request)));
+  return workResponse(async () =>
+    deleteEvent(workId((await context.params).id), workCommand(request)),
+  );
 }

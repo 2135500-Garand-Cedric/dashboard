@@ -5,9 +5,8 @@ export const VERB_TYPES = [
   { label: "来る-verb", value: "kuru" },
   { label: "Honorific irregular (いらっしゃる → いらっしゃいます)", value: "honorific" },
 ] as const;
-export type VerbType = typeof VERB_TYPES[number]["value"];
+export type VerbType = (typeof VERB_TYPES)[number]["value"];
 export class VerbConjugationError extends Error {}
-
 
 export function conjugateVerb(base: string, reading: string, type: VerbType) {
   const forms: Record<string, { form: string; reading: string }> = {};
@@ -17,11 +16,19 @@ export function conjugateVerb(base: string, reading: string, type: VerbType) {
   // Rule reference: https://guidetojapanese.org/learn/grammar/honorific
   if (type === "honorific") {
     if (!base.endsWith("る") || !reading.endsWith("る")) {
-      throw new VerbConjugationError("Honorific irregular verbs must use a dictionary form and reading ending in る, such as いらっしゃる.");
+      throw new VerbConjugationError(
+        "Honorific irregular verbs must use a dictionary form and reading ending in る, such as いらっしゃる.",
+      );
     }
     const honorific = conjugateGodan(base, reading);
-    const stem = base.slice(0, -1) + "い", readingStem = reading.slice(0, -1) + "い";
-    for (const [name, suffix] of [["masu", "ます"], ["masen", "ません"], ["mashita", "ました"], ["masen_deshita", "ませんでした"]] as const) {
+    const stem = base.slice(0, -1) + "い",
+      readingStem = reading.slice(0, -1) + "い";
+    for (const [name, suffix] of [
+      ["masu", "ます"],
+      ["masen", "ません"],
+      ["mashita", "ました"],
+      ["masen_deshita", "ませんでした"],
+    ] as const) {
       honorific[name] = { form: stem + suffix, reading: readingStem + suffix };
     }
     return honorific;
@@ -54,7 +61,7 @@ export function conjugateVerb(base: string, reading: string, type: VerbType) {
 
   // Irregular
   if (type === "suru") {
-    const stemKanji = base.slice(0, -2);      // remove "する"
+    const stemKanji = base.slice(0, -2); // remove "する"
     const stemReading = reading.slice(0, -2); // remove "する"
 
     forms["masu"] = { form: stemKanji + "します", reading: stemReading + "します" };
@@ -63,7 +70,10 @@ export function conjugateVerb(base: string, reading: string, type: VerbType) {
     forms["ta"] = { form: stemKanji + "した", reading: stemReading + "した" };
     forms["nakatta"] = { form: stemKanji + "しなかった", reading: stemReading + "しなかった" };
     forms["mashita"] = { form: stemKanji + "しました", reading: stemReading + "しました" };
-    forms["masen_deshita"] = { form: stemKanji + "しませんでした", reading: stemReading + "しませんでした" };
+    forms["masen_deshita"] = {
+      form: stemKanji + "しませんでした",
+      reading: stemReading + "しませんでした",
+    };
     forms["te"] = { form: stemKanji + "して", reading: stemReading + "して" };
     forms["volitional"] = { form: stemKanji + "しよう", reading: stemReading + "しよう" };
     forms["potential"] = { form: stemKanji + "できる", reading: stemReading + "できる" };
@@ -72,9 +82,8 @@ export function conjugateVerb(base: string, reading: string, type: VerbType) {
     forms["nakereba"] = { form: stemKanji + "しなければ", reading: stemReading + "しなければ" };
   }
 
-
   if (type === "kuru") {
-    const stemKanji = base.slice(0, -2);      // remove "くる" / "来る"
+    const stemKanji = base.slice(0, -2); // remove "くる" / "来る"
     const stemReading = reading.slice(0, -2);
 
     forms["masu"] = { form: stemKanji + "きます", reading: stemReading + "きます" };
@@ -83,7 +92,10 @@ export function conjugateVerb(base: string, reading: string, type: VerbType) {
     forms["ta"] = { form: stemKanji + "きた", reading: stemReading + "きた" };
     forms["nakatta"] = { form: stemKanji + "こなかった", reading: stemReading + "こなかった" };
     forms["mashita"] = { form: stemKanji + "きました", reading: stemReading + "きました" };
-    forms["masen_deshita"] = { form: stemKanji + "きませんでした", reading: stemReading + "きませんでした" };
+    forms["masen_deshita"] = {
+      form: stemKanji + "きませんでした",
+      reading: stemReading + "きませんでした",
+    };
     forms["te"] = { form: stemKanji + "きて", reading: stemReading + "きて" };
     forms["volitional"] = { form: stemKanji + "こよう", reading: stemReading + "こよう" };
     forms["potential"] = { form: stemKanji + "こられる", reading: stemReading + "こられる" };
@@ -97,7 +109,6 @@ export function conjugateVerb(base: string, reading: string, type: VerbType) {
       reading: stemReading + "こなければ",
     };
   }
-
 
   return forms;
 }
@@ -184,7 +195,6 @@ function conjugateGodan(base: string, reading: string) {
 function isIkuVerb(base: string, reading: string) {
   return base === "行く" || base.endsWith("行く") || reading.endsWith("いく");
 }
-
 
 function getTeForm(ending: string, reading: string, base: string) {
   if (isIkuVerb(base, reading)) return "って";

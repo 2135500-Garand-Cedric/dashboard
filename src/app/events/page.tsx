@@ -1,405 +1,483 @@
 "use client";
-
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createWorkWriter, workRead } from "@/lib/work-management/client";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
+import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
-import type { DatesSetArg, EventClickArg } from "@fullcalendar/core";
-import { formatEventRange, validateEventDates } from "@/lib/event-dates";
-import { Cog6ToothIcon, PlusIcon, TrashIcon, XMarkIcon } from "@heroicons/react/24/outline";
-import { useSnackbar } from "@/context/SnackbarContext";
+import luxonPlugin from "@fullcalendar/luxon3";
+import type { DatesSetArg, EventDropArg } from "@fullcalendar/core";
+import type { EventResizeDoneArg } from "@fullcalendar/interaction";
+import { createWorkWriter, workRead } from "@/lib/work-management/client";
+import { describeWorkDate, localParts, localToday } from "@/lib/work-management/date-format";
+import { eventTiming, type CalendarFeed } from "@/lib/work-management/calendar-types";
+import type { WorkContext, WorkTodo } from "@/lib/work-management/types";
 import { useMemory } from "@/context/MemoryContext";
-
-type Todo = { id: number; title: string; done: boolean };
-type EventItem = {
-  revision: number;
-  id: number;
-  title: string;
-  completed: boolean;
-  description?: string | null;
-  date: string | null;
-  endDate: string | null;
-  type?: string | null;
-  linkedTodo?: Todo | null;
-};
-type ActivityType = { id: number; name: string; color: string; active: boolean };
-
+import EventForm from "@/components/calendar/EventForm";
+import ActivityTypeSettings from "@/components/calendar/ActivityTypeSettings";
+const button =
+  "scroll-mt-24 rounded-lg border border-card-border px-3 py-2 text-sm disabled:opacity-50";
+const allLayers = [
+  ["events", "○ Events / information"],
+  ["sessions", "▣ Work sessions"],
+  ["deadlines", "⚑ Deadlines"],
+  ["followups", "↻ Follow-ups"],
+  ["keydates", "◇ Key dates"],
+];
+type Move = { id: number; revision: number; title: string; date: string; endDate: string };
 export default function EventsPage() {
-  const write = useRef(createWorkWriter());
-  const [events, setEvents] = useState<EventItem[]>([]);
-  const [loadError, setLoadError] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [completingId, setCompletingId] = useState<number | null>(null);
-  const { showMessage } = useSnackbar();
-  const [creating, setCreating] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
-  const [typeName, setTypeName] = useState("");
-  const [typeColor, setTypeColor] = useState("#3b82f6");
-
-  const [newTitle, setNewTitle] = useState("");
-  const [newDesc, setNewDesc] = useState("");
-  const [newDate, setNewDate] = useState("");
-  const [newEndDate, setNewEndDate] = useState("");
-  const [createError, setCreateError] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [newType, setNewType] = useState("");
-
-  const { pageRouter, get, set } = useMemory();
-
-  const load = useCallback(async () => {
-    setLoading(true); setLoadError("");
-    try {
-      const [data, types] = await Promise.all([workRead<EventItem[]>("/api/events"), workRead<ActivityType[]>("/api/activity-types")]);
-      const normalized = data.map((e: EventItem) => ({
-        ...e,
-        date: e.date ? new Date(e.date).toISOString() : null,
-        endDate: e.endDate ? new Date(e.endDate).toISOString() : null,
-      }));
-      setEvents(normalized);
-      setActivityTypes(types);
-    } catch (error) { setLoadError(error instanceof Error ? error.message : "Unable to load events."); }
-    finally { setLoading(false); }
-  }, []);
-
+  const { pageRouter, get, set } = useMemory(),
+    calendar = useRef<FullCalendar>(null),
+    writer = useRef(createWorkWriter()),
+    dialog = useRef<HTMLDialogElement>(null);
+  const [range, setRange] = useState(() => {
+    const now = new Date(),
+      start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) - 7 * 86400000),
+      end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1) + 7 * 86400000);
+    return { start: start.toISOString(), end: end.toISOString() };
+  });
+  const [data, setData] = useState<CalendarFeed | null>(null),
+    [contexts, setContexts] = useState<WorkContext[]>([]),
+    [layers, setLayers] = useState(allLayers.map(([key]) => key)),
+    [context, setContext] = useState(""),
+    [history, setHistory] = useState(false),
+    [page, setPage] = useState(1),
+    [refresh, setRefresh] = useState(0),
+    [error, setError] = useState("");
+  const [view, setView] = useState("dayGridMonth"),
+    [title, setTitle] = useState("Calendar"),
+    [creating, setCreating] = useState(false),
+    [initialTask, setInitialTask] = useState<WorkTodo | null>(null),
+    [settings, setSettings] = useState(false),
+    [move, setMove] = useState<Move | null>(null),
+    [moveError, setMoveError] = useState(""),
+    [saving, setSaving] = useState(false);
+  const feedZone = useRef("America/Toronto");
+  if (data) feedZone.current = data.timeZone;
   useEffect(() => {
-    void load();
-  }, [load]);
-
-  const handleEventClick = (clickInfo: EventClickArg) => {
-    const id = Number(clickInfo.event.id);
-    pageRouter('/events', `/events/${id}`);
-  };
-
-  const handleMonthChange = (info: DatesSetArg) => {
-    const start = new Date(info.startStr);
-    start.setDate(start.getDate() + 14);
-    const month = start.getMonth() + 1;
-    const year = start.getFullYear();
-
-    set("calendar_currentMonth", month);
-    set("calendar_currentYear", year);
-  };
-
-
-  const getColorForType = (type?: string | null) => {
-    return activityTypes.find((activityType) => activityType.name.toLowerCase() === type?.toLowerCase())?.color || "#9ca3af";
-  };
-
-  const saveActivityType = async () => {
-    const res = await fetch("/api/activity-types", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: typeName, color: typeColor }),
-    });
-    if (!res.ok) {
-      const data = await res.json();
-      alert(data.error || "Unable to create activity type");
-      return;
+    void workRead<WorkContext[]>("/api/work-contexts")
+      .then(setContexts)
+      .catch((e) => setError(e.message));
+    const query = new URLSearchParams(window.location.search);
+    if (query.get("new") === "session" && /^\d+$/.test(query.get("task") || "")) {
+      void workRead<WorkTodo>(`/api/todos/${query.get("task")}`)
+        .then((task) => {
+          setInitialTask(task);
+          setCreating(true);
+        })
+        .catch((e) => setError(e.message));
     }
-    setTypeName("");
-    setTypeColor("#3b82f6");
-    await load();
-  };
-
-  const updateActivityType = async (activityType: ActivityType, changes: Partial<ActivityType>) => {
-    const res = await fetch(`/api/activity-types/${activityType.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(changes),
+  }, []);
+  useEffect(() => {
+    let active = true;
+    setError("");
+    const query = new URLSearchParams({
+      ...range,
+      layers: layers.join(","),
+      context,
+      history: String(history),
+      tbdPage: String(page),
     });
-    if (res.ok) await load();
-  };
-
-  const deleteActivityType = async (activityType: ActivityType) => {
-    if (!confirm(`Delete activity type "${activityType.name}"? Existing events will keep their details but lose this type.`)) return;
-    const res = await fetch(`/api/activity-types/${activityType.id}`, { method: "DELETE" });
-    if (res.ok) await load();
-  };
-
-  const createEvent = async () => {
-    const error = validateEventDates(newDate || null, newEndDate || null);
-    if (error) {
-      setCreateError(error);
-      return;
-    }
-    const dateValue = newDate ? new Date(newDate).toISOString() : null;
-    const endDateValue = newEndDate ? new Date(newEndDate).toISOString() : null;
-    setCreateError("");
-    setSaving(true);
-    try {
-      await write.current("/api/events", "POST", {
-        title: newTitle, description: newDesc, date: dateValue, endDate: endDateValue, type: newType,
+    void workRead<CalendarFeed>(`/api/work-calendar?${query}`)
+      .then((result) => {
+        if (active) setData(result);
+      })
+      .catch((e) => {
+        if (active) setError(e.message);
       });
-      setNewTitle("");
-      setNewDesc("");
-      setNewDate("");
-      setNewEndDate("");
-      setNewType("");
-      setCreating(false);
-      await load();
-    } catch (error) {
-      setCreateError(error instanceof Error ? error.message : "Unable to create event. Please try again.");
-    } finally {
-      setSaving(false);
+    return () => {
+      active = false;
+    };
+  }, [range, layers, context, history, page, refresh]);
+  const datesSet = useCallback(
+    (info: DatesSetArg) => {
+      setRange((previous) =>
+        previous.start === info.start.toISOString() && previous.end === info.end.toISOString()
+          ? previous
+          : { start: info.start.toISOString(), end: info.end.toISOString() },
+      );
+      setTitle(info.view.title);
+      setView(info.view.type);
+      const local = localParts(info.view.currentStart, feedZone.current);
+      set("calendar_currentMonth", Number(local.slice(5, 7)));
+      set("calendar_currentYear", Number(local.slice(0, 4)));
+    },
+    [set],
+  );
+  function proposeMove(info: EventDropArg | EventResizeDoneArg) {
+    const props = info.event.extendedProps;
+    if (props.layer !== "sessions" || !info.event.start || !info.event.end) {
+      info.revert();
+      return;
     }
-  };
-
-  const toggleCompletion = async (event: EventItem) => {
-    setCompletingId(event.id);
-    try {
-      const updated = await write.current<EventItem>(`/api/events/${event.id}`, "PATCH", { completed: !event.completed }, event.revision);
-      setEvents((current) => current.map((item) => item.id === updated.id ? updated : item));
-    } catch (error) {
-      showMessage(error instanceof Error ? error.message : "Unable to update event completion. Please try again.");
-    } finally {
-      setCompletingId(null);
-    }
-  };
-
-  const fcEvents = events
-    .filter((e) => e.date) // FullCalendar only accepts real dates
-    .map((e) => ({
-      id: String(e.id),
-      title: e.title,
-      extendedProps: { completed: e.completed },
-      classNames: e.completed ? ["event-completed"] : [],
-      start: e.date!,
-      end: e.endDate || undefined,
-      allDay: false,
-      textColor: "#ffffff",
-      backgroundColor: getColorForType(e.type),
-      borderColor: getColorForType(e.type),
-    }));
-
-  // Split events into upcoming and TBD
-  const now = new Date();
-    
-  const upcomingEvents = events
-    .filter((e) => e.date && new Date(e.endDate || e.date) >= now)
-    .sort((a, b) => new Date(a.date!).getTime() - new Date(b.date!).getTime());
-    
-  const tbdEvents = events.filter((e) => !e.date);
-
+    const candidate = {
+      id: Number(props.eventId),
+      revision: Number(props.revision),
+      title: info.event.title,
+      date: info.event.start.toISOString(),
+      endDate: info.event.end.toISOString(),
+    };
+    info.revert();
+    setMove(candidate);
+    setMoveError("");
+  }
+  useEffect(() => {
+    if (move) dialog.current?.showModal();
+  }, [move]);
+  const today = data
+      ? localToday(new Date(), data.timeZone)
+      : new Date().toISOString().slice(0, 10),
+    initialDate = `${get("calendar_currentYear", Number(today.slice(0, 4)))}-${String(get("calendar_currentMonth", Number(today.slice(5, 7)))).padStart(2, "0")}-01`;
   return (
-    <div className="calendar-page flex flex-col xl:flex-row gap-6 p-2 md:p-6">
-      {/* Calendar */}
-      <div className="min-w-0 flex-1 bg-card rounded-xl shadow p-4 card">
-        {loadError && <p role="alert" className="mb-3 text-rose-500">{loadError} <button type="button" onClick={() => void load()} className="underline">Retry</button></p>}
-        <div className="fullcalendar-theme">
-          <FullCalendar
-            plugins={[dayGridPlugin, interactionPlugin]}
-            initialView="dayGridMonth"
-            initialDate={`${get("calendar_currentYear", new Date().getFullYear())}-${String(get("calendar_currentMonth", new Date().getMonth() + 1)).padStart(2, "0")}-01`}
-            events={fcEvents}
-            eventClick={handleEventClick}
-            height="auto"
-            displayEventTime={false}
-            eventDisplay="block"
-            nextDayThreshold="00:00:00"
-            dayMaxEvents={3}
-            eventContent={(info) => (
-              <span className="flex min-w-0 items-center gap-1" title={`${info.event.extendedProps.completed ? "Completed: " : ""}${info.event.title}\n${formatEventRange(info.event.start?.toISOString(), info.event.end?.toISOString())}`}>
-                {info.event.extendedProps.completed && <span aria-label="Completed" className="shrink-0">✓</span>}
-                <span className={`truncate ${info.event.extendedProps.completed ? "line-through" : ""}`}>{info.event.title}</span>
-              </span>
-            )}
-            eventDidMount={(info) => {
-              info.el.title = `${info.event.extendedProps.completed ? "Completed: " : ""}${info.event.title}\n${formatEventRange(info.event.start?.toISOString(), info.event.end?.toISOString())}`;
-            }}
-            datesSet={handleMonthChange}
-          />
+    <div className="calendar-page min-w-0 space-y-5 pb-8 pt-12 md:pt-2">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Calendar</h1>
+          <p className="text-sm text-gray-500">{data?.timeZone ?? "Loading timezone…"}</p>
         </div>
-      </div>
-
-      {/* Sidebar */}
-      <aside className="calendar-sidebar w-full xl:w-96 xl:shrink-0 bg-card rounded-xl shadow p-4 card flex flex-col">
-        <div className="flex justify-between items-center mb-3">
-          <h3 className="text-lg font-semibold">Events</h3>
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => setSettings(true)} className={button}>
+            Activity type settings
+          </button>
+          {!creating && (
             <button
-              onClick={() => setSettingsOpen(true)}
-              title="Activity type settings"
-              aria-label="Activity type settings"
-              className="p-2 rounded hover:bg-accent/10 cursor-pointer"
+              type="button"
+              onClick={() => {
+                setInitialTask(null);
+                setCreating(true);
+              }}
+              className={`${button} bg-blue-600 text-white`}
             >
-              <Cog6ToothIcon className="w-5 h-5" />
+              New event / session
             </button>
-            <button
-              onClick={() => setCreating(!creating)}
-              className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
-            >
-              {creating ? "Cancel" : "New"}
-            </button>
-          </div>
+          )}
         </div>
-
-        {creating ? (
-          <form onSubmit={(e) => { e.preventDefault(); void createEvent(); }} className="space-y-2 mb-4 border rounded p-3 bg-accent/5">
-            <input
-              placeholder="Title"
-              aria-label="Title"
-              required
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              className="w-full border rounded px-2 py-1"
-            />
-            <textarea
-              placeholder="Description"
-              value={newDesc}
-              onChange={(e) => setNewDesc(e.target.value)}
-              className="w-full border rounded px-2 py-1"
-              rows={2}
-            />
-            <label className="block text-sm">
-              <span className="block mb-1">Start date and time</span>
+      </header>
+      <section
+        aria-label="Calendar layers and context"
+        className="space-y-4 rounded-xl border border-card-border bg-card-bg p-4"
+      >
+        <div className="flex flex-wrap gap-x-5 gap-y-3">
+          {allLayers.map(([key, label]) => (
+            <label key={key} className="flex items-center gap-2 text-sm">
               <input
-                type="datetime-local"
-                value={newDate}
-                onChange={(e) => setNewDate(e.target.value)}
-                className="w-full min-w-0 border rounded px-2 py-1"
+                type="checkbox"
+                aria-label={label}
+                checked={layers.includes(key)}
+                onChange={(e) => {
+                  setLayers(
+                    e.target.checked ? [...layers, key] : layers.filter((item) => item !== key),
+                  );
+                  setPage(1);
+                }}
               />
+              {label}
             </label>
-            <label className="block text-sm">
-              <span className="block mb-1">End date and time (optional)</span>
-              <input
-                type="datetime-local"
-                value={newEndDate}
-                min={newDate || undefined}
-                onChange={(e) => setNewEndDate(e.target.value)}
-                className="w-full min-w-0 border rounded px-2 py-1"
-              />
-            </label>
-            <p className="text-xs text-gray-500">Leave both dates blank for a TBD event.</p>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="text-sm">
+            Context
             <select
-              value={newType}
-              onChange={(e) => setNewType(e.target.value)}
-              className="w-full border rounded px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
+              aria-label="Calendar context"
+              value={context}
+              onChange={(e) => {
+                setContext(e.target.value);
+                setPage(1);
+              }}
+              className="ml-2 max-w-full rounded border border-card-border bg-card-bg p-2"
             >
-              <option value="">Type (optional)</option>
-              {activityTypes.filter((activityType) => activityType.active).map((activityType) => (
-                <option key={activityType.id} value={activityType.name}>{activityType.name}</option>
+              <option value="">All contexts</option>
+              <option value="none">Unclassified / unlinked</option>
+              {contexts.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
               ))}
             </select>
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700 disabled:opacity-50"
-            >
-              {saving ? "Saving…" : "Save Event"}
-            </button>
-            {createError && <p role="alert" className="text-sm text-red-600">{createError}</p>}
-          </form>
-        ) : loading ? (
-          <div>Loading...</div>
-        ) : (
-          <>
-            {/* Upcoming events */}
-            <div className="mb-4">
-              <h3 className="text-medium mb-2">Upcoming</h3>
-              <ul className="calendar-event-list space-y-2 max-h-70 overflow-y-auto pr-1">
-                {upcomingEvents.length === 0 && (
-                  <li className="text-sm text-gray-500">No upcoming events</li>
-                )}
-                {upcomingEvents.map((ev) => (
-                  <li
-                    key={ev.id}
-                    className="p-2 border rounded hover:bg-accent/10 cursor-pointer transition flex items-center gap-2"
-                    onClick={() => pageRouter('/events', `/events/${ev.id}`)}
-                  >
-                    <input type="checkbox" checked={ev.completed} disabled={completingId !== null}
-                      onClick={(e) => e.stopPropagation()} onChange={() => void toggleCompletion(ev)}
-                      aria-label={`${ev.completed ? "Mark incomplete" : "Mark completed"}: ${ev.title}`}
-                      className="h-4 w-4 shrink-0 accent-emerald-600 cursor-pointer" />
-                    <span
-                      className="w-3 h-3 rounded-full shrink-0"
-                      style={{ backgroundColor: getColorForType(ev.type) }}
-                    />
-                    <div>
-                      <div className={`font-medium ${ev.completed ? "line-through text-gray-500" : ""}`}>{ev.title}</div>
-                      {ev.completed && <span className="text-xs font-medium text-emerald-500">✓ Completed</span>}
-                      <div className="text-sm text-gray-500">
-                        {formatEventRange(ev.date, ev.endDate)}
-                        {!ev.completed && ev.date && new Date(ev.date) <= now && ev.endDate && <span className="block text-blue-500">In progress</span>}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            {/* TBD events */}
-            <div>
-              <h3 className="text-medium mb-2">TBD</h3>
-              <ul className="calendar-event-list space-y-2 max-h-70 overflow-y-auto pr-1">
-                {tbdEvents.length === 0 && (
-                  <li className="text-sm text-gray-500">No TBD events</li>
-                )}
-                {tbdEvents.map((ev) => (
-                  <li
-                    key={ev.id}
-                    className="p-2 border rounded hover:bg-accent/10 cursor-pointer transition flex items-center gap-2"
-                    onClick={() => pageRouter('/events', `/events/${ev.id}`)}
-                  >
-                    <input type="checkbox" checked={ev.completed} disabled={completingId !== null}
-                      onClick={(e) => e.stopPropagation()} onChange={() => void toggleCompletion(ev)}
-                      aria-label={`${ev.completed ? "Mark incomplete" : "Mark completed"}: ${ev.title}`}
-                      className="h-4 w-4 shrink-0 accent-emerald-600 cursor-pointer" />
-                    <span
-                      className="w-3 h-3 rounded-full shrink-0"
-                      style={{ backgroundColor: getColorForType(ev.type) }}
-                    />
-                    <div>
-                      <div className={`font-medium ${ev.completed ? "line-through text-gray-500" : ""}`}>{ev.title}</div>
-                      {ev.completed && <span className="text-xs font-medium text-emerald-500">✓ Completed</span>}
-                      <div className="text-sm text-gray-500 italic">
-                        No date set
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </>
-        )}
-      </aside>
-
-      {settingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-card rounded-xl shadow-xl p-6 card">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-xl font-semibold">Activity type settings</h2>
-              <button onClick={() => setSettingsOpen(false)} title="Close settings" aria-label="Close settings" className="p-1 rounded hover:bg-accent/10 cursor-pointer">
-                <XMarkIcon className="w-6 h-6" />
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={history}
+              onChange={(e) => setHistory(e.target.checked)}
+            />
+            Show closed-task date history
+          </label>
+          <button type="button" onClick={() => setRefresh((value) => value + 1)} className={button}>
+            Refresh calendar
+          </button>
+        </div>
+      </section>
+      {error && (
+        <p role="alert" className="rounded-lg border border-rose-500/30 p-3 text-rose-500">
+          {error}
+        </p>
+      )}
+      <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 space-y-3 rounded-xl border border-card-border bg-card-bg p-3 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                aria-label="Previous calendar range"
+                onClick={() => calendar.current?.getApi().prev()}
+                className={button}
+              >
+                ←
+              </button>
+              <button
+                type="button"
+                onClick={() => calendar.current?.getApi().today()}
+                className={button}
+              >
+                Today
+              </button>
+              <button
+                type="button"
+                aria-label="Next calendar range"
+                onClick={() => calendar.current?.getApi().next()}
+                className={button}
+              >
+                →
               </button>
             </div>
-
-            <div className="flex gap-2 mb-5">
-              <input value={typeName} onChange={(e) => setTypeName(e.target.value)} placeholder="New activity type" className="flex-1 border rounded px-3 py-2" />
-              <input type="color" value={typeColor} onChange={(e) => setTypeColor(e.target.value)} title="Choose color" className="w-11 h-10 border rounded p-1 cursor-pointer" />
-              <button onClick={saveActivityType} title="Add activity type" aria-label="Add activity type" className="p-2 rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer">
-                <PlusIcon className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              {activityTypes.map((activityType) => (
-                <div key={activityType.id} className="flex items-center gap-2 border rounded p-2">
-                  <input type="color" value={activityType.color} onChange={(e) => updateActivityType(activityType, { color: e.target.value })} title={`Color for ${activityType.name}`} className="w-9 h-9 border rounded p-1 cursor-pointer" />
-                  <input value={activityType.name} onChange={(e) => setActivityTypes((current) => current.map((item) => item.id === activityType.id ? { ...item, name: e.target.value } : item))} onBlur={(e) => updateActivityType(activityType, { name: e.target.value })} className="min-w-0 flex-1 border rounded px-2 py-1" />
-                  <label className="flex items-center gap-1 text-sm whitespace-nowrap">
-                    <input type="checkbox" checked={activityType.active} onChange={(e) => updateActivityType(activityType, { active: e.target.checked })} /> Active
-                  </label>
-                  <button onClick={() => deleteActivityType(activityType)} title={`Delete ${activityType.name}`} aria-label={`Delete ${activityType.name}`} className="p-2 rounded text-red-600 hover:bg-red-50 cursor-pointer">
-                    <TrashIcon className="w-5 h-5" />
-                  </button>
-                </div>
+            <h2 className="text-lg font-medium">{title}</h2>
+            <div className="flex gap-2">
+              {[
+                ["dayGridMonth", "Month"],
+                ["timeGridWeek", "Week"],
+                ["timeGridDay", "Day"],
+              ].map(([key, label]) => (
+                <button
+                  type="button"
+                  key={key}
+                  aria-pressed={view === key}
+                  onClick={() => calendar.current?.getApi().changeView(key)}
+                  className={`${button} ${view === key ? "bg-blue-600 text-white" : ""}`}
+                >
+                  {label}
+                </button>
               ))}
-              {!activityTypes.length && <p className="text-sm text-gray-500">No activity types yet.</p>}
             </div>
           </div>
+          {!data ? (
+            <p role="status">Loading calendar…</p>
+          ) : (
+            <div className="fullcalendar-theme">
+              <FullCalendar
+                ref={calendar}
+                plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, luxonPlugin]}
+                initialDate={initialDate}
+                initialView="dayGridMonth"
+                timeZone={data.timeZone}
+                headerToolbar={false}
+                events={data.items}
+                datesSet={datesSet}
+                height={view === "dayGridMonth" ? "auto" : 650}
+                scrollTime="07:00:00"
+                nowIndicator
+                dayMaxEvents={3}
+                eventDisplay="block"
+                displayEventTime={view !== "dayGridMonth"}
+                eventTimeFormat={{ hour: "2-digit", minute: "2-digit", hour12: false }}
+                slotLabelFormat={{ hour: "2-digit", minute: "2-digit", hour12: false }}
+                nextDayThreshold="00:00:00"
+                editable={false}
+                eventDrop={proposeMove}
+                eventResize={proposeMove}
+                eventClick={(info) => {
+                  info.jsEvent.preventDefault();
+                  const href = info.event.extendedProps.href;
+                  if (typeof href === "string" && /^\/(todos|events)\//.test(href))
+                    pageRouter("/events", href);
+                }}
+                eventContent={(info) => (
+                  <span
+                    className="block min-w-0 max-w-full truncate text-xs"
+                    title={info.event.title}
+                  >
+                    {info.event.extendedProps.completed ? "✓ " : ""}
+                    {view !== "dayGridMonth" && info.timeText ? `${info.timeText} · ` : ""}
+                    {info.event.title}
+                  </span>
+                )}
+                eventDidMount={(info) => {
+                  info.el.title = info.event.title;
+                  info.el.setAttribute("aria-label", info.event.title);
+                }}
+              />
+            </div>
+          )}
         </div>
+        <aside className="min-w-0 space-y-5">
+          {creating && data ? (
+            <EventForm
+              key={initialTask?.id ?? "new"}
+              timeZone={data.timeZone}
+              initialTask={initialTask}
+              onSaved={() => {
+                setCreating(false);
+                setInitialTask(null);
+                setRefresh((value) => value + 1);
+              }}
+              onCancel={() => setCreating(false)}
+            />
+          ) : null}
+          <section className="space-y-3 rounded-xl border border-card-border bg-card-bg p-4">
+            <h2 className="font-medium">In this calendar range</h2>
+            <ul className="max-h-[500px] space-y-3 overflow-y-auto">
+              {data?.items.slice(0, 40).map((item) => (
+                <li key={item.id} className="min-w-0 rounded-lg border border-card-border p-3">
+                  <Link
+                    href={item.extendedProps.href}
+                    className="block break-words text-sm text-blue-400"
+                  >
+                    {item.title}
+                  </Link>
+                  <p className="mt-1 break-words text-xs text-gray-500">
+                    {item.allDay
+                      ? `${item.start} · calendar date`
+                      : describeWorkDate({ date: null, at: item.start, timeZone: data.timeZone })}
+                  </p>
+                  {item.extendedProps.eventId && (
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={async () => {
+                        setSaving(true);
+                        try {
+                          await writer.current(
+                            `/api/events/${item.extendedProps.eventId}`,
+                            "PATCH",
+                            { completed: !item.extendedProps.completed },
+                            item.extendedProps.revision,
+                          );
+                          setRefresh((value) => value + 1);
+                        } catch (e) {
+                          setError(e instanceof Error ? e.message : "Unable to save completion.");
+                        } finally {
+                          setSaving(false);
+                        }
+                      }}
+                      className={`${button} mt-2`}
+                    >
+                      {item.extendedProps.completed ? "Mark incomplete" : "Mark completed"}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+            {data?.items.length === 0 && (
+              <p className="text-sm text-gray-500">
+                No items match these layers, context and range.
+              </p>
+            )}
+            {!!data && data.items.length > 40 && (
+              <p className="text-xs text-gray-500">
+                First 40 listed; all matching items appear on the calendar.
+              </p>
+            )}
+          </section>
+          <section className="space-y-3 rounded-xl border border-card-border bg-card-bg p-4">
+            <h2 className="font-medium">TBD events ({data?.tbdTotal ?? 0})</h2>
+            <ul className="space-y-3">
+              {data?.tbd.map((event) => (
+                <li key={event.id}>
+                  <Link href={`/events/${event.id}`} className="break-words text-sm text-blue-400">
+                    ○ {event.title}
+                  </Link>
+                  <p className="text-xs text-gray-500">{eventTiming(event)}</p>
+                </li>
+              ))}
+            </ul>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={!data || data.tbdPage <= 1}
+                onClick={() => setPage(page - 1)}
+                className={button}
+              >
+                Previous TBD
+              </button>
+              <button
+                type="button"
+                disabled={!data || data.tbdPage * data.tbdPageSize >= data.tbdTotal}
+                onClick={() => setPage(page + 1)}
+                className={button}
+              >
+                Next TBD
+              </button>
+            </div>
+          </section>
+        </aside>
+      </div>
+      {settings && (
+        <ActivityTypeSettings
+          onClose={() => setSettings(false)}
+          onChanged={() => setRefresh((value) => value + 1)}
+        />
+      )}
+      {move && (
+        <dialog
+          ref={dialog}
+          aria-label="Confirm session move"
+          onCancel={(e) => {
+            e.preventDefault();
+            if (!saving) setMove(null);
+          }}
+          className="m-auto max-h-[90dvh] w-[calc(100%_-_2rem)] max-w-lg space-y-4 overflow-y-auto rounded-xl border border-card-border bg-card-bg p-5 text-foreground backdrop:bg-black/60"
+        >
+          <h2 className="font-medium">Move only this work session?</h2>
+          <p className="break-words">{move.title}</p>
+          <p className="break-words text-sm">
+            {describeWorkDate({ date: null, at: move.date, timeZone: data!.timeZone })} →{" "}
+            {describeWorkDate({ date: null, at: move.endDate, timeZone: data!.timeZone })}
+          </p>
+          <p className="text-sm text-gray-500">
+            The task deadline, follow-up, other sessions and task status remain unchanged.
+          </p>
+          {moveError && (
+            <p role="alert" className="text-rose-500">
+              {moveError}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={async () => {
+                setSaving(true);
+                setMoveError("");
+                try {
+                  await writer.current(
+                    `/api/events/${move.id}`,
+                    "PATCH",
+                    { date: move.date, endDate: move.endDate },
+                    move.revision,
+                  );
+                  setMove(null);
+                  setRefresh((value) => value + 1);
+                } catch (e) {
+                  setMoveError(e instanceof Error ? e.message : "Unable to move session.");
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              className={`${button} bg-blue-600 text-white`}
+            >
+              Confirm session move
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => setMove(null)}
+              className={button}
+            >
+              Keep original time
+            </button>
+          </div>
+        </dialog>
       )}
     </div>
   );

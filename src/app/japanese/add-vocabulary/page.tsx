@@ -24,7 +24,11 @@ export default function AddVocabularyPage() {
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [starred, setStarred] = useState(false);
   const { showMessage } = useSnackbar();
-  const isKanji = categories.find(cat => cat.id === categoryId)?.name.trim().toLowerCase() === "kanji";
+  const isKanji =
+    categories
+      .find((cat) => cat.id === categoryId)
+      ?.name.trim()
+      .toLowerCase() === "kanji";
 
   // Fetch categories from API
   useEffect(() => {
@@ -47,10 +51,12 @@ export default function AddVocabularyPage() {
         setCategories(data.categories);
         if (data.categories.length > 0) setCategoryId(data.categories[0]?.id || null);
       } catch (err: unknown) {
-        showMessage(`Failed to load categories: ${err instanceof Error ? err.message : String(err)}`);
+        showMessage(
+          `Failed to load categories: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
-    };
-    
+    }
+
     loadCategories();
   }, []);
 
@@ -79,11 +85,12 @@ export default function AddVocabularyPage() {
       const data = await res.json().catch(() => null);
       if (!res.ok || data?.success !== true) {
         const message = [data?.error, data?.message].find(
-          (value) => typeof value === "string" && value.trim()
+          (value) => typeof value === "string" && value.trim(),
         );
-        const fallback = res.status === 401 || res.status === 403
-          ? "Your session may have expired. Please sign in again."
-          : `The server could not save this vocabulary (HTTP ${res.status}). Please try again.`;
+        const fallback =
+          res.status === 401 || res.status === 403
+            ? "Your session may have expired. Please sign in again."
+            : `The server could not save this vocabulary (HTTP ${res.status}). Please try again.`;
         showMessage(`Unable to add vocabulary: ${message || fallback}`);
         return;
       }
@@ -96,7 +103,9 @@ export default function AddVocabularyPage() {
       setSelectedVerbType(null);
       setStarred(false);
     } catch {
-      showMessage("Unable to add vocabulary. Could not reach the server. Check your connection and try again.");
+      showMessage(
+        "Unable to add vocabulary. Could not reach the server. Check your connection and try again.",
+      );
     }
   };
 
@@ -116,17 +125,14 @@ export default function AddVocabularyPage() {
         <div className="flex justify-start">
           <Link
             href="/japanese/vocabulary"
-              className="flex items-center gap-1 text-gray-500 hover:text-gray-700 cursor-pointer mr-4"
+            className="flex items-center gap-1 text-gray-500 hover:text-gray-700 cursor-pointer mr-4"
           >
             <ArrowLeftIcon className="w-5 h-5" /> Back
           </Link>
         </div>
 
         <div className="flex items-center justify-center gap-2">
-          <h2
-            className="text-2xl font-bold"
-            style={{ color: "var(--color-foreground)" }}
-          >
+          <h2 className="text-2xl font-bold" style={{ color: "var(--color-foreground)" }}>
             Add New Vocabulary
           </h2>
 
@@ -181,7 +187,10 @@ export default function AddVocabularyPage() {
             <label className="block mb-1">Category:</label>
             <select
               value={categoryId ?? ""}
-              onChange={(e) => {setCategoryId(Number(e.target.value)); setSelectedVerbType(null);}}
+              onChange={(e) => {
+                setCategoryId(Number(e.target.value));
+                setSelectedVerbType(null);
+              }}
               required
               className="w-full border rounded px-3 py-2 focus:outline-none"
               style={{
@@ -198,7 +207,10 @@ export default function AddVocabularyPage() {
             </select>
           </div>
 
-          {categories.find((cat) => cat.id === categoryId)?.name.trim().toLowerCase() === "verb" && (
+          {categories
+            .find((cat) => cat.id === categoryId)
+            ?.name.trim()
+            .toLowerCase() === "verb" && (
             <div className="mt-4">
               <label className="block mb-2">Verb Ending Type:</label>
               <div className="flex flex-wrap gap-4">

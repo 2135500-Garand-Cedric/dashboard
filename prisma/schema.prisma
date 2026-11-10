@@ -150,7 +150,9 @@ model Todo {
   relationsAsSecond TodoRelation[] @relation("RelationSecond")
 
   subtasks     Subtask[]
-  events       Event[] 
+  events       Event[]
+  calendarLinks EventTaskLink[]
+  eventConversions WorkEventConversion[]
 
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
@@ -235,6 +237,14 @@ model Subtask {
 }
 
 model Event {
+  kind String @default("ORDINARY") @db.VarChar(30)
+  busy Boolean?
+  timeZone String? @db.VarChar(100)
+  allDayStart String? @db.VarChar(10)
+  allDayEnd String? @db.VarChar(10)
+  taskLinks EventTaskLink[]
+  conversions WorkEventConversion[]
+  workActivity WorkEventActivity[]
   revision     Int      @default(1)
   id           Int      @id @default(autoincrement())
   title        String
@@ -943,4 +953,51 @@ model WorkFollowUp {
   successor WorkFollowUp? @relation("FollowUpChain")
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   @@index([todoId, status])
+}
+
+model EventTaskLink {
+  eventId Int
+  todoId Int
+  role String @default("RELATED") @db.VarChar(30)
+  origin String @default("USER")
+  legacyReviewReason String?
+  event Event @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  todo Todo @relation(fields: [todoId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+  @@id([eventId, todoId])
+  @@index([todoId])
+}
+model WorkEventConversion {
+  id Int @id @default(autoincrement())
+  eventId Int?
+  sourceEventId Int
+  event Event? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  todoId Int
+  todo Todo @relation(fields: [todoId], references: [id], onDelete: Restrict)
+  mode String
+  active Boolean @default(true)
+  intentHash String @db.VarChar(64)
+  sourceSnapshot Json
+  beforeDeadline Json
+  afterDeadline Json
+  deadlineChanged Boolean
+  eventRevisionAfter Int
+  taskRevisionAfter Int
+  createdTask Boolean
+  createdAt DateTime @default(now())
+  undoneAt DateTime?
+  @@index([eventId, active])
+  @@index([todoId])
+}
+model WorkEventActivity {
+  id Int @id @default(autoincrement())
+  eventId Int?
+  event Event? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  sourceEventId Int
+  userId Int
+  actorGithubId String
+  action String
+  changes Json
+  createdAt DateTime @default(now())
+  @@index([eventId, createdAt])
 }

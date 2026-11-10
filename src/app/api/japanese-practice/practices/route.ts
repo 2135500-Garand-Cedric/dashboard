@@ -41,8 +41,11 @@ export async function GET() {
   } catch (error: unknown) {
     console.error(error);
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Unable to load practices" },
-      { status: 500 }
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Unable to load practices",
+      },
+      { status: 500 },
     );
   }
 }

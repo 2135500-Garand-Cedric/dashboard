@@ -4,8 +4,8 @@
 
 Updated: 2026-11-10 (America/Toronto).
 
-Phases 01–06 are implemented and verified in development. Production is untouched.
-Next assignment: Phase 07, which has not started. The architecture is not a production migration approval.
+Phases 01–07 are implemented and verified in development. Production is untouched.
+Next assignment: Phase 08, which has not started. The architecture is not a production migration approval.
 
 | Phase | Status | Evidence |
 | --- | --- | --- |
@@ -16,7 +16,7 @@ Next assignment: Phase 07, which has not started. The architecture is not a prod
 | 04 | Verified in development | See Phase 04 evidence below and OPERATIONS.md |
 | 05 | Verified in development | See Phase 05 evidence below and OPERATIONS.md |
 | 06 | Verified in development | See Phase 06 evidence below and OPERATIONS.md |
-| 07 | Not started | — |
+| 07 | Verified in development | See Phase 07 evidence below and OPERATIONS.md |
 | 08 | Not started | — |
 | 09 | Not started | — |
 | 10 | Not started | — |
@@ -1062,3 +1062,136 @@ writes before injecting a completion-audit failure: all changes rolled back.
 Isolated test app/database were stopped without deleting volumes/evidence;
 development remains running. Documentation fences and final whitespace check passed.
 Phase 06 is complete in development. Phase 07 has not started.
+
+
+## Phase 07 — Existing calendar integration (2026-11-10)
+
+Implemented only Phase 07, plus the requested development examples. Phase 08 is
+not started. The existing `/events` page, Event IDs/detail URLs, activity labels,
+completion and TBD behavior remain. Event kind (ordinary / informational / work
+session) is separate from its existing ActivityType label/color. Busy/free is
+explicit; old rows retain unknown availability and their original timed values.
+
+### Sources and relationships
+
+- `Todo` remains canonical. Calendar deadlines, active follow-ups and key dates
+  are bounded projections of their original records, never additional Events.
+  Stable typed IDs and source links prevent confusing a deadline with an event.
+- `EventTaskLink` is authoritative. The central event service writes links and
+  updates the compatibility `linkedTodoId` mirror only for one association. Old
+  scalar mutations delegate to that service and reject ambiguous multi-links.
+  Backfill preserves the original pair as RELATED / LEGACY, never a session.
+- Work sessions reuse Event.date/endDate with exactly one explicit owned target;
+  several sessions and related tasks are allowed. Server and deferred DB checks
+  enforce valid timing/target. Task deletion cannot orphan a session target or
+  conversion ledger; normal archival preserves events. Event deletion keeps tasks.
+- All-day ranges have explicit calendar dates and exclusive ends. Legacy SQL
+  timestamp(3) values use the existing Prisma UTC convention and were not cast,
+  rewritten or guessed to be all-day. Metadata-only editing preserves exact
+  legacy instants, including milliseconds.
+- The owner-only feed has explicit range/layer/context/size bounds. Month, Week
+  and Day share the existing calendar; matching FullCalendar v6 timegrid/luxon3
+  plugins supply usable timed sessions and named-zone rendering. Markers have
+  labels/icons, open their source forms and cannot masquerade as duration blocks.
+- Session drag/resize proposes an explicitly confirmed Event-only move; forms
+  provide touch/keyboard alternatives. Neither session completion nor elapsed
+  time completes tasks. Closure offers future-session review, preserves sessions,
+  hides actionable dates, and optionally displays closed date history. Reopening
+  keeps the original deadline. Future-session revisions invalidate stale closure
+  decisions.
+- Conversion is preview/confirm with version and intent checks under the existing
+  owner lock and retry receipt. Users explicitly retain a real related event or
+  supersede a deadline placeholder. Source snapshot, original ID and decisions
+  survive; repeated/concurrent confirmation creates one result. Undo keeps the
+  task and links, never restores stale event fields, and restores a prior deadline
+  only if its task has not subsequently changed. An explicit alternative keeps
+  the current task deadline. Cross-owner legacy anomalies require review first.
+- Rechecked recurrence: no existing recurrence model/engine was found. None added.
+
+### Preservation and cutover evidence
+
+Full development DB backup: private/work-management/phase07-dev-before.dump.
+Initial `phase07-dev-before.json` and fresh `phase07-dev-cutover-before.json`
+matched exactly. A fresh isolated database restored from that dump matched all
+original row fingerprints, IDs, timestamps, relations and balances.
+
+Migration `20261111120000_calendar_work_layers` applied first on the restored
+copy, then explicitly on development while its app was stopped. Both comparisons
+with inventory `--phase 07` reported **no original differences and no issues**.
+Original 3 tasks, 5 checklist rows, 17 events, 1 existing note and all unrelated
+finance/Japanese records survived. One legacy link became a RELATED / LEGACY
+edge; no dates/statuses/rewards were inferred. The conversion/activity tables
+started empty. Repeated deployment on the isolated copy had no pending migrations
+and identical row fingerprints. Read-only schema diff showed only the pre-existing
+ActivityVocab.lastPracticed drift; no suggested DROP was executed.
+
+The development image was rebuilt with the plugins and the app recreated with a
+fresh anonymous dependency volume. Named database/private-file volumes remained.
+Development is running with all 33 migrations applied. Production was untouched.
+
+### Requested development examples
+
+The opt-in `seed:work-examples` command was first rehearsed on the copy, then run
+on development with ALLOW_WORK_EXAMPLES=1. It added **14 labelled tasks, nine
+new events**, two synthetic contacts, checklist/child/dependency examples, one
+active follow-up, two informational key dates and a synthetic note. Zero rewards.
+Examples cover School/Work/Personal, urgent undated work, Waiting, Done/Cancelled,
+appointments versus preparation deadlines, multiple sessions, a related-task
+session, all-day birthday/reading week, TBD and cross-month work.
+
+Only exact, unlinked, unchanged rows from the original calendar demo seed were
+eligible for alteration: **nine verified samples updated; two deadline
+placeholders explicitly converted**, preserving their IDs and source snapshots.
+The nonmatching old sample and all non-example records were left alone. This is
+an explicitly requested example update, separate from the lossless migration.
+The existing seed now recognizes this manifest and cannot recreate the replaced
+placeholders. No automatic seed was introduced.
+
+`phase07-dev-after-examples.json` was checked against the post-migration inventory:
+every original non-example row still matched, including User balances and all
+original tasks/notes and unrelated module data. Repeating the command returned
+reused=true; `phase07-dev-final.json` showed no differences/issues/pending migrations.
+Per-month deterministic command receipts make partial retries resumable and
+completed runs no-ops, including after subsequent user edits.
+
+### Executed verification
+
+- `node --test tests/*.test.mjs`: **28 test files passed**, no skips/failures.
+- Serial isolated DB suites including `work-calendar.integration.mjs` and all
+  previous task/event regressions: **68 TAP checks passed**, no skips/failures.
+  Covered source isolation, ownership, one/multi-links, legacy compatibility,
+  backfill retry, DB constraints, ranges/limits/filters, all-day/DST/cross-month,
+  session closure/history/stale decisions, retained/superseded conversions,
+  concurrency/replay, safe undo after later edits and late-failure rollback.
+- `RUN_WORK_EXAMPLE_TEST=1` example integration test passed, including exact
+  preservation of original non-example rows and repeat-load fingerprints.
+- All seven work browser suites passed serially at 390×844, 844×390, 1440×900 and
+  2560×1440. New calendar suite used real DB/API, UTC server and Tokyo browser;
+  additionally rerun for actual pointer-drag confirmation, source-marker keyboard
+  navigation, native all-day entry, metadata-only millisecond preservation and
+  conversion/undo. No runtime page errors. Screenshots are local /tmp artifacts.
+- Live development `RUN_AUTH_HTTP_TEST=1`: **128 protected handlers**, denied
+  identities/anonymous/forged sessions, page redirects and owner reads passed,
+  including the aggregate feed and per-task calendar. Preview did not save practice.
+- Final-source isolated `npm run build`, development Docker image build, source
+  TypeScript and whitespace checks passed. Targeted ESLint for changed source,
+  scripts and tests passed, excluding existing CommonJS prisma/seed.js (its
+  pre-existing require imports fail that lint rule; node --check passed).
+  Full-repository lint is not claimed clean.
+
+Commands, link ownership, example and recovery procedures are in OPERATIONS.md.
+Acceptance coverage for this phase is recorded in ACCEPTANCE.md. Limitations:
+Chromium emulation is not physical-phone/Safari testing; no production deployment
+or recovery was performed; no recurrence, notifications, external calendar, project
+or My Work phase was added. Existing dependency audit findings were not fixed as
+part of this calendar scope. Stop here; next assignment is Phase 08.
+
+### Phase 07 finalization after interruption
+
+The final calendar browser rerun passed all four sizes (54 seconds, no runtime
+page errors), including long-label containment. The final-source isolated Next
+build and final changed UI/test lint passed. Documentation fences and whitespace
+passed. The isolated Phase 07 browser app and database were stopped without
+removing their volumes/evidence; development app/database remain running. The
+existing user change to the development banner in AppShell.tsx was preserved.
+Phase 07 is complete in development; Phase 08 remains unstarted.

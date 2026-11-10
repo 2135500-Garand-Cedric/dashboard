@@ -7,12 +7,21 @@ import { listIncomeConfig, saveIncomeConfig } from "@/lib/finance/income-setting
 export async function GET(request: Request) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  try { return NextResponse.json(await listIncomeConfig(true), { headers: financeHeaders }); }
-  catch (error) { return financeError(error, "load income settings"); }
+  try {
+    return NextResponse.json(await listIncomeConfig(true), { headers: financeHeaders });
+  } catch (error) {
+    return financeError(error, "load income settings");
+  }
 }
 export async function POST(request: Request) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  try { return NextResponse.json(await saveIncomeConfig(true, incomeConfigInput(await request.json(), true)), { status: 201, headers: financeHeaders }); }
-  catch (error) { return financeError(error, "create the income setting"); }
+  try {
+    return NextResponse.json(
+      await saveIncomeConfig(true, incomeConfigInput(await request.json(), true)),
+      { status: 201, headers: financeHeaders },
+    );
+  } catch (error) {
+    return financeError(error, "create the income setting");
+  }
 }

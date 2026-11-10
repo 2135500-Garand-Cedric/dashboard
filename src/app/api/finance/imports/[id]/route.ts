@@ -11,20 +11,42 @@ type Context = { params: Promise<{ id: string }> };
 export async function GET(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  try { return NextResponse.json({ batch: await getStatement(financeId((await context.params).id)) }, { headers: financeHeaders }); }
-  catch (error) { return transactionError(error, "load the statement import"); }
+  try {
+    return NextResponse.json(
+      { batch: await getStatement(financeId((await context.params).id)) },
+      { headers: financeHeaders },
+    );
+  } catch (error) {
+    return transactionError(error, "load the statement import");
+  }
 }
 export async function PATCH(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  try { return NextResponse.json({ batch: await updateStatement(financeId((await context.params).id), await statementJson(request)) }, { headers: financeHeaders }); }
-  catch (error) { return transactionError(error, "save statement review"); }
+  try {
+    return NextResponse.json(
+      {
+        batch: await updateStatement(
+          financeId((await context.params).id),
+          await statementJson(request),
+        ),
+      },
+      { headers: financeHeaders },
+    );
+  } catch (error) {
+    return transactionError(error, "save statement review");
+  }
 }
 export async function DELETE(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
   try {
-    await deleteStatement(financeId((await context.params).id), Number(request.headers.get("If-Match")));
+    await deleteStatement(
+      financeId((await context.params).id),
+      Number(request.headers.get("If-Match")),
+    );
     return NextResponse.json({ success: true }, { headers: financeHeaders });
-  } catch (error) { return transactionError(error, "delete the draft import"); }
+  } catch (error) {
+    return transactionError(error, "delete the draft import");
+  }
 }

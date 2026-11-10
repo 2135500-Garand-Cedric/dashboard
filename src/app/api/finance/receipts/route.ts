@@ -9,8 +9,13 @@ export const runtime = "nodejs";
 export async function GET(request: Request) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  try { return NextResponse.json(await listReceipts(new URL(request.url).searchParams), { headers: financeHeaders }); }
-  catch (error) { return receiptError(error, "load receipts"); }
+  try {
+    return NextResponse.json(await listReceipts(new URL(request.url).searchParams), {
+      headers: financeHeaders,
+    });
+  } catch (error) {
+    return receiptError(error, "load receipts");
+  }
 }
 export async function POST(request: Request) {
   const accessError = await requireOwner(request);
@@ -18,6 +23,11 @@ export async function POST(request: Request) {
   try {
     const form = await receiptFormData(request);
     const result = await saveReceipt(receiptInput(form.details), form.file);
-    return NextResponse.json(result, { status: result.replayed ? 200 : 201, headers: financeHeaders });
-  } catch (error) { return receiptError(error, "save the receipt"); }
+    return NextResponse.json(result, {
+      status: result.replayed ? 200 : 201,
+      headers: financeHeaders,
+    });
+  } catch (error) {
+    return receiptError(error, "save the receipt");
+  }
 }

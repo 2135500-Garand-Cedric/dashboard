@@ -48,7 +48,7 @@ export async function GET() {
   });
 
   // Flatten for frontend
-  const quests = userQuests.map(uq => ({
+  const quests = userQuests.map((uq) => ({
     id: uq.quest.id,
     title: uq.quest.title,
     type: uq.quest.type,
@@ -60,4 +60,3 @@ export async function GET() {
 
   return NextResponse.json(quests);
 }
-

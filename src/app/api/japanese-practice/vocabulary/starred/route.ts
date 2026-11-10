@@ -17,7 +17,7 @@ export async function GET() {
     console.error("Failed to get starred count:", err);
     return NextResponse.json(
       { success: false, error: err.message || "Unknown error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

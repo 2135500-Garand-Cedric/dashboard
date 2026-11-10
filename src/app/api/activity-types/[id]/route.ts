@@ -50,10 +50,14 @@ export async function DELETE(_: Request, context: Context) {
 
   const { id } = await context.params;
   const activityType = await prisma.activityType.findUnique({ where: { id: Number(id) } });
-  if (!activityType) return NextResponse.json({ error: "Activity type not found" }, { status: 404 });
+  if (!activityType)
+    return NextResponse.json({ error: "Activity type not found" }, { status: 404 });
 
-  await workTransaction(async db => {
-    await db.event.updateMany({ where: { userId: WORK_USER_ID, type: activityType.name }, data: { type: null, revision: { increment: 1 } } });
+  await workTransaction(async (db) => {
+    await db.event.updateMany({
+      where: { userId: WORK_USER_ID, type: activityType.name },
+      data: { type: null, revision: { increment: 1 } },
+    });
     await db.activityType.delete({ where: { id: Number(id) } });
   });
 

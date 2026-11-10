@@ -7,10 +7,21 @@ type Context = { params: Promise<{ id: string; noteId: string }> };
 export async function PATCH(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  return workResponse(async () => { const params = await context.params; return patchNote(workId(params.id), workId(params.noteId), await workNoteJson(request), workCommand(request)); });
+  return workResponse(async () => {
+    const params = await context.params;
+    return patchNote(
+      workId(params.id),
+      workId(params.noteId),
+      await workNoteJson(request),
+      workCommand(request),
+    );
+  });
 }
 export async function DELETE(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  return workResponse(async () => { const params = await context.params; return removeNote(workId(params.id), workId(params.noteId), workCommand(request)); });
+  return workResponse(async () => {
+    const params = await context.params;
+    return removeNote(workId(params.id), workId(params.noteId), workCommand(request));
+  });
 }

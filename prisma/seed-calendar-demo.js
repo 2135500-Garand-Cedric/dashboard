@@ -2,10 +2,23 @@
 module.exports = async function seedCalendarDemo(prisma, user, now = new Date()) {
   if (process.env.NODE_ENV !== "development") return;
   const month = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Toronto", year: "numeric", month: "2-digit",
+    timeZone: "America/Toronto",
+    year: "numeric",
+    month: "2-digit",
   }).formatToParts(now);
   const year = month.find((part) => part.type === "year").value;
   const monthNumber = month.find((part) => part.type === "month").value;
+  // An explicitly upgraded dataset owns its identified examples; never recreate
+  // renamed/superseded legacy placeholders on a later general seed run.
+  if (
+    await prisma.workMutationReceipt.findFirst({
+      where: {
+        userId: user.id,
+        operation: { in: ["work-examples:source-plan", "work-examples:complete"] },
+      },
+    })
+  )
+    return;
   const examples = [
     [3, 16, "Weekly planning", "personal", null, false],
     [6, 18, "Japanese conversation practice", "course", null, false],
@@ -21,16 +34,29 @@ module.exports = async function seedCalendarDemo(prisma, user, now = new Date())
     [28, 18, "Monthly review", "personal", null, false],
   ];
   // Use a UTC timestamp so seeding stays independent of the container timezone.
-  const at = (day, hour) => new Date(`${year}-${monthNumber}-${String(day).padStart(2, "0")}T${String(hour).padStart(2, "0")}:00:00Z`);
+  const at = (day, hour) =>
+    new Date(
+      `${year}-${monthNumber}-${String(day).padStart(2, "0")}T${String(hour).padStart(2, "0")}:00:00Z`,
+    );
   for (const [day, hour, name, type, endDay, completed] of examples) {
     const title = name;
-    const existing = await prisma.event.findFirst({ where: { userId: user.id, title, date: at(day, hour) } });
+    const existing = await prisma.event.findFirst({
+      where: { userId: user.id, title, date: at(day, hour) },
+    });
     if (existing) continue;
-    await prisma.event.create({ data: {
-      userId: user.id, title, description: "Sample calendar event for development.",
-      date: at(day, hour), endDate: endDay ? at(endDay, hour) : null,
-      type: { course: "JPN2902", task: "CSI2101", personal: "Personal" }[type], completed,
-    } });
+    await prisma.event.create({
+      data: {
+        userId: user.id,
+        title,
+        description: "Sample calendar event for development.",
+        date: at(day, hour),
+        endDate: endDay ? at(endDay, hour) : null,
+        type: { course: "JPN2902", task: "CSI2101", personal: "Personal" }[type],
+        completed,
+      },
+    });
   }
-  console.log(`Created or verified ${examples.length} calendar samples for ${year}-${monthNumber}.`);
+  console.log(
+    `Created or verified ${examples.length} calendar samples for ${year}-${monthNumber}.`,
+  );
 };

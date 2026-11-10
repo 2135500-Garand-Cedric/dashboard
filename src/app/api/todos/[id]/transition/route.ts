@@ -5,5 +5,10 @@ export const runtime = "nodejs";
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  return workResponse(async () => readTransition(workId((await context.params).id), new URL(request.url).searchParams), 200, "load");
+  return workResponse(
+    async () =>
+      readTransition(workId((await context.params).id), new URL(request.url).searchParams),
+    200,
+    "load",
+  );
 }

@@ -6,5 +6,16 @@ type Context = { params: Promise<{ id: string; noteId: string }> };
 export async function GET(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  return workResponse(async () => { const params = await context.params; return noteRevisions(workId(params.id), workId(params.noteId), new URL(request.url).searchParams); }, 200, "load");
+  return workResponse(
+    async () => {
+      const params = await context.params;
+      return noteRevisions(
+        workId(params.id),
+        workId(params.noteId),
+        new URL(request.url).searchParams,
+      );
+    },
+    200,
+    "load",
+  );
 }

@@ -6,7 +6,13 @@ import { VERB_TYPES } from "@/lib/japanese/conjugation";
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { PencilSquareIcon, CheckIcon, TrashIcon, ArrowLeftIcon, Bars3Icon } from "@heroicons/react/24/solid";
+import {
+  PencilSquareIcon,
+  CheckIcon,
+  TrashIcon,
+  ArrowLeftIcon,
+  Bars3Icon,
+} from "@heroicons/react/24/solid";
 import { StarIcon as StarSolidIcon } from "@heroicons/react/24/solid";
 import { StarIcon as StarOutlineIcon } from "@heroicons/react/24/outline";
 import { useSnackbar } from "@/context/SnackbarContext";
@@ -15,7 +21,7 @@ type VerbForm = {
   id: number;
   formType: string;
   form: string;
-  reading: string;     
+  reading: string;
   worst_status: string;
   percentage: string;
 };
@@ -134,7 +140,13 @@ export default function VocabularyEditPage() {
           english: englishDraft,
           japanese: japaneseDraft,
           hiragana: readingsDraft[0],
-          readings: categories.find(cat => cat.id === categoryDraft)?.name.trim().toLowerCase() === "kanji" ? readingsDraft : readingsDraft.slice(0, 1),
+          readings:
+            categories
+              .find((cat) => cat.id === categoryDraft)
+              ?.name.trim()
+              .toLowerCase() === "kanji"
+              ? readingsDraft
+              : readingsDraft.slice(0, 1),
           categoryId: categoryDraft,
           starred: starredDraft,
           verbType: selectedVerbType,
@@ -151,7 +163,9 @@ export default function VocabularyEditPage() {
       await loadVocabulary();
       showMessage("Vocabulary updated successfully!");
     } catch (err: unknown) {
-      showMessage(`Failed to update vocabulary: ${err instanceof Error ? err.message : String(err)}`);
+      showMessage(
+        `Failed to update vocabulary: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   };
 
@@ -209,47 +223,48 @@ export default function VocabularyEditPage() {
               </button>
             )}
 
-            {!editMode && vocab.categoryId && categories.find(c => c.id === vocab.categoryId)?.name.toLowerCase() === "verb" && (
-              <button
-                onClick={() => setShowVerbForms(!showVerbForms)}
-                className="flex items-center gap-1 border rounded px-3 py-1 hover:bg-gray-100 hover:text-black cursor-pointer"
-              >
-                <Bars3Icon className="w-5 h-5" />
-                Forms
-              </button>
-            )}
+            {!editMode &&
+              vocab.categoryId &&
+              categories.find((c) => c.id === vocab.categoryId)?.name.toLowerCase() === "verb" && (
+                <button
+                  onClick={() => setShowVerbForms(!showVerbForms)}
+                  className="flex items-center gap-1 border rounded px-3 py-1 hover:bg-gray-100 hover:text-black cursor-pointer"
+                >
+                  <Bars3Icon className="w-5 h-5" />
+                  Forms
+                </button>
+              )}
           </div>
         </div>
 
         <div className="flex items-center justify-between mb-2">
           <div className="flex-1 flex justify-center items-center gap-2">
-          {editMode ? (
-            <>
-              <input
-                value={englishDraft}
-                onChange={(e) => setEnglishDraft(e.target.value)}
-                className="text-lg font-semibold border rounded px-3 py-1 flex-1 text-center"
-              />
-              <button onClick={() => setStarredDraft(!starredDraft)} className="ml-2">
-                {starredDraft ? (
+            {editMode ? (
+              <>
+                <input
+                  value={englishDraft}
+                  onChange={(e) => setEnglishDraft(e.target.value)}
+                  className="text-lg font-semibold border rounded px-3 py-1 flex-1 text-center"
+                />
+                <button onClick={() => setStarredDraft(!starredDraft)} className="ml-2">
+                  {starredDraft ? (
+                    <StarSolidIcon className="w-6 h-6 text-yellow-400" />
+                  ) : (
+                    <StarOutlineIcon className="w-6 h-6 text-gray-400" />
+                  )}
+                </button>
+              </>
+            ) : (
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-semibold">{vocab.english}</h1>
+                {vocab.starred ? (
                   <StarSolidIcon className="w-6 h-6 text-yellow-400" />
                 ) : (
                   <StarOutlineIcon className="w-6 h-6 text-gray-400" />
                 )}
-              </button>
-            </>
-          ) : (
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-semibold">{vocab.english}</h1>
-              {vocab.starred ? (
-                <StarSolidIcon className="w-6 h-6 text-yellow-400" />
-              ) : (
-                <StarOutlineIcon className="w-6 h-6 text-gray-400" />
-              )}
-            </div>
-          )}
+              </div>
+            )}
           </div>
-
         </div>
 
         {/* Details */}
@@ -270,7 +285,16 @@ export default function VocabularyEditPage() {
           <div>
             <label className="block text-sm text-gray-500 mb-1">Hiragana</label>
             {editMode ? (
-              <VocabularyReadingsInput values={readingsDraft} onChange={setReadingsDraft} multiple={categories.find(cat => cat.id === categoryDraft)?.name.trim().toLowerCase() === "kanji"} />
+              <VocabularyReadingsInput
+                values={readingsDraft}
+                onChange={setReadingsDraft}
+                multiple={
+                  categories
+                    .find((cat) => cat.id === categoryDraft)
+                    ?.name.trim()
+                    .toLowerCase() === "kanji"
+                }
+              />
             ) : (
               <p>{vocabularyReadings(vocab).join(" / ")}</p>
             )}
@@ -332,17 +356,19 @@ export default function VocabularyEditPage() {
                 </div>
               ) : (
                 <p>
-                  {VERB_TYPES.find(type => type.value === vocab.verbType)?.label ?? "No verb type selected"}
+                  {VERB_TYPES.find((type) => type.value === vocab.verbType)?.label ??
+                    "No verb type selected"}
                 </p>
               )}
             </div>
           )}
           {/* Kanji gif (only if category is Kanji) */}
-          {typeof window !== "undefined" && categories.find((c) => c.id === vocab.categoryId)?.name === "Kanji" && (
-            <div className="mt-2">
-              <KanjiImage key={vocab.japanese} japanese={vocab.japanese} />
-            </div>
-          )}
+          {typeof window !== "undefined" &&
+            categories.find((c) => c.id === vocab.categoryId)?.name === "Kanji" && (
+              <div className="mt-2">
+                <KanjiImage key={vocab.japanese} japanese={vocab.japanese} />
+              </div>
+            )}
         </div>
       </div>
 

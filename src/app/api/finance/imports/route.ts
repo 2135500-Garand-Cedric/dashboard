@@ -9,8 +9,13 @@ export const runtime = "nodejs";
 export async function GET(request: Request) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  try { return NextResponse.json(await listStatements(new URL(request.url).searchParams), { headers: financeHeaders }); }
-  catch (error) { return transactionError(error, "load statement imports"); }
+  try {
+    return NextResponse.json(await listStatements(new URL(request.url).searchParams), {
+      headers: financeHeaders,
+    });
+  } catch (error) {
+    return transactionError(error, "load statement imports");
+  }
 }
 export async function POST(request: Request) {
   const accessError = await requireOwner(request);
@@ -18,6 +23,11 @@ export async function POST(request: Request) {
   try {
     const form = await statementUpload(request);
     const result = await createStatement(form.input.accountId, form.parsed, form.file);
-    return NextResponse.json(result, { status: result.reused ? 200 : 201, headers: financeHeaders });
-  } catch (error) { return transactionError(error, "upload the statement CSV"); }
+    return NextResponse.json(result, {
+      status: result.reused ? 200 : 201,
+      headers: financeHeaders,
+    });
+  } catch (error) {
+    return transactionError(error, "upload the statement CSV");
+  }
 }

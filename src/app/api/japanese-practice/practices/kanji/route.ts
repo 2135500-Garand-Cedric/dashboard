@@ -12,9 +12,10 @@ export async function GET() {
     const kanjiDir = path.join(process.cwd(), "public/kanji");
 
     // Read all files in the folder
-    const files = fs.readdirSync(kanjiDir)
-      .filter((f) => f.endsWith(".gif"))       // only GIFs
-      .map((f) => f.replace(".gif", ""));      // strip extension
+    const files = fs
+      .readdirSync(kanjiDir)
+      .filter((f) => f.endsWith(".gif")) // only GIFs
+      .map((f) => f.replace(".gif", "")); // strip extension
 
     return NextResponse.json({ success: true, kanji: files });
   } catch (err: any) {

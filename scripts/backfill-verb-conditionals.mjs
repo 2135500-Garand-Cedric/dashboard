@@ -7,7 +7,12 @@ const verbTypes = ["ru", "u", "suru", "kuru", "honorific"];
 
 export async function backfill(prisma, conjugateVerb, { apply = false, log = console.log } = {}) {
   const verbs = await prisma.vocabulary.findMany({
-    where: { OR: [{ verbType: { not: null } }, { category: { name: { equals: "verb", mode: "insensitive" } } }] },
+    where: {
+      OR: [
+        { verbType: { not: null } },
+        { category: { name: { equals: "verb", mode: "insensitive" } } },
+      ],
+    },
     include: { verbForms: { include: { formType: true, activityVocab: true } } },
     orderBy: { id: "asc" },
   });
@@ -20,8 +25,16 @@ export async function backfill(prisma, conjugateVerb, { apply = false, log = con
     try {
       if (!verbTypes.includes(verbType)) throw new Error("missing or unsupported verb type");
       if (!japanese || !hiragana) throw new Error("missing Japanese spelling or reading");
-      const ending = verbType === "suru" ? "する" : verbType === "kuru" ? "くる" : (verbType === "ru" || verbType === "honorific") ? "る" : null;
-      if (ending && !hiragana.endsWith(ending)) throw new Error(`reading does not end in ${ending}`);
+      const ending =
+        verbType === "suru"
+          ? "する"
+          : verbType === "kuru"
+            ? "くる"
+            : verbType === "ru" || verbType === "honorific"
+              ? "る"
+              : null;
+      if (ending && !hiragana.endsWith(ending))
+        throw new Error(`reading does not end in ${ending}`);
       const forms = conjugateVerb(japanese, hiragana, verbType);
       let missingForms = 0;
       let missingLinks = 0;
@@ -29,10 +42,14 @@ export async function backfill(prisma, conjugateVerb, { apply = false, log = con
         if (!forms[name]) throw new Error(`conjugator did not produce ${name}`);
         const existing = verb.verbForms.find((form) => form.formType.name === name);
         if (!existing) missingForms += 1;
-        missingLinks += activities.filter((activity) => !existing?.activityVocab.some((link) => link.activityId === activity.id)).length;
+        missingLinks += activities.filter(
+          (activity) => !existing?.activityVocab.some((link) => link.activityId === activity.id),
+        ).length;
       }
       if (missingForms || missingLinks) {
-        log(`Verb ${verb.id} (${japanese}): ${missingForms} missing forms, ${missingLinks} missing practice records`);
+        log(
+          `Verb ${verb.id} (${japanese}): ${missingForms} missing forms, ${missingLinks} missing practice records`,
+        );
         prepared.push({ id: verb.id, forms });
         summary.affected += 1;
         summary.forms += missingForms;
@@ -46,18 +63,29 @@ export async function backfill(prisma, conjugateVerb, { apply = false, log = con
 
   if (apply) {
     // Register the types even if this database has not run the data migration yet.
-    const types = await Promise.all(formNames.map((name) => prisma.verbFormType.upsert({
-      where: { name }, update: {},
-      create: { name, description: name === "ba" ? "ば conditional form" : "なければ negative conditional form" },
-    })));
+    const types = await Promise.all(
+      formNames.map((name) =>
+        prisma.verbFormType.upsert({
+          where: { name },
+          update: {},
+          create: {
+            name,
+            description:
+              name === "ba" ? "ば conditional form" : "なければ negative conditional form",
+          },
+        }),
+      ),
+    );
     summary.forms = 0;
     summary.practiceRecords = 0;
     for (const verb of prepared) {
       const result = await prisma.$transaction(async (tx) => {
         const created = await tx.verbForm.createMany({
           data: types.map((type) => ({
-            baseVocabId: verb.id, formTypeId: type.id,
-            form: verb.forms[type.name].form, reading: verb.forms[type.name].reading,
+            baseVocabId: verb.id,
+            formTypeId: type.id,
+            form: verb.forms[type.name].form,
+            reading: verb.forms[type.name].reading,
           })),
           skipDuplicates: true,
         });
@@ -66,9 +94,13 @@ export async function backfill(prisma, conjugateVerb, { apply = false, log = con
           select: { id: true },
         });
         const links = await tx.activityVocab.createMany({
-          data: forms.flatMap((form) => activities.map((activity) => ({
-            verbFormId: form.id, activityId: activity.id, status: "WEAK",
-          }))),
+          data: forms.flatMap((form) =>
+            activities.map((activity) => ({
+              verbFormId: form.id,
+              activityId: activity.id,
+              status: "WEAK",
+            })),
+          ),
           skipDuplicates: true,
         });
         return { forms: created.count, links: links.count };
@@ -77,32 +109,45 @@ export async function backfill(prisma, conjugateVerb, { apply = false, log = con
       summary.practiceRecords += result.links;
     }
   }
-  log(`${apply ? "APPLIED" : "DRY RUN"}: ${summary.scanned} verbs scanned, ${summary.affected} affected, ${summary.forms} forms ${apply ? "added" : "missing"}, ${summary.practiceRecords} practice records ${apply ? "added" : "missing"}, ${summary.skipped} skipped.`);
+  log(
+    `${apply ? "APPLIED" : "DRY RUN"}: ${summary.scanned} verbs scanned, ${summary.affected} affected, ${summary.forms} forms ${apply ? "added" : "missing"}, ${summary.practiceRecords} practice records ${apply ? "added" : "missing"}, ${summary.skipped} skipped.`,
+  );
   return summary;
 }
 
 async function main() {
   const args = process.argv.slice(2);
-  if (args.some((arg) => !["--apply", "--dry-run"].includes(arg)) || (args.includes("--apply") && args.includes("--dry-run"))) {
+  if (
+    args.some((arg) => !["--apply", "--dry-run"].includes(arg)) ||
+    (args.includes("--apply") && args.includes("--dry-run"))
+  ) {
     throw new Error("Usage: npm run backfill:verb-conditionals -- [--dry-run | --apply]");
   }
   // Use the same TypeScript conjugator as the app, including future corrections.
   const { default: ts } = await import("typescript");
-  const source = fs.readFileSync(new URL("../src/lib/japanese/conjugation.ts", import.meta.url), "utf8");
-  const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
+  const source = fs.readFileSync(
+    new URL("../src/lib/japanese/conjugation.ts", import.meta.url),
+    "utf8",
+  );
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS },
+  }).outputText;
   const moduleExports = {};
   new Function("exports", compiled)(moduleExports);
   const { PrismaClient } = await import("../src/generated/prisma/index.js");
   const prisma = new PrismaClient();
   try {
-    const result = await backfill(prisma, moduleExports.conjugateVerb, { apply: args.includes("--apply") });
+    const result = await backfill(prisma, moduleExports.conjugateVerb, {
+      apply: args.includes("--apply"),
+    });
     if (result.skipped) process.exitCode = 2;
   } finally {
     await prisma.$disconnect();
   }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch((error) => {
-  console.error(error.message);
-  process.exitCode = 1;
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+  main().catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });

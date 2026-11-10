@@ -22,9 +22,12 @@ async function ensureActivityVocab(activityId, vocabId, status) {
     where: { activityId, vocabId },
   });
 
-  return existing || prisma.activityVocab.create({
-    data: { activityId, vocabId, status },
-  });
+  return (
+    existing ||
+    prisma.activityVocab.create({
+      data: { activityId, vocabId, status },
+    })
+  );
 }
 
 async function ensureVerbActivityVocab(activityId, verbFormId, status) {
@@ -32,9 +35,12 @@ async function ensureVerbActivityVocab(activityId, verbFormId, status) {
     where: { activityId, verbFormId },
   });
 
-  return existing || prisma.activityVocab.create({
-    data: { activityId, verbFormId, status },
-  });
+  return (
+    existing ||
+    prisma.activityVocab.create({
+      data: { activityId, verbFormId, status },
+    })
+  );
 }
 
 async function main() {
@@ -43,25 +49,36 @@ async function main() {
 
   if (!user) {
     user = await prisma.user.create({
-      data: userCount === 0
-        ? {
-            id: 1,
-            email: userEmail,
-            name: "Cedric Garand",
-            totalXp: 245,
-            coins: 80,
-          }
-        : {
-            email: userEmail,
-            name: "Cedric Garand",
-            totalXp: 245,
-            coins: 80,
-          },
+      data:
+        userCount === 0
+          ? {
+              id: 1,
+              email: userEmail,
+              name: "Cedric Garand",
+              totalXp: 245,
+              coins: 80,
+            }
+          : {
+              email: userEmail,
+              name: "Cedric Garand",
+              totalXp: 245,
+              coins: 80,
+            },
     });
   }
 
-  if (user.id === 1 && await prisma.financialDeductionType.count({ where: { userId: 1 } }) === 0) {
-    await prisma.financialDeductionType.createMany({ data: ["Income tax", "QPP/CPP", "EI", "QPIP", "Other deductions"].map(name => ({ userId: 1, name, normalizedName: name.toLocaleLowerCase("en-CA") })), skipDuplicates: true });
+  if (
+    user.id === 1 &&
+    (await prisma.financialDeductionType.count({ where: { userId: 1 } })) === 0
+  ) {
+    await prisma.financialDeductionType.createMany({
+      data: ["Income tax", "QPP/CPP", "EI", "QPIP", "Other deductions"].map((name) => ({
+        userId: 1,
+        name,
+        normalizedName: name.toLocaleLowerCase("en-CA"),
+      })),
+      skipDuplicates: true,
+    });
   }
 
   const activities = [
@@ -84,8 +101,9 @@ async function main() {
     [3, "Vocabulary"],
     [4, "Daily phrases"],
   ]) {
-    const category = await prisma.category.findUnique({ where: { id } }) ||
-      await prisma.category.create({ data: { id, name } });
+    const category =
+      (await prisma.category.findUnique({ where: { id } })) ||
+      (await prisma.category.create({ data: { id, name } }));
     categories[name] = category;
   }
 
@@ -110,11 +128,7 @@ async function main() {
     { title: "Complete one practice session", type: "daily", xp: 60, coins: 15 },
     { title: "Finish three dashboard tasks", type: "weekly", xp: 150, coins: 40 },
   ]) {
-    const quest = await findOrCreate(
-      prisma.quest,
-      { title: questData.title },
-      questData
-    );
+    const quest = await findOrCreate(prisma.quest, { title: questData.title }, questData);
     quests.push(quest);
   }
 
@@ -166,26 +180,40 @@ async function main() {
 
   const todos = [];
   for (const data of todoData) {
-    todos.push(await findOrCreate(
-      prisma.todo,
-      { userId: user.id, title: data.title },
-      { ...data, userId: user.id }
-    ));
+    todos.push(
+      await findOrCreate(
+        prisma.todo,
+        { userId: user.id, title: data.title },
+        { ...data, userId: user.id },
+      ),
+    );
   }
 
   // Relationships are created through the canonical graph commands in the UI.
   // Seeding must never overwrite existing prerequisites or a multi-edge graph.
 
   for (const [todo, subtasks] of [
-    [todos[0], [["Read the example sentences", true], ["Practice the starred words", false]]],
+    [
+      todos[0],
+      [
+        ["Read the example sentences", true],
+        ["Practice the starred words", false],
+      ],
+    ],
     [todos[1], [["Review the calendar", false]]],
-    [todos[2], [["Start PostgreSQL", true], ["Run the migrations", true]]],
+    [
+      todos[2],
+      [
+        ["Start PostgreSQL", true],
+        ["Run the migrations", true],
+      ],
+    ],
   ]) {
     for (const [title, done] of subtasks) {
       await findOrCreate(
         prisma.subtask,
         { todoId: todo.id, title },
-        { todoId: todo.id, title, done }
+        { todoId: todo.id, title, done },
       );
     }
   }
@@ -202,7 +230,7 @@ async function main() {
       description: "Review the completed dashboard setup task.",
       date: daysFromNow(3, 10),
       type: "task",
-      linkedTodoId: todos[2].id,
+      // Related tasks are linked through the canonical event commands.
     },
     {
       title: "Weekend planning",
@@ -220,7 +248,7 @@ async function main() {
     await findOrCreate(
       prisma.event,
       { userId: user.id, title: eventData.title },
-      { ...eventData, userId: user.id }
+      { ...eventData, userId: user.id },
     );
   }
 
@@ -275,15 +303,27 @@ async function main() {
 
   // Known characters and mixed-category words for testing kanji writing.
   const knownKanjiExamples = [
-    ["学", "がく", "study"], ["校", "こう", "school kanji"],
-    ["食", "しょく", "food"], ["見", "けん", "seeing"],
-    ["読", "どく", "reading"], ["書", "しょ", "writing"],
-    ["本", "ほん", "book"], ["日", "にち", "day"],
-    ["友", "とも", "friend"], ["生", "せい", "life"],
-    ["勉", "べん", "effort"], ["強", "きょう", "strong"],
+    ["学", "がく", "study"],
+    ["校", "こう", "school kanji"],
+    ["食", "しょく", "food"],
+    ["見", "けん", "seeing"],
+    ["読", "どく", "reading"],
+    ["書", "しょ", "writing"],
+    ["本", "ほん", "book"],
+    ["日", "にち", "day"],
+    ["友", "とも", "friend"],
+    ["生", "せい", "life"],
+    ["勉", "べん", "effort"],
+    ["強", "きょう", "strong"],
   ];
   for (const [japanese, hiragana, english] of knownKanjiExamples) {
-    vocabularyData.push({ english, japanese, hiragana, categoryId: categories.Kanji.id, starred: false });
+    vocabularyData.push({
+      english,
+      japanese,
+      hiragana,
+      categoryId: categories.Kanji.id,
+      starred: false,
+    });
   }
   const mixedExamples = [
     ["school (compound)", "学校", "がっこう"],
@@ -299,12 +339,27 @@ async function main() {
     ["looking at a book", "本を見る", "ほんをみる"],
   ];
   for (const [english, japanese, hiragana] of mixedExamples) {
-    vocabularyData.push({ english, japanese, hiragana, categoryId: categories.Vocabulary.id, starred: false });
+    vocabularyData.push({
+      english,
+      japanese,
+      hiragana,
+      categoryId: categories.Vocabulary.id,
+      starred: false,
+    });
   }
   for (const [english, japanese, hiragana] of [
-    ["to see", "見る", "みる"], ["to read", "読む", "よむ"], ["to write", "書く", "かく"],
+    ["to see", "見る", "みる"],
+    ["to read", "読む", "よむ"],
+    ["to write", "書く", "かく"],
   ]) {
-    vocabularyData.push({ english, japanese, hiragana, categoryId: categories.Verb.id, verbType: japanese === "見る" ? "ru" : "u", starred: false });
+    vocabularyData.push({
+      english,
+      japanese,
+      hiragana,
+      categoryId: categories.Verb.id,
+      verbType: japanese === "見る" ? "ru" : "u",
+      starred: false,
+    });
   }
 
   const vocabulary = {};
@@ -312,13 +367,17 @@ async function main() {
     const word = await findOrCreate(
       prisma.vocabulary,
       { english: data.english, hiragana: data.hiragana, userId: user.id },
-      { ...data, userId: user.id }
+      { ...data, userId: user.id },
     );
     vocabulary[data.english] = word;
 
     const statuses = ["PERFECT", "GOOD", "WEAK", "GOOD", "PERFECT"];
     for (let index = 0; index < activities.length; index += 1) {
-      await ensureActivityVocab(index + 1, word.id, index === 4 && word.categoryId !== categories.Kanji.id ? "WEAK" : statuses[index]);
+      await ensureActivityVocab(
+        index + 1,
+        word.id,
+        index === 4 && word.categoryId !== categories.Kanji.id ? "WEAK" : statuses[index],
+      );
     }
   }
 
@@ -386,7 +445,9 @@ async function main() {
   }
 
   console.log(`Seed complete for ${user.email} (user id ${user.id}).`);
-  console.log("Created or verified dashboard, Japanese practice, quest, todo, event, and practice data.");
+  console.log(
+    "Created or verified dashboard, Japanese practice, quest, todo, event, and practice data.",
+  );
 }
 
 main()

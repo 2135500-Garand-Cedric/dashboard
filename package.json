@@ -10,16 +10,20 @@
     "seed": "node prisma/seed.js",
     "seed:finance-examples": "node scripts/seed-finance-examples.mjs",
     "backfill:verb-conditionals": "node scripts/backfill-verb-conditionals.mjs",
-    "work:inventory": "node scripts/work-management-inventory.mjs"
+    "work:inventory": "node scripts/work-management-inventory.mjs",
+    "seed:work-examples": "node scripts/seed-work-examples.mjs"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.8",
     "@fullcalendar/daygrid": "^6.1.19",
     "@fullcalendar/interaction": "^6.1.19",
+    "@fullcalendar/luxon3": "^6.1.19",
     "@fullcalendar/react": "^6.1.19",
+    "@fullcalendar/timegrid": "^6.1.19",
     "@heroicons/react": "^2.2.0",
     "@prisma/client": "^6.15.0",
     "@tailwindcss/postcss": "^4",
+    "luxon": "^3.7.2",
     "next": "15.5.29",
     "next-auth": "^4.24.11",
     "pdfjs-dist": "6.5.438",

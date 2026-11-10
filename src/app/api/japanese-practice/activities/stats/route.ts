@@ -13,7 +13,11 @@ export async function GET() {
       prisma.activity.findMany(),
       prisma.vocabulary.findMany({
         where: { userId },
-        include: { category: true, activityVocab: true, verbForms: { include: { activityVocab: true } } },
+        include: {
+          category: true,
+          activityVocab: true,
+          verbForms: { include: { activityVocab: true } },
+        },
       }),
     ]);
     const knownKanji = getKnownKanji(vocabulary);
@@ -24,19 +28,31 @@ export async function GET() {
       const values: number[] = [];
       for (const word of vocabulary) {
         if (activity.id === 5 && !isKanjiWritingEligible(word.japanese, knownKanji)) continue;
-        values.push(scores[word.activityVocab.find((link) => link.activityId === activity.id)?.status || "WEAK"] ?? 0);
+        values.push(
+          scores[
+            word.activityVocab.find((link) => link.activityId === activity.id)?.status || "WEAK"
+          ] ?? 0,
+        );
         if (activity.id !== 5) {
           for (const form of word.verbForms) {
-            values.push(scores[form.activityVocab.find((link) => link.activityId === activity.id)?.status || "WEAK"] ?? 0);
+            values.push(
+              scores[
+                form.activityVocab.find((link) => link.activityId === activity.id)?.status || "WEAK"
+              ] ?? 0,
+            );
           }
         }
       }
       const sum = values.reduce((total, score) => total + score, 0);
       globalScore += sum;
       globalCount += values.length;
-      return { activityId: activity.id, activity: activity.activity, percentage: (values.length ? sum / values.length * 100 : 0).toFixed(2) };
+      return {
+        activityId: activity.id,
+        activity: activity.activity,
+        percentage: (values.length ? (sum / values.length) * 100 : 0).toFixed(2),
+      };
     });
-    const overallPercentage = (globalCount ? globalScore / globalCount * 100 : 0).toFixed(2);
+    const overallPercentage = (globalCount ? (globalScore / globalCount) * 100 : 0).toFixed(2);
     return NextResponse.json({ success: true, stats, overallPercentage });
   } catch (error) {
     console.error(error);

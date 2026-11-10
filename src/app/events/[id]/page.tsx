@@ -1,305 +1,243 @@
 "use client";
-
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createWorkWriter, workRead } from "@/lib/work-management/client";
 import { useParams, useRouter } from "next/navigation";
-import {
-  PencilSquareIcon,
-  CheckIcon,
-  ArrowLeftIcon,
-  TrashIcon,
-} from "@heroicons/react/24/solid";
-import { useSnackbar } from "@/context/SnackbarContext";
-import { useMemory } from "@/context/MemoryContext";
-import { formatEventRange, toLocalDateTime, validateEventDates } from "@/lib/event-dates";
-
-type Todo = { id: number; title: string; done: boolean };
-type EventItem = {
-  revision: number;
-  id: number;
-  title: string;
-  completed: boolean;
-  description?: string | null;
-  date?: string | null;
-  endDate?: string | null;
-  type?: string | null;
-  linkedTodo?: Todo | null;
-};
-type ActivityType = { id: number; name: string; color: string; active: boolean };
-
+import { workRead, createWorkWriter } from "@/lib/work-management/client";
+import { eventTiming, type CalendarEvent } from "@/lib/work-management/calendar-types";
+import EventForm from "@/components/calendar/EventForm";
+import EventConversion from "@/components/calendar/EventConversion";
+const button = "rounded-lg border border-card-border px-3 py-2 text-sm disabled:opacity-50";
 export default function EventPage() {
-  const params = useParams();
-  const eventId = Number(params.id);
-  const currentId = useRef(eventId);
-  currentId.current = eventId;
-  const loadGeneration = useRef(0);
-  const router = useRouter();
-  const { get } = useMemory();
-
-  const write = useRef(createWorkWriter());
-  const [loadError, setLoadError] = useState("");
-  const [event, setEvent] = useState<EventItem | null>(null);
-  const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
-  const [editMode, setEditMode] = useState(false);
-  const [titleDraft, setTitleDraft] = useState("");
-  const [descDraft, setDescDraft] = useState("");
-  const [typeDraft, setTypeDraft] = useState<string | null>("");
-  const [dateDraft, setDateDraft] = useState("");
-  const [endDateDraft, setEndDateDraft] = useState("");
-  const [saveError, setSaveError] = useState("");
-  const [completionSaving, setCompletionSaving] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const { showMessage } = useSnackbar();
-
-  const getColorForType = (type?: string | null) => {
-    return activityTypes.find((activityType) => activityType.name.toLowerCase() === type?.toLowerCase())?.color || "#9ca3af";
-  };
-
-  const loadEvent = useCallback(async () => {
-    if (currentId.current !== eventId) return;
-    const generation = ++loadGeneration.current;
-    const [data, types] = await Promise.all([workRead<EventItem>(`/api/events/${eventId}`), workRead<ActivityType[]>("/api/activity-types")]);
-    if (generation !== loadGeneration.current || currentId.current !== eventId) return;
-    setActivityTypes(types);
-
-    setEvent(data);
-    setTitleDraft(data.title);
-    setDescDraft(data.description || "");
-    setTypeDraft(data.type || "");
-
-    setDateDraft(toLocalDateTime(data.date));
-    setEndDateDraft(toLocalDateTime(data.endDate));
-  }, [eventId]);
-
-  useEffect(() => {
-    setLoadError("");
-    void loadEvent().catch(error => { if (currentId.current === eventId) setLoadError(error instanceof Error ? error.message : "Unable to load event."); });
-  }, [loadEvent, eventId]);
-
-  if (!event || event.id !== eventId) return <div className="text-center py-10">{loadError ? <p role="alert">{loadError} <button onClick={() => window.location.reload()} className="underline">Retry</button></p> : "Loading..."}</div>;
-
-  const saveEvent = async () => {
-    const error = validateEventDates(dateDraft || null, endDateDraft || null);
-    if (error) {
-      setSaveError(error);
-      return;
-    }
-    const dateValue = dateDraft ? new Date(dateDraft).toISOString() : null;
-    const endDateValue = endDateDraft ? new Date(endDateDraft).toISOString() : null;
-    setSaveError("");
-    setSaving(true);
+  const params = useParams(),
+    router = useRouter(),
+    id = Number(params.id),
+    [event, setEvent] = useState<CalendarEvent | null>(null),
+    [editing, setEditing] = useState(false),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false),
+    [activity, setActivity] = useState<{ id: number; action: string; createdAt: string }[]>([]);
+  const writer = useRef(createWorkWriter()),
+    lock = useRef(false),
+    generation = useRef(0);
+  const currentId = useRef(id);
+  if (currentId.current !== id) {
+    currentId.current = id;
+    generation.current++;
+  }
+  const load = useCallback(async () => {
+    setError("");
     try {
-      await write.current(`/api/events/${eventId}`, "PATCH", { title: titleDraft, description: descDraft, type: typeDraft, date: dateValue, endDate: endDateValue }, event.revision);
-      setEditMode(false);
-      await loadEvent();
+      const version = ++generation.current;
+      const result = await workRead<CalendarEvent>(`/api/events/${id}`);
+      if (version === generation.current) setEvent(result);
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "Unable to save event. Please try again.");
-    } finally {
-      setSaving(false);
+      setError(error instanceof Error ? error.message : "Unable to load event.");
     }
-  };
-
-  const toggleCompletion = async () => {
-    setCompletionSaving(true);
+  }, [id]);
+  useEffect(() => {
+    setEditing(false);
+    void load();
+  }, [load]);
+  async function perform(action: () => Promise<void>) {
+    if (lock.current) return;
+    lock.current = true;
+    setBusy(true);
+    setError("");
     try {
-      const updated = await write.current<EventItem>(`/api/events/${eventId}`, "PATCH", { completed: !event.completed }, event.revision);
-      if (currentId.current === eventId) setEvent(updated);
-    } catch {
-      showMessage("Unable to update event completion. Please try again.");
+      await action();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to update event.");
     } finally {
-      setCompletionSaving(false);
+      lock.current = false;
+      setBusy(false);
     }
-  };
-
-  const deleteEvent = async () => {
-    if (confirm("Are you sure you want to delete this event?")) {
-      setSaving(true);
-      try {
-        await write.current(`/api/events/${eventId}`, "DELETE", undefined, event.revision);
-        showMessage("Event deleted successfully"); router.push("/events");
-      } catch (error) { showMessage(error instanceof Error ? error.message : "Unable to delete event."); }
-      finally { setSaving(false); }
-    }
-  };
-
-  const createLinkedTodo = async () => {
-    if (saving) return;
-    setSaving(true);
-    try {
-      const title = `${titleDraft} (from event)`;
-      await write.current(`/api/events/${eventId}/create-todo`, "POST", { title }, event.revision);
-      await loadEvent();
-    } catch (error) { showMessage(error instanceof Error ? error.message : "Unable to create linked task."); }
-    finally { setSaving(false); }
-  };
-
+  }
   return (
-    <div className="flex justify-center px-4 py-8">
-      <div className="w-full max-w-3xl bg-[var(--card-bg)] border border-[var(--card-border)] rounded-xl p-6 shadow">
-        {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+    <div className="mx-auto min-w-0 max-w-5xl space-y-5 pb-8 pt-12 md:pt-4">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <Link href="/events" className={button}>
+          ← Calendar
+        </Link>
+        <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => router.push(get("prev_page", "/events"))}
-            className="flex items-center gap-1 text-gray-500 hover:text-gray-700 cursor-pointer mr-4"
+            type="button"
+            disabled={busy || editing}
+            onClick={() => void load()}
+            className={button}
           >
-            <ArrowLeftIcon className="w-5 h-5" /> Back
+            Reload event
           </button>
-
-          <div className="min-w-0 flex-1 flex justify-center items-center gap-2">
-            {editMode ? (
-              <input
-                value={titleDraft}
-                onChange={(e) => setTitleDraft(e.target.value)}
-                className="min-w-0 w-full text-lg font-semibold border rounded px-3 py-1 flex-1 text-center"
-              />
-            ) : (
-              <h1 className={`text-xl font-semibold ${event.completed ? "line-through text-gray-500" : ""}`}>{event.title}</h1>
-            )}
-          </div>
-
-          <div className="flex gap-2 ml-4">
-            <button
-              onClick={async () => {
-                if (editMode) await saveEvent();
-                else setEditMode(true);
-              }}
-              disabled={saving}
-              className="flex items-center gap-1 border rounded px-3 py-1 disabled:opacity-50 hover:bg-gray-100 hover:text-black cursor-pointer"
-            >
-              {editMode ? (
-                <>
-                  <CheckIcon className="w-5 h-5 text-green-600" />
-                  Save
-                </>
-              ) : (
-                <>
-                  <PencilSquareIcon className="w-5 h-5" />
-                  Edit
-                </>
-              )}
-            </button>
-
-            {!editMode && (
+          {event?.id === id && !editing && (
+            <>
               <button
-                disabled={saving || completionSaving}
-                onClick={deleteEvent}
-                className="flex items-center gap-1 border rounded px-3 py-1 transition hover:bg-red-100 hover:text-red-600 cursor-pointer"
+                type="button"
+                disabled={busy}
+                onClick={() => setEditing(true)}
+                className={button}
               >
-                <TrashIcon className="w-5 h-5" />
-                Delete
+                Edit event
               </button>
-            )}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-          <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm font-medium ${event.completed ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "bg-accent/10 text-accent"}`}>
-            {event.completed ? "✓ Completed" : "Open"}
-          </span>
-          <button type="button" onClick={() => void toggleCompletion()} disabled={completionSaving || saving}
-            aria-pressed={event.completed}
-            className="rounded-lg border border-card-border px-3 py-2 text-sm hover:bg-accent/10 disabled:opacity-50 cursor-pointer">
-            {completionSaving ? "Saving…" : event.completed ? "Mark incomplete" : "Mark completed"}
-          </button>
-        </div>
-
-        {/* Event details */}
-        <div className="mb-6 space-y-4">
-          {/* Description */}
-          <div>
-            <label className="block text-sm text-gray-500 mb-1">Description</label>
-            {editMode ? (
-              <textarea
-                value={descDraft}
-                onChange={(e) => setDescDraft(e.target.value)}
-                className="w-full border rounded px-3 py-2"
-                rows={4}
-              />
-            ) : (
-              <p className="text-gray-700">{event.description || "No description"}</p>
-            )}
-          </div>
-
-          {/* Type */}
-          <div>
-            <label className="block text-sm text-gray-500 mb-1">Type</label>
-            {editMode ? (
-              <select
-                value={typeDraft ?? ""}
-                onChange={(e) => setTypeDraft(e.target.value)}
-                className="w-full border rounded px-3 py-2 bg-white text-gray-900 cursor-pointer"
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Delete only this event/session? Linked tasks and conversion history will remain.",
+                    )
+                  )
+                    void perform(async () => {
+                      await writer.current(
+                        `/api/events/${id}`,
+                        "DELETE",
+                        undefined,
+                        event.revision,
+                      );
+                      router.push("/events");
+                    });
+                }}
+                className={`${button} text-rose-500`}
               >
-                <option value="">None</option>
-                {activityTypes
-                  .filter((activityType) => activityType.active || activityType.name.toLowerCase() === typeDraft?.toLowerCase())
-                  .map((activityType) => (
-                    <option key={activityType.id} value={activityType.name}>{activityType.name}</option>
-                  ))}
-              </select>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: getColorForType(event.type) }}
-                />
-                <span className="text-gray-700">{event.type || "None"}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Start and optional end */}
-          {editMode ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <label className="block text-sm">
-                <span className="block text-gray-500 mb-1">Start date and time</span>
-                <input
-                  type="datetime-local"
-                  value={dateDraft}
-                  onChange={(e) => setDateDraft(e.target.value)}
-                  className="w-full min-w-0 border rounded px-3 py-2"
-                />
-              </label>
-              <label className="block text-sm">
-                <span className="block text-gray-500 mb-1">End date and time (optional)</span>
-                <input
-                  type="datetime-local"
-                  value={endDateDraft}
-                  min={dateDraft || undefined}
-                  onChange={(e) => setEndDateDraft(e.target.value)}
-                  className="w-full min-w-0 border rounded px-3 py-2"
-                />
-              </label>
-              {saveError && <p role="alert" className="text-sm text-red-600 sm:col-span-2">{saveError}</p>}
-            </div>
-          ) : (
-            <div>
-              <div className="block text-sm text-gray-500 mb-1">Date and time</div>
-              <p>{formatEventRange(event.date, event.endDate)}</p>
-            </div>
+                Delete event
+              </button>
+            </>
           )}
-
-          {/* Linked Todo */}
-          <div>
-            <label className="block text-sm text-gray-500 mb-1">Linked Todo</label>
-            {event.linkedTodo ? (
-              <button
-                onClick={() => router.push(`/todos/${event.linkedTodo!.id}`)}
-                className="text-blue-600 hover:underline cursor-pointer"
-              >
-                {event.linkedTodo.title}
-              </button>
-            ) : (
-              <button
-                disabled={saving || completionSaving}
-                onClick={createLinkedTodo}
-                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
-              >
-                Create linked todo
-              </button>
-            )}
-          </div>
         </div>
-      </div>
+      </header>
+      {error && (
+        <p role="alert" className="break-words text-rose-500">
+          {error}
+        </p>
+      )}
+      {!event || event.id !== id ? (
+        <p role="status">Loading event…</p>
+      ) : editing ? (
+        <EventForm
+          key={event.revision}
+          event={event}
+          timeZone={event.appTimeZone}
+          onSaved={(updated) => {
+            setEvent(updated);
+            setEditing(false);
+          }}
+          onCancel={() => setEditing(false)}
+        />
+      ) : (
+        <>
+          <article className="space-y-5 rounded-xl border border-card-border bg-card-bg p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h1
+                className={`min-w-0 break-words text-2xl font-semibold ${event.completed ? "line-through text-gray-500" : ""}`}
+              >
+                {event.title}
+              </h1>
+              <span className="rounded-full bg-blue-500/10 px-3 py-1 text-sm">
+                {event.kind === "WORK_SESSION"
+                  ? "▣ Work session"
+                  : event.kind === "INFORMATIONAL"
+                    ? "ⓘ Informational event"
+                    : "○ Event"}
+              </span>
+            </div>
+            <p className="break-words">{eventTiming(event)}</p>
+            <p className="text-sm text-gray-500">
+              Activity label: {event.type || "None"} · Availability:{" "}
+              {event.busy === null ? "Not specified" : event.busy ? "Busy" : "Free"}
+            </p>
+            <p className="whitespace-pre-wrap break-words text-sm">
+              {event.description || "No description"}
+            </p>
+            {event.kind === "WORK_SESSION" && (
+              <p className="text-sm text-gray-500">
+                This reserves time to work. Passing its end or marking the session completed never
+                completes the task.
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-3">
+              <span>{event.completed ? "✓ Completed" : "Open"}</span>
+              <button
+                type="button"
+                disabled={busy}
+                aria-pressed={event.completed}
+                onClick={() =>
+                  void perform(async () =>
+                    setEvent(
+                      await writer.current<CalendarEvent>(
+                        `/api/events/${id}`,
+                        "PATCH",
+                        { completed: !event.completed },
+                        event.revision,
+                      ),
+                    ),
+                  )
+                }
+                className={button}
+              >
+                {event.completed ? "Mark incomplete" : "Mark completed"}
+              </button>
+            </div>
+            <section
+              aria-label="Linked tasks"
+              className="space-y-3 border-t border-card-border pt-4"
+            >
+              <h2 className="font-medium">Linked tasks</h2>
+              {!event.taskLinks.length && (
+                <p className="text-sm text-gray-500">
+                  No linked tasks. Edit the event to link existing tasks.
+                </p>
+              )}
+              <ul className="space-y-3">
+                {event.taskLinks.map((link) => (
+                  <li key={link.todoId} className="space-y-1">
+                    <p className="text-xs text-gray-500">
+                      {link.role === "SESSION_TARGET" ? "Session task" : "Related task"}
+                      {link.reviewReason ? ` · Needs review: ${link.reviewReason}` : ""}
+                    </p>
+                    {link.task.status ? (
+                      <Link
+                        href={`/todos/${link.todoId}`}
+                        className="break-words text-sm text-blue-400 underline"
+                      >
+                        {link.task.reference} · {link.task.title}
+                      </Link>
+                    ) : (
+                      <p>Unavailable legacy task</p>
+                    )}
+                    <p className="text-xs text-gray-500">
+                      {link.task.status}
+                      {link.task.archivedAt ? " · Archived" : ""}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          </article>
+          <EventConversion
+            key={`${event.id}-${event.revision}`}
+            event={event}
+            onChanged={setEvent}
+          />
+          <details className="rounded-xl border border-card-border bg-card-bg p-4">
+            <summary
+              className="cursor-pointer"
+              onClick={() => {
+                void workRead<typeof activity>(`/api/events/${id}/activity`)
+                  .then(setActivity)
+                  .catch((error) => setError(error.message));
+              }}
+            >
+              Event activity
+            </summary>
+            <ul className="mt-3 space-y-2 text-sm">
+              {activity.map((item) => (
+                <li key={item.id}>
+                  {item.action.replaceAll("_", " ")} · {new Date(item.createdAt).toISOString()}
+                </li>
+              ))}
+            </ul>
+          </details>
+        </>
+      )}
     </div>
   );
 }

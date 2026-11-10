@@ -30,7 +30,7 @@ export default function SideMenu() {
   const onMenuClick = () => {
     clear();
     setIsOpen(false);
-  }
+  };
 
   return (
     <>
@@ -57,10 +57,7 @@ export default function SideMenu() {
             className="flex items-center justify-between p-4 border-b"
             style={{ borderColor: "var(--color-card-border)" }}
           >
-            <h1
-              className="text-lg font-bold"
-              style={{ color: "var(--color-foreground)" }}
-            >
+            <h1 className="text-lg font-bold" style={{ color: "var(--color-foreground)" }}>
               Dashboard Menu
             </h1>
             <button
@@ -81,12 +78,8 @@ export default function SideMenu() {
                   href={item.href}
                   className="flex items-center p-2 rounded transition space-x-2"
                   style={{ color: "var(--color-foreground)" }}
-                  onMouseOver={(e) =>
-                    (e.currentTarget.style.backgroundColor = "var(--accent)/10")
-                  }
-                  onMouseOut={(e) =>
-                    (e.currentTarget.style.backgroundColor = "transparent")
-                  }
+                  onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "var(--accent)/10")}
+                  onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
                   onClick={() => onMenuClick()}
                 >
                   <Icon className="w-5 h-5" />

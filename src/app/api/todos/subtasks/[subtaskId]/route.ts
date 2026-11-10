@@ -6,10 +6,18 @@ type Context = { params: Promise<{ subtaskId: string }> };
 export async function PATCH(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  return workResponse(async () => changeSubtask(workId((await context.params).subtaskId), await request.json(), workCommand(request)));
+  return workResponse(async () =>
+    changeSubtask(
+      workId((await context.params).subtaskId),
+      await request.json(),
+      workCommand(request),
+    ),
+  );
 }
 export async function DELETE(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  return workResponse(async () => changeSubtask(workId((await context.params).subtaskId), {}, workCommand(request), true));
+  return workResponse(async () =>
+    changeSubtask(workId((await context.params).subtaskId), {}, workCommand(request), true),
+  );
 }

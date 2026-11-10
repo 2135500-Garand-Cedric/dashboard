@@ -8,10 +8,20 @@ type Context = { params: Promise<{ id: string; attachmentId: string }> };
 export async function PATCH(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  return workResponse(async () => { const params = await context.params, id = workId(params.id), attachmentId = workId(params.attachmentId), command = workCommand(request); await getTodo(id); return uploadAttachment(id, await workUpload(request), command, attachmentId); });
+  return workResponse(async () => {
+    const params = await context.params,
+      id = workId(params.id),
+      attachmentId = workId(params.attachmentId),
+      command = workCommand(request);
+    await getTodo(id);
+    return uploadAttachment(id, await workUpload(request), command, attachmentId);
+  });
 }
 export async function DELETE(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  return workResponse(async () => { const params = await context.params; return removeAttachment(workId(params.id), workId(params.attachmentId), workCommand(request)); });
+  return workResponse(async () => {
+    const params = await context.params;
+    return removeAttachment(workId(params.id), workId(params.attachmentId), workCommand(request));
+  });
 }

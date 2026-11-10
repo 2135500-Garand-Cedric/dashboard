@@ -7,13 +7,14 @@ import { prisma } from "@/lib/prisma";
 import { recordJapaneseProgress } from "@/lib/japanese/progress-history";
 import { conjugateVerb, VerbConjugationError } from "@/lib/japanese/conjugation";
 import { calculateActivityStats } from "@/lib/japanese/utils"; // import the util
-import { getKnownKanji, isKanjiWritingEligible, getApplicableActivityIds } from "@/lib/japanese/kanji-writing";
+import {
+  getKnownKanji,
+  isKanjiWritingEligible,
+  getApplicableActivityIds,
+} from "@/lib/japanese/kanji-writing";
 import { ActivityVocabStatus, type Prisma } from "@/generated/prisma";
 
-export async function GET(
-  req: Request,
-  context: { params: Promise<{ id: string }> }
-) {
+export async function GET(req: Request, context: { params: Promise<{ id: string }> }) {
   const accessError = await requireOwner(req);
   if (accessError) return accessError;
 
@@ -21,10 +22,7 @@ export async function GET(
     const { id } = await context.params;
     const vocabId = Number(id);
     if (isNaN(vocabId)) {
-      return NextResponse.json(
-        { success: false, error: "Invalid vocabulary ID" },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: "Invalid vocabulary ID" }, { status: 400 });
     }
 
     const userId = 1; // TODO: replace with session logic
@@ -48,10 +46,7 @@ export async function GET(
     });
 
     if (!vocab) {
-      return NextResponse.json(
-        { success: false, error: "Vocabulary not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ success: false, error: "Vocabulary not found" }, { status: 404 });
     }
 
     const kanjiVocabulary = await prisma.vocabulary.findMany({
@@ -65,12 +60,19 @@ export async function GET(
     );
 
     // Calculate stats for verb forms if category is Verb
-    let verbFormsResult: { id: number; formType: string; form: string; reading: string; worst_status: string; percentage: string }[] = [];
+    let verbFormsResult: {
+      id: number;
+      formType: string;
+      form: string;
+      reading: string;
+      worst_status: string;
+      percentage: string;
+    }[] = [];
     if (vocab.category?.name.toLowerCase() === "verb") {
       verbFormsResult = vocab.verbForms.map((vf) => {
         const { worstStatus: worst_status, percentage: percentage } = calculateActivityStats(
           vf.activityVocab,
-          getApplicableActivityIds(activityIds, false, true)
+          getApplicableActivityIds(activityIds, false, true),
         );
 
         return {
@@ -102,18 +104,17 @@ export async function GET(
   } catch (error: unknown) {
     console.error(error);
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "An unexpected error occurred" },
-      { status: 500 }
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "An unexpected error occurred",
+      },
+      { status: 500 },
     );
   }
 }
 
-
 // PATCH /api/japanese-practice/vocabulary/[id]
-export async function PATCH(
-  req: Request,
-  context: { params: Promise<{ id: string }> }
-) {
+export async function PATCH(req: Request, context: { params: Promise<{ id: string }> }) {
   const accessError = await requireOwner(req);
   if (accessError) return accessError;
 
@@ -122,10 +123,7 @@ export async function PATCH(
     const vocabId = Number(id);
 
     if (isNaN(vocabId)) {
-      return NextResponse.json(
-        { success: false, error: "Invalid vocabulary ID" },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: "Invalid vocabulary ID" }, { status: 400 });
     }
 
     const body = await req.json();
@@ -142,9 +140,20 @@ export async function PATCH(
         throw new Error("Vocabulary not found");
       }
 
-      const category = await tx.category.findUnique({ where: { id: categoryId ?? existing.categoryId ?? 0 } });
+      const category = await tx.category.findUnique({
+        where: { id: categoryId ?? existing.categoryId ?? 0 },
+      });
       const isKanji = category?.name.trim().toLowerCase() === "kanji";
-      const readingInput = body.readings !== undefined ? body.readings : (hiragana !== undefined ? [hiragana] : isKanji ? (existing.readings.length ? existing.readings : [existing.hiragana]) : [existing.hiragana]);
+      const readingInput =
+        body.readings !== undefined
+          ? body.readings
+          : hiragana !== undefined
+            ? [hiragana]
+            : isKanji
+              ? existing.readings.length
+                ? existing.readings
+                : [existing.hiragana]
+              : [existing.hiragana];
       const readings = validateReadings(readingInput, hiragana ?? existing.hiragana, isKanji);
       hiragana = readings[0];
       // 2️⃣ Detect changes
@@ -182,14 +191,9 @@ export async function PATCH(
       });
 
       // 6️⃣ Determine if we need to regenerate verb forms
-      const isVerb =
-        (categoryId ?? existing.categoryId) === 1 &&
-        (verbType ?? existing.verbType);
+      const isVerb = (categoryId ?? existing.categoryId) === 1 && (verbType ?? existing.verbType);
 
-      const baseChanged =
-        changes.japanese ||
-        changes.hiragana ||
-        changes.verbType;
+      const baseChanged = changes.japanese || changes.hiragana || changes.verbType;
 
       if (isVerb && baseChanged) {
         const base = japanese ?? existing.japanese;
@@ -244,7 +248,7 @@ export async function PATCH(
               activityId: a.id,
               verbFormId: vf.id,
               status: ActivityVocabStatus.WEAK,
-            }))
+            })),
           ),
         });
       }
@@ -260,17 +264,17 @@ export async function PATCH(
     }
     console.error(error);
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "An unexpected error occurred" },
-      { status: 500 }
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "An unexpected error occurred",
+      },
+      { status: 500 },
     );
   }
 }
 
 // DELETE /api/japanese-practice/vocabulary/[id]
-export async function DELETE(
-  req: Request, 
-  context: { params: Promise<{ id: string }> }
-) {
+export async function DELETE(req: Request, context: { params: Promise<{ id: string }> }) {
   const accessError = await requireOwner(req);
   if (accessError) return accessError;
 
@@ -288,6 +292,12 @@ export async function DELETE(
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     console.error(error);
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "An unexpected error occurred" }, { status: 500 });
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "An unexpected error occurred",
+      },
+      { status: 500 },
+    );
   }
 }

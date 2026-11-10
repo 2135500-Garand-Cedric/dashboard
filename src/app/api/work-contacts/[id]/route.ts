@@ -11,5 +11,7 @@ export async function GET(request: Request, context: Context) {
 export async function PATCH(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  return workResponse(async () => patchWorkContact(workId((await context.params).id), await request.json(), workCommand(request)));
+  return workResponse(async () =>
+    patchWorkContact(workId((await context.params).id), await request.json(), workCommand(request)),
+  );
 }

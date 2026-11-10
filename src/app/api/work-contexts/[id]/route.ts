@@ -5,5 +5,7 @@ import { patchWorkContext } from "@/lib/work-management/server";
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  return workResponse(async () => patchWorkContext(workId((await context.params).id), await request.json(), workCommand(request)));
+  return workResponse(async () =>
+    patchWorkContext(workId((await context.params).id), await request.json(), workCommand(request)),
+  );
 }

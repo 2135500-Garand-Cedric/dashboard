@@ -40,11 +40,19 @@ export default function QuestTile({
     lastSunday.setDate(today.getDate() - today.getDay());
     lastSunday.setHours(0, 0, 0, 0);
 
-    return quests.map(q => {
-      if (q.type === "daily" && q.lastCompleted && new Date(q.lastCompleted).getTime() < today.getTime()) {
+    return quests.map((q) => {
+      if (
+        q.type === "daily" &&
+        q.lastCompleted &&
+        new Date(q.lastCompleted).getTime() < today.getTime()
+      ) {
         return { ...q, completed: false };
       }
-      if (q.type === "weekly" && q.lastCompleted && new Date(q.lastCompleted).getTime() < lastSunday.getTime()) {
+      if (
+        q.type === "weekly" &&
+        q.lastCompleted &&
+        new Date(q.lastCompleted).getTime() < lastSunday.getTime()
+      ) {
         return { ...q, completed: false };
       }
       return q;
@@ -67,12 +75,16 @@ export default function QuestTile({
 
     const data = await res.json();
 
-    setQuests(prev =>
-      prev.map(q =>
+    setQuests((prev) =>
+      prev.map((q) =>
         q.id === quest.id
-          ? { ...q, completed: updatedCompleted, lastCompleted: updatedCompleted ? new Date().toISOString() : null }
-          : q
-      )
+          ? {
+              ...q,
+              completed: updatedCompleted,
+              lastCompleted: updatedCompleted ? new Date().toISOString() : null,
+            }
+          : q,
+      ),
     );
 
     // Update parent XP/coins state
@@ -82,7 +94,9 @@ export default function QuestTile({
     }
   };
 
-  const displayedQuests = quests.filter(q => (showWeekly ? q.type === "weekly" : q.type === "daily"));
+  const displayedQuests = quests.filter((q) =>
+    showWeekly ? q.type === "weekly" : q.type === "daily",
+  );
 
   // 🔹 Compute next weekly reset date (next Sunday)
   const nextSunday = (() => {
@@ -115,12 +129,16 @@ export default function QuestTile({
         </p>
       )}
 
-      <div className={`space-y-3 ${displayedQuests.length > 5 ? "max-h-75 overflow-y-auto pr-1" : ""}`}>
+      <div
+        className={`space-y-3 ${displayedQuests.length > 5 ? "max-h-75 overflow-y-auto pr-1" : ""}`}
+      >
         {displayedQuests.length === 0 && (
-          <div className="text-gray-500 text-sm italic">No {showWeekly ? "weekly" : "daily"} quests</div>
+          <div className="text-gray-500 text-sm italic">
+            No {showWeekly ? "weekly" : "daily"} quests
+          </div>
         )}
 
-        {displayedQuests.map(quest => (
+        {displayedQuests.map((quest) => (
           <div
             key={quest.id}
             className={`p-3 border rounded flex items-center justify-between cursor-pointer transition ${
@@ -136,7 +154,9 @@ export default function QuestTile({
               ) : (
                 <FireIcon className="w-5 h-5 text-red-500" />
               )}
-              <span className={quest.completed ? "line-through text-gray-500" : ""}>{quest.title}</span>
+              <span className={quest.completed ? "line-through text-gray-500" : ""}>
+                {quest.title}
+              </span>
             </div>
             <div className="text-sm text-gray-600">
               +{quest.xp} XP / +{quest.coins} 💰

@@ -10,6 +10,12 @@ export const runtime = "nodejs";
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  try { return NextResponse.json(await commitStatement(financeId((await context.params).id), await statementJson(request)), { headers: financeHeaders }); }
-  catch (error) { return transactionError(error, "commit the statement import"); }
+  try {
+    return NextResponse.json(
+      await commitStatement(financeId((await context.params).id), await statementJson(request)),
+      { headers: financeHeaders },
+    );
+  } catch (error) {
+    return transactionError(error, "commit the statement import");
+  }
 }

@@ -182,3 +182,36 @@ completion, closure hides outstanding indicators, reopen recomputes deadline
 without recreating inactive follow-ups. Calendar projection/work sessions and
 event conversion remain Phase 07. No production, physical phone/Safari, notification
 scheduler or enterprise-scale performance claim is implied.
+
+
+## Phase 07 evidence (2026-11-10)
+
+A01–A07, A18–A22, A28–A29 and A31 were checked in development for the existing
+calendar integration. PROGRESS.md and OPERATIONS.md record commands, artifacts
+and limits. Full restore/migration/repeat-deployment comparisons preserved all
+original row values/IDs/timestamps/relations/balances; the legacy event pair was
+backfilled as RELATED without inventing a session or deadline.
+
+68 serial isolated DB checks and 28 unit-test files passed. Event-only moves,
+independent completion/deletion, canonical multi-links, constrained session
+ownership/targets, bounded typed feed, layers/context/source navigation, all-day
+exclusive ends, DST/cross-month handling, future-session closure review, conversion
+preview/version/concurrency/retry, retained source provenance, safe reversal and
+late-failure rollback were exercised. Conversion never guesses from an event title.
+
+Seven browser suites passed at four phone/desktop sizes; the calendar suite was
+also rerun with actual drag confirmation, native all-day input, keyboard source
+links and exact legacy-instant preservation. Server UTC/browser Tokyo remained
+independent of the configured calendar zone. All 128 protected API handlers and
+owner route reads passed live authorization checks. Final production build,
+TypeScript, targeted source lint and whitespace checks passed (not whole-repo lint).
+
+The requested examples were rehearsed, then explicitly loaded in development:
+14 tasks, nine new events, nine verified sample updates and two preserved-ID
+placeholder conversions. Exact original non-example fingerprints and balances
+were checked. A repeat load changed no records. This authorized example operation
+is distinct from the lossless migration and never runs on application startup.
+
+No production, physical Safari/device, scheduling daemon, recurrence engine,
+external calendar or enterprise performance acceptance is implied. A23–A26 remain
+for their assigned project/My Work phases; Phase 08 was not started.

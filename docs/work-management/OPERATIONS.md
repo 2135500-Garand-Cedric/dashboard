@@ -724,3 +724,164 @@ The known unrelated ActivityVocab.lastPracticed drift is not a reason to drop da
 
 No calendar projection, event conversion, work-session UI, notification job or
 external calendar is implemented here. Those calendar features remain Phase 07.
+
+## Phase 07: existing calendar, work layers and explicit conversion
+
+The existing `/events` calendar remains the only calendar. `Todo` deadlines,
+active `WorkFollowUp` records and nonremoved `WorkKeyDate` records are projected,
+not copied into Event. Their typed IDs (`deadline:42`, `followup:8`, `keydate:9`)
+open `/todos/:id#task-dates`; actual `event:15` opens the original event URL.
+Deadline/follow-up changes use those existing source forms and their versioned
+history. They are point markers, never implicitly reserved day-long work blocks.
+
+### Authoritative event links and timing
+
+`EventTaskLink` is authoritative. All application relationship writes go through
+`event-core.ts` (`writeEventLinks`, legacy adapter, removal/detachment helpers).
+`Event.linkedTodoId` is a compatibility mirror: the sole task ID when exactly one
+link exists, otherwise null. Do not write it directly from SQL, seeds or new API
+code. The legacy scalar API delegates to the same writer, rejects ambiguous
+multi-link edits and cannot silently remove a session target. Link changes touch
+affected task versions and append audit entries. Existing cross-owner anomalies
+remain flagged for review with foreign task details redacted; they are never
+silently reassigned, converted or used as session targets.
+
+Event kind is ORDINARY, INFORMATIONAL or WORK_SESSION, separate from ActivityType
+label/color. Migrated records remain ORDINARY with availability/timezone unknown.
+A session requires start/end, an explicit named zone and exactly one owned
+SESSION_TARGET; other links are RELATED. Partial unique and deferred constraint
+triggers enforce this at transaction commit. Additional sessions for one task
+are separate events. New targets cannot be archived; existing sessions survive
+archival/closure. Hard task deletion is blocked for session targets/conversion
+history rather than silently deleting a session or ledger. Event deletion removes
+its associations, keeps tasks and retains audit/conversion source IDs.
+
+Event.date/endDate remain the sole timed source and preserve the original
+Prisma UTC convention in SQL timestamp(3); the migration does not reinterpret
+stored values. Explicit all-day events instead use allDayStart/allDayEnd date
+strings with an exclusive end (UI asks first/through day). TBD has neither.
+Optional busy=true/false means busy/free; null preserves unknown legacy intent.
+New controls use the Phase 06 APP_TIME_ZONE configuration and DST gap/fold rules.
+Metadata-only edits omit unchanged timing to preserve original precision/instants.
+
+The calendar adds matching installed FullCalendar v6 timegrid and luxon3 plugins:
+Week/Day show actual timed sessions; named-zone rendering stays independent of
+browser/process timezone. Existing daygrid/interaction behavior is reused.
+Session drag/resize immediately reverts the visual proposal, then asks explicit
+confirmation and PATCHes only that Event using its revision. The event editor is
+the touch/keyboard alternative. Event/session completion never completes a task.
+Task closure reviews future linked sessions without cancelling them, and its
+preview token includes those session revisions. Closed-task markers are hidden
+by default; optional history is muted/nonactionable. Reopen keeps the deadline.
+
+### Read and conversion APIs
+
+All new routes use the existing owner guard and private no-store responses:
+
+- GET /api/work-calendar: explicit offset-bearing start/end, positive range at
+  most 370 days, whitelisted layers, context and closed-history filters. At most
+  1,000 records per source and 2,500 aggregate items; narrow the query on 422.
+  TBD events are separate pages of 30. One repeatable-read snapshot supplies the
+  projection. Event contexts derive from explicit related tasks; label names are
+  not guessed to be task contexts. Unlinked items have an explicit filter.
+- GET /api/todos/:id/calendar: owner-scoped associations, 20 per page.
+- GET /api/events/:id/activity: recent owner-scoped event decisions.
+- POST /api/events/:id/conversion/preview: read-only choices and token.
+- POST /api/events/:id/conversion: UUID idempotency key, If-Match and previewToken.
+- POST /api/events/:id/conversion/undo: explicit conversion ID/deadline policy,
+  same mutation/version guards.
+
+Conversion choices distinguish a real retained RELATED event from a PLACEHOLDER
+whose calendar display is explicitly superseded by an explicitly chosen task
+deadline. Exams/meetings are not guessed to be assignments. Choose an existing
+task or title/context for a new one. Preview fingerprints source/link/task state;
+confirm revalidates under the existing owner advisory lock and atomic mutation
+receipt. An active-conversion uniqueness constraint and intent check make retries
+or concurrent confirmations reuse one result. `WorkEventConversion` retains source
+snapshot, original ID, task, before/after deadline, intent and resulting versions;
+`WorkEventActivity` records decisions with owner/actor and server timestamps.
+
+Undo always keeps the task and links. It does not overwrite any event fields.
+Restoring the prior deadline is allowed only while the task revision/value still
+matches the conversion result. If later task edits occurred, the explicit
+alternative restores event display only and keeps the current deadline; both may
+then appear until deliberately corrected. Never bulk-restore source snapshots over
+later edits. Recurrence was rechecked and remains absent; no engine was added.
+
+### Migration, examples and recovery
+
+Migration 20261111120000_calendar_work_layers is transactional and additive;
+linkedTodoId backfills as RELATED/LEGACY, including a review flag for unexpected
+ownership. It creates no deadline, session, fabricated activity or conversion.
+Run preflight inventories and restore/migrate the full backup on a fresh isolated
+DB before cutover. Use inventory --phase 07 and verify original fingerprints and
+backfilled pairs. Do not apply a schema-diff DROP for the known unrelated
+ActivityVocab.lastPracticed drift. No reset, general seed or production operation
+is part of this phase.
+
+Development cutover was completed after a successful whole-DB restore rehearsal.
+The private phase07-dev-before.dump, copy/dev inventories and exact comparison
+artifacts remain under private/work-management/. Both restored-copy and actual
+development migration comparisons had no original differences/issues. Repeated
+isolated deployment changed no records. The rebuilt development image and refreshed
+anonymous dependency volume are running; named DB/work/finance volumes survived.
+
+The user separately requested richer examples. After proving migration
+preservation, the following opt-in command was rehearsed then run in development:
+
+```sh
+docker compose -f docker-compose.dev.yml exec -T -e ALLOW_WORK_EXAMPLES=1 dashboard npm run seed:work-examples
+```
+
+Do not run it on production. It requires NODE_ENV=development and the explicit
+opt-in; the underlying fixture helper also permits guarded disposable tests.
+Per-month deterministic UUID receipts persist completed steps and original sample
+snapshots, resume partial failures and make a completed run a no-op even after
+user edits. There is no automatic monthly job or startup seed. Do not delete its
+receipts to force a repeat. Inspect existing records and receipts before correcting
+a partial failure, then rerun the same command.
+
+It added 14 labelled zero-reward tasks and nine new events, with children,
+checklist/dependency, synthetic contacts/note, deadline/follow-up/key-date,
+closed/cancelled and undated Urgent examples. Nine old verified samples were
+updated; two verified deadline placeholders were explicitly converted with their
+IDs/snapshots retained. Eligibility requires the exact original seed title,
+description, type, start/end, completion and no existing links. Any nonmatching
+row stays unchanged. The original calendar demo seed recognizes the manifest and
+will not recreate superseded/renamed placeholders. Exact post-example checks
+preserved every original non-example row and balance; a repeated run changed
+nothing. This authorized fixture operation is not part of migration backfill.
+
+For failure recovery, stop app writes, retain the failed environment and receipts,
+and restore the full backup into a fresh isolated DB for diagnosis. Preserve
+private-file volumes alongside DB backups according to the existing combined
+backup rules. Do not reset development/production, auto-undo schema, run an older
+client, or overwrite newer real records with a pre-example dump. Application undo
+handles individual conversions safely. Any production deployment/recovery still
+requires a separate reviewed procedure.
+
+### Executed verification and repeat commands
+
+Writing tests below require a disposable restored DB and must run serially with
+browser suites stopped. Never point them at primary development or production.
+
+```sh
+node --test tests/*.test.mjs
+docker compose -p dashboard-work-phase07 -f docker-compose.work-test.yml run --rm -e RUN_EVENT_DB_TEST=1 runner node --test --test-concurrency=1 tests/work-calendar.integration.mjs tests/work-dates.integration.mjs tests/work-relationships.integration.mjs tests/work-support.integration.mjs tests/work-all.integration.mjs tests/work-foundation.integration.mjs tests/work-management.integration.mjs tests/event-completion.integration.mjs
+docker compose -p dashboard-work-phase07 -f docker-compose.work-test.yml run --rm -e RUN_WORK_EXAMPLE_TEST=1 runner node --test tests/work-examples.integration.mjs
+RUN_WORK_CALENDAR_BROWSER_TEST=1 node tests/work-calendar.browser.mjs
+docker compose -f docker-compose.dev.yml exec -T -e RUN_AUTH_HTTP_TEST=1 dashboard node tests/auth-security.integration.mjs
+```
+
+The browser command uses the existing isolated app at localhost:3002, disposable
+auth secret, Playwright/Chromium and its documented temporary library environment;
+those test credentials are not production credentials. Seven work browser suites
+passed sequentially across four sizes. Final calendar reruns additionally checked
+pointer moves, native all-day entry, marker keyboard navigation and metadata-only
+legacy instant preservation. Physical phones/Safari were not tested. The final
+28 unit files, 68 DB checks, examples test, live 128-handler authorization checks,
+isolated production build, development image build, TypeScript and targeted lint
+passed. The existing CommonJS seed passes syntax validation but retains its
+pre-existing require-import lint errors; whole-repository lint is not clean.
+No dependency upgrade/security audit, production recovery, external calendar,
+notifications, recurrence, project or My Work implementation is claimed here.

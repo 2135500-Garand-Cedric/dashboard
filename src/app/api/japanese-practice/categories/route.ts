@@ -28,13 +28,9 @@ export async function GET() {
     return NextResponse.json({ success: true, categories: result });
   } catch (error: any) {
     console.error("GET /api/categories error:", error);
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
-
 
 // ✅ POST /api/categories — Create a new category
 export async function POST(req: Request) {
@@ -47,7 +43,7 @@ export async function POST(req: Request) {
     if (!name || name.trim() === "") {
       return NextResponse.json(
         { success: false, error: "Category name is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -58,9 +54,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, category: newCategory });
   } catch (error: any) {
     console.error("POST /api/categories error:", error);
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

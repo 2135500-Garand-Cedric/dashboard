@@ -10,14 +10,17 @@ export interface YouTubePlayer {
 }
 
 interface YouTubeAPI {
-  Player: new (element: HTMLElement, options: {
-    videoId: string;
-    events: {
-      onReady: () => void;
-      onStateChange: (event: { data: number }) => void;
-    };
-    playerVars: { controls: number; modestbranding: number; autoplay: number };
-  }) => YouTubePlayer;
+  Player: new (
+    element: HTMLElement,
+    options: {
+      videoId: string;
+      events: {
+        onReady: () => void;
+        onStateChange: (event: { data: number }) => void;
+      };
+      playerVars: { controls: number; modestbranding: number; autoplay: number };
+    },
+  ) => YouTubePlayer;
   PlayerState: { PLAYING: number; PAUSED: number; ENDED: number };
 }
 
@@ -41,13 +44,19 @@ export function loadYouTubeAPI(): Promise<YouTubeAPI> {
       if (window.YT?.Player) resolve(window.YT);
     };
 
-    const existing = document.querySelector<HTMLScriptElement>('script[src="https://www.youtube.com/iframe_api"]');
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[src="https://www.youtube.com/iframe_api"]',
+    );
     const script = existing ?? document.createElement("script");
-    script.addEventListener("error", () => {
-      apiPromise = undefined;
-      script.remove();
-      reject(new Error("Failed to load the YouTube player API"));
-    }, { once: true });
+    script.addEventListener(
+      "error",
+      () => {
+        apiPromise = undefined;
+        script.remove();
+        reject(new Error("Failed to load the YouTube player API"));
+      },
+      { once: true },
+    );
     if (!existing) {
       script.src = "https://www.youtube.com/iframe_api";
       document.body.appendChild(script);

@@ -11,22 +11,39 @@ type Context = { params: Promise<{ id: string }> };
 export async function GET(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  try { return NextResponse.json({ receipt: await getReceipt(financeId((await context.params).id)) }, { headers: financeHeaders }); }
-  catch (error) { return receiptError(error, "load the receipt"); }
+  try {
+    return NextResponse.json(
+      { receipt: await getReceipt(financeId((await context.params).id)) },
+      { headers: financeHeaders },
+    );
+  } catch (error) {
+    return receiptError(error, "load the receipt");
+  }
 }
 export async function PATCH(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
   try {
-    const id = financeId((await context.params).id), form = await receiptFormData(request);
-    return NextResponse.json(await saveReceipt(receiptInput(form.details, true), form.file, id), { headers: financeHeaders });
-  } catch (error) { return receiptError(error, "update the receipt"); }
+    const id = financeId((await context.params).id),
+      form = await receiptFormData(request);
+    return NextResponse.json(await saveReceipt(receiptInput(form.details, true), form.file, id), {
+      headers: financeHeaders,
+    });
+  } catch (error) {
+    return receiptError(error, "update the receipt");
+  }
 }
 export async function DELETE(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
   try {
-    await deleteReceipt(financeId((await context.params).id), false, request.headers.get("If-Match"));
+    await deleteReceipt(
+      financeId((await context.params).id),
+      false,
+      request.headers.get("If-Match"),
+    );
     return NextResponse.json({ success: true }, { headers: financeHeaders });
-  } catch (error) { return receiptError(error, "delete the receipt"); }
+  } catch (error) {
+    return receiptError(error, "delete the receipt");
+  }
 }

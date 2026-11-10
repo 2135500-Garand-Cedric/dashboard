@@ -27,13 +27,7 @@ const getLevelInfo = (totalXp: number) => {
   };
 };
 
-export default function LevelBar({
-  xp,
-  coins,
-}: {
-  xp: number;
-  coins: number;
-}) {
+export default function LevelBar({ xp, coins }: { xp: number; coins: number }) {
   const { level, currentLevelXp, nextLevelXp, progressPercent } = getLevelInfo(xp);
 
   return (

@@ -5,9 +5,21 @@ import { useCallback, useEffect, useState } from "react";
 import { CalendarIcon } from "@heroicons/react/24/outline";
 
 const COLORS = [
-  "#3B82F6", "#F97316", "#10B981", "#F43F5E", "#8B5CF6",
-  "#FACC15", "#14B8A6", "#EC4899", "#6366F1", "#22D3EE",
-  "#F87171", "#A78BFA", "#34D399", "#FCD34D", "#E879F9"
+  "#3B82F6",
+  "#F97316",
+  "#10B981",
+  "#F43F5E",
+  "#8B5CF6",
+  "#FACC15",
+  "#14B8A6",
+  "#EC4899",
+  "#6366F1",
+  "#22D3EE",
+  "#F87171",
+  "#A78BFA",
+  "#34D399",
+  "#FCD34D",
+  "#E879F9",
 ];
 
 type TimeRecord = { start_time: string; activity_name: string; duration_seconds: number | string };
@@ -26,7 +38,8 @@ export default function TimeManagerChart() {
       const res = await fetch("/api/time-manager");
       if (!res.ok) throw new Error("Unable to load Time Manager data. Please try again later.");
       const data = await res.json();
-      if (!Array.isArray(data)) throw new Error("Unable to load Time Manager data. Please try again later.");
+      if (!Array.isArray(data))
+        throw new Error("Unable to load Time Manager data. Please try again later.");
       setRecords(data);
     } catch {
       setError("Unable to load Time Manager data. Please try again later.");
@@ -34,7 +47,9 @@ export default function TimeManagerChart() {
       setLoading(false);
     }
   }, []);
-  useEffect(() => { void fetchData(); }, [fetchData]);
+  useEffect(() => {
+    void fetchData();
+  }, [fetchData]);
 
   const now = new Date();
   const getThresholdDate = () => {
@@ -47,15 +62,14 @@ export default function TimeManagerChart() {
   const threshold = getThresholdDate();
 
   const filteredRecords = records.filter(
-    (r) => new Date(r.start_time) >= threshold && new Date(r.start_time) <= now
+    (r) => new Date(r.start_time) >= threshold && new Date(r.start_time) <= now,
   );
 
   // Aggregate activities
   const activityMap: Record<string, number> = {};
   filteredRecords.forEach((r) => {
     const seconds = Number(r.duration_seconds) || 0;
-    activityMap[r.activity_name] =
-      (activityMap[r.activity_name] || 0) + seconds;
+    activityMap[r.activity_name] = (activityMap[r.activity_name] || 0) + seconds;
   });
 
   let data = Object.entries(activityMap).map(([name, seconds]) => ({
@@ -72,19 +86,42 @@ export default function TimeManagerChart() {
     percent: totalSeconds ? ((Number(d.seconds) / totalSeconds) * 100).toFixed(1) : "0",
   }));
 
-  const CustomTooltip = ({ payload }: { payload?: readonly { payload?: (typeof formattedData)[number] }[] }) => {
+  const CustomTooltip = ({
+    payload,
+  }: {
+    payload?: readonly { payload?: (typeof formattedData)[number] }[];
+  }) => {
     if (!payload || !payload.length) return null;
-    const item = payload[0].payload as typeof formattedData[0];
+    const item = payload[0].payload as (typeof formattedData)[0];
     return (
       <div className="bg-white text-black p-3 rounded shadow border text-sm">
         <div className="font-medium">{item.name}</div>
-        <div>{(Number(item.seconds) / 3600).toFixed(1)}h ({item.percent}%)</div>
+        <div>
+          {(Number(item.seconds) / 3600).toFixed(1)}h ({item.percent}%)
+        </div>
       </div>
     );
   };
 
-  if (loading) return <div className="card text-gray-500" role="status">Loading Time Manager data…</div>;
-  if (error) return <div className="card" role="alert"><p>{error}</p><button type="button" onClick={() => void fetchData()} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer">Try again</button></div>;
+  if (loading)
+    return (
+      <div className="card text-gray-500" role="status">
+        Loading Time Manager data…
+      </div>
+    );
+  if (error)
+    return (
+      <div className="card" role="alert">
+        <p>{error}</p>
+        <button
+          type="button"
+          onClick={() => void fetchData()}
+          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer"
+        >
+          Try again
+        </button>
+      </div>
+    );
 
   return (
     <div className="bg-[var(--card-bg)] p-6 rounded-xl shadow-lg">
@@ -106,33 +143,35 @@ export default function TimeManagerChart() {
         ))}
       </div>
 
-      {!formattedData.length && <p className="text-gray-500 mb-4">No completed activities for this period.</p>}
+      {!formattedData.length && (
+        <p className="text-gray-500 mb-4">No completed activities for this period.</p>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
         {/* Pie Chart */}
         <div className="min-w-0 h-96 xl:h-[500px]">
           <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie
-              data={formattedData}
-              dataKey="seconds"
-              nameKey="name"
-              cx="50%"
-              cy="50%"
-              outerRadius="80%"
-              onMouseEnter={(_, index) => setActiveIndex(index)}
-              onMouseLeave={() => setActiveIndex(null)}
-            >
-              {formattedData.map((entry, index) => (
-                <Cell
-                  key={`cell-${index}`}
-                  fill={COLORS[index % COLORS.length]}
-                  stroke={index === activeIndex ? "#000" : "#fff"}
-                  strokeWidth={index === activeIndex ? 3 : 1}
-                />
-              ))}
-            </Pie>
-            <Tooltip content={<CustomTooltip />} />
-          </PieChart>
+            <PieChart>
+              <Pie
+                data={formattedData}
+                dataKey="seconds"
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                outerRadius="80%"
+                onMouseEnter={(_, index) => setActiveIndex(index)}
+                onMouseLeave={() => setActiveIndex(null)}
+              >
+                {formattedData.map((entry, index) => (
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={COLORS[index % COLORS.length]}
+                    stroke={index === activeIndex ? "#000" : "#fff"}
+                    strokeWidth={index === activeIndex ? 3 : 1}
+                  />
+                ))}
+              </Pie>
+              <Tooltip content={<CustomTooltip />} />
+            </PieChart>
           </ResponsiveContainer>
         </div>
 
@@ -142,9 +181,7 @@ export default function TimeManagerChart() {
             <div
               key={a.name}
               className={`flex justify-between items-center p-3 rounded-xl cursor-pointer transition-shadow duration-200 shadow-sm hover:shadow-lg ${
-                activeIndex === index
-                  ? "bg-[var(--accent)]/20"
-                  : "bg-[var(--card-border)]"
+                activeIndex === index ? "bg-[var(--accent)]/20" : "bg-[var(--card-border)]"
               }`}
               onMouseEnter={() => setActiveIndex(index)}
               onMouseLeave={() => setActiveIndex(null)}

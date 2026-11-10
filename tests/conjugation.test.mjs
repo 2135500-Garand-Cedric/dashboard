@@ -3,7 +3,10 @@ import test from "node:test";
 import fs from "node:fs";
 import ts from "typescript";
 
-const source = fs.readFileSync(new URL("../src/lib/japanese/conjugation.ts", import.meta.url), "utf8");
+const source = fs.readFileSync(
+  new URL("../src/lib/japanese/conjugation.ts", import.meta.url),
+  "utf8",
+);
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS },
 }).outputText;
@@ -25,10 +28,26 @@ const examples = [
   ["ある", "ある", "u", "あれば", "あれば", "なければ", "なければ"],
   ["行く", "いく", "u", "行けば", "いけば", "行かなければ", "いかなければ"],
   ["する", "する", "suru", "すれば", "すれば", "しなければ", "しなければ"],
-  ["勉強する", "べんきょうする", "suru", "勉強すれば", "べんきょうすれば", "勉強しなければ", "べんきょうしなければ"],
+  [
+    "勉強する",
+    "べんきょうする",
+    "suru",
+    "勉強すれば",
+    "べんきょうすれば",
+    "勉強しなければ",
+    "べんきょうしなければ",
+  ],
   ["来る", "くる", "kuru", "来れば", "くれば", "来なければ", "こなければ"],
   ["くる", "くる", "kuru", "くれば", "くれば", "こなければ", "こなければ"],
-  ["持って来る", "もってくる", "kuru", "持って来れば", "もってくれば", "持って来なければ", "もってこなければ"],
+  [
+    "持って来る",
+    "もってくる",
+    "kuru",
+    "持って来れば",
+    "もってくれば",
+    "持って来なければ",
+    "もってこなければ",
+  ],
 ];
 
 for (const [base, reading, type, ba, baReading, negative, negativeReading] of examples) {
@@ -43,20 +62,55 @@ for (const [base, reading, type, ba, baReading, negative, negativeReading] of ex
 
 test("honorific irregular verbs generate all supported forms of いらっしゃる", () => {
   const expected = {
-    masu: "いらっしゃいます", masen: "いらっしゃいません", nai: "いらっしゃらない",
-    ta: "いらっしゃった", nakatta: "いらっしゃらなかった", mashita: "いらっしゃいました",
-    masen_deshita: "いらっしゃいませんでした", te: "いらっしゃって", volitional: "いらっしゃろう",
-    potential: "いらっしゃれる", tai: "いらっしゃりたい", ba: "いらっしゃれば", nakereba: "いらっしゃらなければ",
+    masu: "いらっしゃいます",
+    masen: "いらっしゃいません",
+    nai: "いらっしゃらない",
+    ta: "いらっしゃった",
+    nakatta: "いらっしゃらなかった",
+    mashita: "いらっしゃいました",
+    masen_deshita: "いらっしゃいませんでした",
+    te: "いらっしゃって",
+    volitional: "いらっしゃろう",
+    potential: "いらっしゃれる",
+    tai: "いらっしゃりたい",
+    ba: "いらっしゃれば",
+    nakereba: "いらっしゃらなければ",
   };
-  assert.deepEqual(conjugateVerb("いらっしゃる", "いらっしゃる", "honorific"), Object.fromEntries(Object.entries(expected).map(([name, value]) => [name, { form: value, reading: value }])));
+  assert.deepEqual(
+    conjugateVerb("いらっしゃる", "いらっしゃる", "honorific"),
+    Object.fromEntries(
+      Object.entries(expected).map(([name, value]) => [name, { form: value, reading: value }]),
+    ),
+  );
 });
 test("honorific endings preserve kanji and prefixes and change only the polite endings", () => {
-  for (const [base, reading, masu] of [["おっしゃる", "おっしゃる", "おっしゃいます"], ["なさる", "なさる", "なさいます"], ["下さる", "くださる", "下さいます"], ["ござる", "ござる", "ございます"], ["ご覧なさる", "ごらんなさる", "ご覧なさいます"]]) {
-    const forms = conjugateVerb(base, reading, "honorific"), regular = conjugateVerb(base, reading, "u");
-    assert.equal(forms.masu.form, masu); assert.equal(forms.masu.reading, reading.slice(0, -1) + "います");
+  for (const [base, reading, masu] of [
+    ["おっしゃる", "おっしゃる", "おっしゃいます"],
+    ["なさる", "なさる", "なさいます"],
+    ["下さる", "くださる", "下さいます"],
+    ["ござる", "ござる", "ございます"],
+    ["ご覧なさる", "ごらんなさる", "ご覧なさいます"],
+  ]) {
+    const forms = conjugateVerb(base, reading, "honorific"),
+      regular = conjugateVerb(base, reading, "u");
+    assert.equal(forms.masu.form, masu);
+    assert.equal(forms.masu.reading, reading.slice(0, -1) + "います");
     assert.deepEqual(Object.keys(forms).sort(), Object.keys(regular).sort());
-    for (const name of ["nai", "ta", "nakatta", "te", "volitional", "potential", "tai", "ba", "nakereba"]) assert.deepEqual(forms[name], regular[name]);
-    assert.equal(forms.masen.form, base.slice(0, -1) + "いません"); assert.equal(forms.mashita.form, base.slice(0, -1) + "いました"); assert.equal(forms.masen_deshita.form, base.slice(0, -1) + "いませんでした");
+    for (const name of [
+      "nai",
+      "ta",
+      "nakatta",
+      "te",
+      "volitional",
+      "potential",
+      "tai",
+      "ba",
+      "nakereba",
+    ])
+      assert.deepEqual(forms[name], regular[name]);
+    assert.equal(forms.masen.form, base.slice(0, -1) + "いません");
+    assert.equal(forms.mashita.form, base.slice(0, -1) + "いました");
+    assert.equal(forms.masen_deshita.form, base.slice(0, -1) + "いませんでした");
   }
   assert.throws(() => conjugateVerb("行く", "いく", "honorific"), /ending in る/);
   assert.throws(() => conjugateVerb("下さる", "ください", "honorific"), /ending in る/);

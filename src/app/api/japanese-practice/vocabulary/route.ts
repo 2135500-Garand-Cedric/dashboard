@@ -33,15 +33,19 @@ export async function GET() {
 
   const progress = vocabularyProgress(vocab, activityIds);
   const result = vocab.map((v, index) => ({
-    id: v.id, english: v.english, japanese: v.japanese, hiragana: v.hiragana, readings: v.readings,
-    category_name: v.category?.name, starred: v.starred,
+    id: v.id,
+    english: v.english,
+    japanese: v.japanese,
+    hiragana: v.hiragana,
+    readings: v.readings,
+    category_name: v.category?.name,
+    starred: v.starred,
     worst_status: progress[index].worstStatus,
     percentage: progress[index].percentage.toFixed(2),
   }));
 
   return NextResponse.json(result);
 }
-
 
 type UpdateItem = {
   activityVocabId: number;
@@ -62,10 +66,7 @@ export async function PATCH(req: Request) {
     const data: UpdateRequestBody = await req.json();
 
     if (!Array.isArray(data.updates) || !data.updates.length) {
-      return NextResponse.json(
-        { success: false, error: "Invalid data" },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: "Invalid data" }, { status: 400 });
     }
 
     const activityId = data.activity;
@@ -133,12 +134,14 @@ export async function PATCH(req: Request) {
   } catch (error: unknown) {
     console.error(error);
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "An unexpected error occurred" },
-      { status: 500 }
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "An unexpected error occurred",
+      },
+      { status: 500 },
     );
   }
 }
-
 
 // Get the words for a practice session
 export async function POST(req: Request) {
@@ -156,19 +159,25 @@ export async function POST(req: Request) {
     let eligibleIds: number[] | undefined;
     if (activityId === 5) {
       const vocabulary = await prisma.vocabulary.findMany({
-        where: { userId }, include: { category: true },
+        where: { userId },
+        include: { category: true },
       });
       const knownKanji = getKnownKanji(vocabulary);
-      eligibleIds = vocabulary.filter((word) =>
-        (!categories.length || (word.categoryId !== null && categories.includes(word.categoryId))) &&
-        (!starredOnly || word.starred) &&
-        isKanjiWritingEligible(word.japanese, knownKanji)
-      ).map((word) => word.id);
+      eligibleIds = vocabulary
+        .filter(
+          (word) =>
+            (!categories.length ||
+              (word.categoryId !== null && categories.includes(word.categoryId))) &&
+            (!starredOnly || word.starred) &&
+            isKanjiWritingEligible(word.japanese, knownKanji),
+        )
+        .map((word) => word.id);
       // Older vocabulary may lack a writing link; add only missing records.
-      if (eligibleIds.length) await prisma.activityVocab.createMany({
-        data: eligibleIds.map((vocabId) => ({ activityId, vocabId, status: "WEAK" })),
-        skipDuplicates: true,
-      });
+      if (eligibleIds.length)
+        await prisma.activityVocab.createMany({
+          data: eligibleIds.map((vocabId) => ({ activityId, vocabId, status: "WEAK" })),
+          skipDuplicates: true,
+        });
     }
 
     // Fetch all ActivityVocab entries for this user/activity, including both Vocabulary and VerbForm
@@ -210,7 +219,6 @@ export async function POST(req: Request) {
       },
     });
 
-
     // Transform each entry into a "practice word"
     type PracticeWord = {
       id: number;
@@ -224,37 +232,39 @@ export async function POST(req: Request) {
       formType?: string;
     };
 
-    const words: PracticeWord[] = activityVocabs.map((av) => {
-      if (av.verbForm) {
-        return {
-          id: av.id,
-          english: av.verbForm.baseVocab.english + " (" + av.verbForm.formType.name + ")",
-          japanese: av.verbForm.form,
-          hiragana: av.verbForm.reading,
-          readings: [av.verbForm.reading],
-          read_hiragana: av.verbForm.baseVocab.readHiragana,
-          category_name: av.verbForm.baseVocab.category?.name || null,
-          status: av.status,
-        };
-      } else if (av.vocab) {
-        let english = av.vocab.english;
-        if (av.vocab.category?.name.toLowerCase() === "verb") {
-          english += " (dictionary form)";
+    const words: PracticeWord[] = activityVocabs
+      .map((av) => {
+        if (av.verbForm) {
+          return {
+            id: av.id,
+            english: av.verbForm.baseVocab.english + " (" + av.verbForm.formType.name + ")",
+            japanese: av.verbForm.form,
+            hiragana: av.verbForm.reading,
+            readings: [av.verbForm.reading],
+            read_hiragana: av.verbForm.baseVocab.readHiragana,
+            category_name: av.verbForm.baseVocab.category?.name || null,
+            status: av.status,
+          };
+        } else if (av.vocab) {
+          let english = av.vocab.english;
+          if (av.vocab.category?.name.toLowerCase() === "verb") {
+            english += " (dictionary form)";
+          }
+          return {
+            id: av.id,
+            english: english,
+            japanese: av.vocab.japanese || "",
+            hiragana: av.vocab.hiragana || null,
+            readings: av.vocab.readings,
+            read_hiragana: av.vocab.readHiragana,
+            category_name: av.vocab.category?.name || null,
+            status: av.status,
+          };
+        } else {
+          return null;
         }
-        return {
-          id: av.id,
-          english: english,
-          japanese: av.vocab.japanese || "",
-          hiragana: av.vocab.hiragana || null,
-          readings: av.vocab.readings,
-          read_hiragana: av.vocab.readHiragana,
-          category_name: av.vocab.category?.name || null,
-          status: av.status,
-        };
-      } else {
-        return null;
-      }
-    }).filter(Boolean) as PracticeWord[];
+      })
+      .filter(Boolean) as PracticeWord[];
 
     // Separate by status
     const statusOrder: ("WEAK" | "GOOD" | "PERFECT")[] = ["WEAK", "GOOD", "PERFECT"];
@@ -287,6 +297,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, words: selectedWords });
   } catch (error: unknown) {
     console.error(error);
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "An unexpected error occurred" }, { status: 500 });
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "An unexpected error occurred",
+      },
+      { status: 500 },
+    );
   }
 }

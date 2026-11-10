@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   if (!name || !/^#[0-9a-fA-F]{6}$/.test(color)) {
     return NextResponse.json(
       { error: "A name and a valid hex color are required" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 

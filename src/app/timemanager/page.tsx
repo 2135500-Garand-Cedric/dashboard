@@ -1,7 +1,6 @@
 import TimeManagerChart from "@/components/timemanager/TimeManagerChart";
 
 export default function TimeManagerPage() {
-
   return (
     <div
       className="p-6 space-y-6"

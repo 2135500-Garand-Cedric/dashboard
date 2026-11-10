@@ -95,9 +95,7 @@ export default function JapaneseDashboardTile() {
       {/* Added Today */}
       <div className="mb-4">
         <p className="text-sm text-gray-500">Added Today</p>
-        <p className="text-2xl font-bold text-[var(--color-foreground)]">
-          {addedToday} words
-        </p>
+        <p className="text-2xl font-bold text-[var(--color-foreground)]">{addedToday} words</p>
       </div>
 
       {/* Activities 1–4 */}
@@ -106,24 +104,14 @@ export default function JapaneseDashboardTile() {
         <p className="text-xl font-semibold text-[var(--color-foreground)]">
           {grouped.total} words
         </p>
-        <StatBoxes
-          perfect={grouped.perfect}
-          good={grouped.good}
-          weak={grouped.weak}
-        />
+        <StatBoxes perfect={grouped.perfect} good={grouped.good} weak={grouped.weak} />
       </div>
 
       {/* Activity 5 */}
       <div>
         <p className="text-sm text-gray-500">Practice (Kanji writing)</p>
-        <p className="text-xl font-semibold text-[var(--color-foreground)]">
-          {kanji.total} words
-        </p>
-        <StatBoxes
-          perfect={kanji.perfect}
-          good={kanji.good}
-          weak={kanji.weak}
-        />
+        <p className="text-xl font-semibold text-[var(--color-foreground)]">{kanji.total} words</p>
+        <StatBoxes perfect={kanji.perfect} good={kanji.good} weak={kanji.weak} />
       </div>
     </div>
   );

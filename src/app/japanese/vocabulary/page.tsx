@@ -46,9 +46,7 @@ export default function VocabularyPage() {
   // Fetch categories and vocabulary
   useEffect(() => {
     async function fetchData() {
-      const [vocabRes] = await Promise.all([
-        fetch("/api/japanese-practice/vocabulary"),
-      ]);
+      const [vocabRes] = await Promise.all([fetch("/api/japanese-practice/vocabulary")]);
 
       const vocab: Vocabulary[] = await vocabRes.json();
       setVocabulary(vocab);
@@ -70,14 +68,15 @@ export default function VocabularyPage() {
 
         setCategories(data.categories);
       } catch (err: unknown) {
-        showMessage(`Failed to load categories: ${err instanceof Error ? err.message : String(err)}`);
+        showMessage(
+          `Failed to load categories: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
 
     fetchData();
     loadCategories();
   }, []);
-
 
   const toggleStar = async (vocabId: number, currentStarred: boolean) => {
     try {
@@ -95,7 +94,7 @@ export default function VocabularyPage() {
 
       // Update the local state so the UI updates immediately
       setVocabulary((prev) =>
-        prev.map((v) => (v.id === vocabId ? { ...v, starred: !currentStarred } : v))
+        prev.map((v) => (v.id === vocabId ? { ...v, starred: !currentStarred } : v)),
       );
     } catch (err: unknown) {
       showMessage(`Failed to update starred: ${err instanceof Error ? err.message : String(err)}`);
@@ -128,9 +127,7 @@ export default function VocabularyPage() {
 
       const matchesCategory =
         selectedCategories.length === 0 ||
-        selectedCategories.includes(
-          categories.find((c) => c.name === v.category_name)?.id || -1
-        );
+        selectedCategories.includes(categories.find((c) => c.name === v.category_name)?.id || -1);
 
       return matchesSearch && matchesCategory;
     });
@@ -139,12 +136,15 @@ export default function VocabularyPage() {
       if (starredSort && a.starred !== b.starred) {
         return Number(b.starred) - Number(a.starred);
       }
-      const comparison = sort.field === "percentage"
-        ? (parseFloat(a.percentage) || 0) - (parseFloat(b.percentage) || 0)
-        : a.english.localeCompare(b.english);
+      const comparison =
+        sort.field === "percentage"
+          ? (parseFloat(a.percentage) || 0) - (parseFloat(b.percentage) || 0)
+          : a.english.localeCompare(b.english);
       return comparison === 0
         ? a.english.localeCompare(b.english)
-        : sort.direction === "asc" ? comparison : -comparison;
+        : sort.direction === "asc"
+          ? comparison
+          : -comparison;
     });
 
     return filtered;
@@ -157,7 +157,10 @@ export default function VocabularyPage() {
   }, [filteredVocab]);
 
   return (
-    <div className="vocabulary-page p-2 md:p-6" style={{ background: "var(--background)", color: "var(--foreground)" }}>
+    <div
+      className="vocabulary-page p-2 md:p-6"
+      style={{ background: "var(--background)", color: "var(--foreground)" }}
+    >
       <div className="flex flex-wrap justify-end gap-2 mb-4">
         <Link
           href="/japanese/practice"
@@ -235,35 +238,52 @@ export default function VocabularyPage() {
         </div>
       </div>
 
-      <div className={`vocabulary-table overflow-x-auto ${filteredVocab.length > 15 ? "vocabulary-table-scroll overflow-y-auto max-h-[650px]" : ""}`}>
+      <div
+        className={`vocabulary-table overflow-x-auto ${filteredVocab.length > 15 ? "vocabulary-table-scroll overflow-y-auto max-h-[650px]" : ""}`}
+      >
         <table className="w-full text-left border-collapse">
           <thead>
             <tr>
-              {["", "English", "Japanese", "Hiragana", "Status", "Percentage", "Category"].map((head, idx) => {
-                const field = head === "English" ? "english" : head === "Percentage" ? "percentage" : null;
-                const active = field === sort.field;
-                return (
-                  <th
-                    key={idx}
-                    scope="col"
-                    aria-sort={field ? active ? sort.direction === "asc" ? "ascending" : "descending" : "none" : undefined}
-                    className="sticky top-0 z-10 bg-card-bg border-b px-4 py-2"
-                    style={{ borderColor: "var(--color-card-border)" }}
-                  >
-                    {field ? (
-                      <button
-                        type="button"
-                        onClick={() => changeSort(field)}
-                        aria-label={`Sort by ${head}, ${active && sort.direction === "asc" ? "descending" : "ascending"}`}
-                        className={`inline-flex items-center gap-2 rounded px-2 py-1 cursor-pointer hover:bg-accent/10 focus-visible:outline-2 focus-visible:outline-accent ${active ? "bg-accent/10 text-accent" : ""}`}
-                      >
-                        {head}
-                        <span aria-hidden="true">{active ? sort.direction === "asc" ? "↑" : "↓" : "↕"}</span>
-                      </button>
-                    ) : head}
-                  </th>
-                );
-              })}
+              {["", "English", "Japanese", "Hiragana", "Status", "Percentage", "Category"].map(
+                (head, idx) => {
+                  const field =
+                    head === "English" ? "english" : head === "Percentage" ? "percentage" : null;
+                  const active = field === sort.field;
+                  return (
+                    <th
+                      key={idx}
+                      scope="col"
+                      aria-sort={
+                        field
+                          ? active
+                            ? sort.direction === "asc"
+                              ? "ascending"
+                              : "descending"
+                            : "none"
+                          : undefined
+                      }
+                      className="sticky top-0 z-10 bg-card-bg border-b px-4 py-2"
+                      style={{ borderColor: "var(--color-card-border)" }}
+                    >
+                      {field ? (
+                        <button
+                          type="button"
+                          onClick={() => changeSort(field)}
+                          aria-label={`Sort by ${head}, ${active && sort.direction === "asc" ? "descending" : "ascending"}`}
+                          className={`inline-flex items-center gap-2 rounded px-2 py-1 cursor-pointer hover:bg-accent/10 focus-visible:outline-2 focus-visible:outline-accent ${active ? "bg-accent/10 text-accent" : ""}`}
+                        >
+                          {head}
+                          <span aria-hidden="true">
+                            {active ? (sort.direction === "asc" ? "↑" : "↓") : "↕"}
+                          </span>
+                        </button>
+                      ) : (
+                        head
+                      )}
+                    </th>
+                  );
+                },
+              )}
             </tr>
           </thead>
           <tbody>
@@ -281,7 +301,13 @@ export default function VocabularyPage() {
                   onClick={() => router.push(`/japanese/vocabulary/${v.id}`)}
                 >
                   {/* Star column */}
-                  <td className="px-2 py-2" onClick={(e) => { e.stopPropagation(); toggleStar(v.id, v.starred); }}>
+                  <td
+                    className="px-2 py-2"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleStar(v.id, v.starred);
+                    }}
+                  >
                     {v.starred ? (
                       <SolidStarIcon className="w-5 h-5 text-yellow-400 inline-block" />
                     ) : (

@@ -42,7 +42,9 @@ export const MusicPlayerProvider = ({ children }: { children: ReactNode }) => {
 
     const fetchVideo = async (random = false) => {
       try {
-        const res = await fetch(random ? "/api/youtube/random" : "/api/youtube", { signal: controller.signal });
+        const res = await fetch(random ? "/api/youtube/random" : "/api/youtube", {
+          signal: controller.signal,
+        });
         if (!res.ok) return;
         const data = await res.json();
         if (disposed || !data.items?.length) return;
@@ -63,39 +65,41 @@ export const MusicPlayerProvider = ({ children }: { children: ReactNode }) => {
       }
     };
 
-    loadYouTubeAPI().then((YT) => {
-      if (disposed) return;
-      // YouTube replaces its mount element with an iframe. Keep that element
-      // inside a stable wrapper whose DOM node remains under React's control.
-      const mount = document.createElement("div");
-      container.appendChild(mount);
-      player = new YT.Player(mount, {
-        videoId: "",
-        events: {
-          onReady: () => {
-            if (disposed) return;
-            setPlayerReady(true);
-            void fetchVideo();
+    loadYouTubeAPI()
+      .then((YT) => {
+        if (disposed) return;
+        // YouTube replaces its mount element with an iframe. Keep that element
+        // inside a stable wrapper whose DOM node remains under React's control.
+        const mount = document.createElement("div");
+        container.appendChild(mount);
+        player = new YT.Player(mount, {
+          videoId: "",
+          events: {
+            onReady: () => {
+              if (disposed) return;
+              setPlayerReady(true);
+              void fetchVideo();
+            },
+            onStateChange: (event) => {
+              if (disposed) return;
+              if (event.data === YT.PlayerState.PLAYING) {
+                if (!playbackRequestedRef.current) {
+                  player?.pauseVideo();
+                  return;
+                }
+                setPlaying(true);
+              } else if (event.data === YT.PlayerState.PAUSED) setPlaying(false);
+              else if (event.data === YT.PlayerState.ENDED && playbackRequestedRef.current)
+                void fetchVideo(true);
+            },
           },
-          onStateChange: (event) => {
-            if (disposed) return;
-            if (event.data === YT.PlayerState.PLAYING) {
-              if (!playbackRequestedRef.current) {
-                player?.pauseVideo();
-                return;
-              }
-              setPlaying(true);
-            }
-            else if (event.data === YT.PlayerState.PAUSED) setPlaying(false);
-            else if (event.data === YT.PlayerState.ENDED && playbackRequestedRef.current) void fetchVideo(true);
-          },
-        },
-        playerVars: { controls: 0, modestbranding: 1, autoplay: 0 },
+          playerVars: { controls: 0, modestbranding: 1, autoplay: 0 },
+        });
+        playerRef.current = player;
+      })
+      .catch((err) => {
+        if (!disposed) console.error("Failed to initialize YouTube player", err);
       });
-      playerRef.current = player;
-    }).catch((err) => {
-      if (!disposed) console.error("Failed to initialize YouTube player", err);
-    });
 
     return () => {
       disposed = true;

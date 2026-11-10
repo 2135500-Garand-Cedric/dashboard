@@ -30,9 +30,7 @@ export default function TodoColumn({
         {items.map((t) => (
           <TodoCard key={t.id} todo={t} onOpen={() => onOpen(t)} />
         ))}
-        {items.length === 0 && (
-          <div className="text-sm text-gray-400">No items</div>
-        )}
+        {items.length === 0 && <div className="text-sm text-gray-400">No items</div>}
       </div>
     </div>
   );

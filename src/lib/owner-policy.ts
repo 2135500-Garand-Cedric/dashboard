@@ -7,7 +7,9 @@ export function isOwnerGithubId(id: unknown): boolean {
   return typeof id === "string" && id === OWNER_GITHUB_ID;
 }
 
-export function isOwnerSession(session: { ownerAccess?: boolean; githubId?: string } | null | undefined): boolean {
+export function isOwnerSession(
+  session: { ownerAccess?: boolean; githubId?: string } | null | undefined,
+): boolean {
   return session?.ownerAccess === true && isOwnerGithubId(session.githubId);
 }
 

@@ -6,10 +6,16 @@ type Context = { params: Promise<{ id: string }> };
 export async function GET(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  return workResponse(async () => readTaskDates(workId((await context.params).id), new URL(request.url).searchParams), 200, "load");
+  return workResponse(
+    async () => readTaskDates(workId((await context.params).id), new URL(request.url).searchParams),
+    200,
+    "load",
+  );
 }
 export async function POST(request: Request, context: Context) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  return workResponse(async () => taskDateCommand(workId((await context.params).id), await request.json(), workCommand(request)));
+  return workResponse(async () =>
+    taskDateCommand(workId((await context.params).id), await request.json(), workCommand(request)),
+  );
 }

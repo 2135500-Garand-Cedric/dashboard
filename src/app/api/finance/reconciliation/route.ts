@@ -10,12 +10,22 @@ export const runtime = "nodejs";
 export async function GET(request: Request) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  try { return NextResponse.json(await listReconciliation(new URL(request.url).searchParams), { headers: financeHeaders }); }
-  catch (error) { return transactionError(error, "load reconciliation records"); }
+  try {
+    return NextResponse.json(await listReconciliation(new URL(request.url).searchParams), {
+      headers: financeHeaders,
+    });
+  } catch (error) {
+    return transactionError(error, "load reconciliation records");
+  }
 }
 export async function POST(request: Request) {
   const accessError = await requireOwner(request);
   if (accessError) return accessError;
-  try { return NextResponse.json(await decideMatch(matchInput(await statementJson(request))), { headers: financeHeaders }); }
-  catch (error) { return transactionError(error, "save the reconciliation decision"); }
+  try {
+    return NextResponse.json(await decideMatch(matchInput(await statementJson(request))), {
+      headers: financeHeaders,
+    });
+  } catch (error) {
+    return transactionError(error, "save the reconciliation decision");
+  }
 }

@@ -3,15 +3,7 @@
 import { usePlayer } from "@/context/MusicPlayerContext";
 
 export default function MusicDashboardTile() {
-  const {
-    video,
-    playing,
-    play,
-    pause,
-    skipForward,
-    skipBack,
-    progress,
-  } = usePlayer();
+  const { video, playing, play, pause, skipForward, skipBack, progress } = usePlayer();
 
   if (!video) return <p>Loading...</p>;
 
@@ -23,11 +15,7 @@ export default function MusicDashboardTile() {
       <div className="flex flex-col items-center">
         {/* Thumbnail */}
         <div className="music-thumbnail w-full h-48 rounded-lg overflow-hidden mb-3">
-          <img
-            src={video.thumbnail}
-            alt={video.title}
-            className="w-full h-full object-cover"
-          />
+          <img src={video.thumbnail} alt={video.title} className="w-full h-full object-cover" />
         </div>
 
         {/* Video title */}
@@ -35,10 +23,7 @@ export default function MusicDashboardTile() {
 
         {/* Progress bar */}
         <div className="w-full h-2 bg-gray-200 rounded mt-2">
-          <div
-            className="h-2 bg-green-500 rounded"
-            style={{ width: `${progress}%` }}
-          />
+          <div className="h-2 bg-green-500 rounded" style={{ width: `${progress}%` }} />
         </div>
 
         {/* Controls */}

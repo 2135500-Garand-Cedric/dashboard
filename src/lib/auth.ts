@@ -16,8 +16,11 @@ export const authOptions: NextAuthOptions = {
     async signIn({ account, profile }) {
       return account?.provider === "github" &&
         isOwnerGithubId(account.providerAccountId) &&
-        profile && "id" in profile && String(profile.id) === account.providerAccountId
-        ? true : "/access-denied";
+        profile &&
+        "id" in profile &&
+        String(profile.id) === account.providerAccountId
+        ? true
+        : "/access-denied";
     },
     async jwt({ token, account }) {
       if (account) {
@@ -29,8 +32,10 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       session.githubId = typeof token.githubId === "string" ? token.githubId : undefined;
-      session.ownerAccess = token.ownerAuthVersion === OWNER_AUTH_VERSION &&
-        token.provider === "github" && isOwnerGithubId(token.githubId);
+      session.ownerAccess =
+        token.ownerAuthVersion === OWNER_AUTH_VERSION &&
+        token.provider === "github" &&
+        isOwnerGithubId(token.githubId);
       return session;
     },
   },

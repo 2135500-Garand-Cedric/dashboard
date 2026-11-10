@@ -5,12 +5,16 @@ import ts from "typescript";
 
 function load(file) {
   const source = fs.readFileSync(new URL(file, import.meta.url), "utf8");
-  const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2017 } }).outputText;
+  const code = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2017 },
+  }).outputText;
   const exports = {};
   new Function("exports", code)(exports);
   return exports;
 }
-const { getKnownKanji, isKanjiWritingEligible, getApplicableActivityIds } = load("../src/lib/japanese/kanji-writing.ts");
+const { getKnownKanji, isKanjiWritingEligible, getApplicableActivityIds } = load(
+  "../src/lib/japanese/kanji-writing.ts",
+);
 const { calculateActivityStats } = load("../src/lib/japanese/utils.ts");
 const known = getKnownKanji([
   { japanese: "学", category: { name: "Kanji" } },
@@ -30,7 +34,17 @@ test("accepts compounds and mixed hiragana/katakana, including long vowels", () 
 });
 
 test("rejects unknown kanji, kana-only words, Latin, numbers, punctuation and empty words", () => {
-  for (const text of ["学校食", "学校1", "学校A", "学校。", "学校 本", "ほん", "カバー", "", null]) {
+  for (const text of [
+    "学校食",
+    "学校1",
+    "学校A",
+    "学校。",
+    "学校 本",
+    "ほん",
+    "カバー",
+    "",
+    null,
+  ]) {
     assert.equal(isKanjiWritingEligible(text, known), false, String(text));
   }
 });
@@ -43,8 +57,18 @@ test("writing contributes only to eligible dictionary forms", () => {
 
 test("eligible base uses five exercises, forms use four, and missing statuses count as WEAK", () => {
   const links = [1, 2, 3, 4].map((activityId) => ({ activityId, status: "PERFECT" }));
-  assert.deepEqual(calculateActivityStats(links, [1, 2, 3, 4, 5]), { worstStatus: "WEAK", percentage: "80.00" });
-  assert.equal(calculateActivityStats([...links, { activityId: 5, status: "GOOD" }], [1, 2, 3, 4, 5]).percentage, "90.00");
-  assert.equal(calculateActivityStats([...links, { activityId: 5, status: "WEAK" }], [1, 2, 3, 4]).percentage, "100.00");
+  assert.deepEqual(calculateActivityStats(links, [1, 2, 3, 4, 5]), {
+    worstStatus: "WEAK",
+    percentage: "80.00",
+  });
+  assert.equal(
+    calculateActivityStats([...links, { activityId: 5, status: "GOOD" }], [1, 2, 3, 4, 5])
+      .percentage,
+    "90.00",
+  );
+  assert.equal(
+    calculateActivityStats([...links, { activityId: 5, status: "WEAK" }], [1, 2, 3, 4]).percentage,
+    "100.00",
+  );
   assert.deepEqual(calculateActivityStats([], []), { worstStatus: "WEAK", percentage: "0.00" });
 });

@@ -2,7 +2,10 @@
 module.exports = async function seedStatisticsDemo(prisma, user, categories, activities) {
   if (process.env.NODE_ENV !== "development") return;
   const today = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Toronto", year: "numeric", month: "2-digit", day: "2-digit",
+    timeZone: "America/Toronto",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
   }).format(new Date());
   const { words } = require("./statistics-vocabulary.json");
   const statuses = ["PERFECT", "GOOD", "WEAK"];
@@ -11,7 +14,9 @@ module.exports = async function seedStatisticsDemo(prisma, user, categories, act
     where: { userId: user.id, english: { contains: "(statistics demo " } },
     select: { id: true, english: true },
   });
-  const duplicateIds = candidates.filter((word) => / \(statistics demo \d{4}-\d{2}-\d{2}-[1-5]\)$/.test(word.english)).map((word) => word.id);
+  const duplicateIds = candidates
+    .filter((word) => / \(statistics demo \d{4}-\d{2}-\d{2}-[1-5]\)$/.test(word.english))
+    .map((word) => word.id);
   if (duplicateIds.length) {
     await prisma.vocabulary.deleteMany({ where: { userId: user.id, id: { in: duplicateIds } } });
     console.log(`Removed ${duplicateIds.length} dated statistics-demo clones.`);
@@ -19,7 +24,7 @@ module.exports = async function seedStatisticsDemo(prisma, user, categories, act
   const historyDays = 100;
   const scheduledWords = new Map();
   words.forEach((word, wordIndex) => {
-    const dayIndex = Math.round(wordIndex * (historyDays - 1) / (words.length - 1));
+    const dayIndex = Math.round((wordIndex * (historyDays - 1)) / (words.length - 1));
     if (!scheduledWords.has(dayIndex)) scheduledWords.set(dayIndex, []);
     scheduledWords.get(dayIndex).push({ ...word, wordIndex });
   });
@@ -32,11 +37,19 @@ module.exports = async function seedStatisticsDemo(prisma, user, categories, act
       const existing = await prisma.vocabulary.findFirst({
         where: { userId: user.id, japanese, hiragana },
       });
-      const word = existing || await prisma.vocabulary.create({ data: {
-        userId: user.id,
-        categoryId: Array.from(japanese).length === 1 ? categories.Kanji.id : categories.Vocabulary.id,
-        english, japanese, hiragana, addedDate: date,
-      } });
+      const word =
+        existing ||
+        (await prisma.vocabulary.create({
+          data: {
+            userId: user.id,
+            categoryId:
+              Array.from(japanese).length === 1 ? categories.Kanji.id : categories.Vocabulary.id,
+            english,
+            japanese,
+            hiragana,
+            addedDate: date,
+          },
+        }));
       // Spread this exact set of development fixtures across the history window.
       // A matching user entry with a different gloss keeps its original date.
       if (existing?.english === english) {
@@ -45,7 +58,9 @@ module.exports = async function seedStatisticsDemo(prisma, user, categories, act
       // Preserve all progress for vocabulary that already belongs to the user.
       await prisma.activityVocab.createMany({
         data: activities.map(([activityId]) => ({
-          activityId, vocabId: word.id, status: existing ? "WEAK" : statuses[wordIndex % statuses.length],
+          activityId,
+          vocabId: word.id,
+          status: existing ? "WEAK" : statuses[wordIndex % statuses.length],
         })),
         skipDuplicates: true,
       });
@@ -55,67 +70,140 @@ module.exports = async function seedStatisticsDemo(prisma, user, categories, act
       where: { userId_day: { userId: user.id, day } },
       update: {},
       create: {
-        userId: user.id, day,
+        userId: user.id,
+        day,
         average: Number((10 + index * 0.25 + Math.sin(index / 4) * 1.7).toFixed(2)),
         vocabularyCount: await prisma.vocabulary.count({
-          where: { userId: user.id, addedDate: { lt: new Date(new Date(`${day}T16:00:00Z`).getTime() + 86400000) } },
+          where: {
+            userId: user.id,
+            addedDate: { lt: new Date(new Date(`${day}T16:00:00Z`).getTime() + 86400000) },
+          },
         }),
       },
     });
   }
   // All sample sessions have real vocabulary snapshots; no live progress is changed.
-  const alternateReadings = { "日": ["にち", "じつ", "ひ", "か"], "人": ["じん", "にん", "ひと"], "学": ["がく", "まなぶ"], "生": ["せい", "しょう", "いきる", "うまれる", "なま"] };
+  const alternateReadings = {
+    "日": ["にち", "じつ", "ひ", "か"],
+    "人": ["じん", "にん", "ひと"],
+    "学": ["がく", "まなぶ"],
+    "生": ["せい", "しょう", "いきる", "うまれる", "なま"],
+  };
   for (const [japanese, examples] of Object.entries(alternateReadings)) {
-    const entries = await prisma.vocabulary.findMany({ where: { userId: user.id, japanese, categoryId: categories.Kanji.id } });
-    for (const entry of entries) if (entry.readings.length <= 1) {
-      await prisma.vocabulary.update({ where: { id: entry.id }, data: { readings: [...new Set([entry.hiragana, ...examples])] } });
-    }
+    const entries = await prisma.vocabulary.findMany({
+      where: { userId: user.id, japanese, categoryId: categories.Kanji.id },
+    });
+    for (const entry of entries)
+      if (entry.readings.length <= 1) {
+        await prisma.vocabulary.update({
+          where: { id: entry.id },
+          data: { readings: [...new Set([entry.hiragana, ...examples])] },
+        });
+      }
   }
-  const vocabulary = await prisma.vocabulary.findMany({ where: { userId: user.id }, include: { category: true, activityVocab: true } });
-  const known = new Set(vocabulary.filter(word => word.categoryId === categories.Kanji.id).flatMap(word => Array.from(word.japanese || "").filter(char => /^\p{Unified_Ideograph}$/u.test(char))));
-  const eligible = word => {
+  const vocabulary = await prisma.vocabulary.findMany({
+    where: { userId: user.id },
+    include: { category: true, activityVocab: true },
+  });
+  const known = new Set(
+    vocabulary
+      .filter((word) => word.categoryId === categories.Kanji.id)
+      .flatMap((word) =>
+        Array.from(word.japanese || "").filter((char) => /^\p{Unified_Ideograph}$/u.test(char)),
+      ),
+  );
+  const eligible = (word) => {
     const chars = Array.from(word.japanese || "");
-    return chars.some(char => known.has(char)) && chars.every(char => known.has(char) || /^[\p{Script=Hiragana}\p{Script=Katakana}ー\u3099\u309a]$/u.test(char));
+    return (
+      chars.some((char) => known.has(char)) &&
+      chars.every(
+        (char) =>
+          known.has(char) || /^[\p{Script=Hiragana}\p{Script=Katakana}ー\u3099\u309a]$/u.test(char),
+      )
+    );
   };
   for (let index = 0; index < historyDays; index++) {
     const date = new Date(`${today}T16:00:00Z`);
     date.setUTCDate(date.getUTCDate() - (historyDays - 1) + index);
     const day = date.toISOString().slice(0, 10);
     for (const activityId of [1, 3, 5]) {
-      const perfectCount = 3 + (index * 3 + activityId) % 15;
-      const goodCount = 2 + (index + activityId) % 7;
-      const weakCount = 1 + (index * 2 + activityId) % 5;
+      const perfectCount = 3 + ((index * 3 + activityId) % 15);
+      const goodCount = 2 + ((index + activityId) % 7);
+      const weakCount = 1 + ((index * 2 + activityId) % 5);
       const completedAt = new Date(date);
       completedAt.setUTCHours(15 + activityId, 17, 0, 0);
-      const durationSeconds = 90 + (index * 37 + activityId * 19) % 900;
+      const durationSeconds = 90 + ((index * 37 + activityId * 19) % 900);
       const filtered = index % 3 === 0;
-      const pool = vocabulary.filter(word => (activityId !== 5 || eligible(word)) && (!filtered || word.categoryId === categories.Kanji.id) && word.activityVocab.some(link => link.activityId === activityId));
+      const pool = vocabulary.filter(
+        (word) =>
+          (activityId !== 5 || eligible(word)) &&
+          (!filtered || word.categoryId === categories.Kanji.id) &&
+          word.activityVocab.some((link) => link.activityId === activityId),
+      );
       const count = Math.min(pool.length, perfectCount + goodCount + weakCount);
       const results = Array.from({ length: count }, (_, i) => {
         const word = pool[(index + i) % pool.length];
         return {
-          activityVocabId: word.activityVocab.find(link => link.activityId === activityId).id,
-          vocabId: word.id, english: word.categoryId === categories.Verb.id ? `${word.english} (dictionary form)` : word.english,
-          japanese: word.japanese || "", hiragana: word.hiragana, readings: word.readings.length ? word.readings : [word.hiragana],
-          categoryName: word.category?.name || null, previousStatus: "WEAK",
+          activityVocabId: word.activityVocab.find((link) => link.activityId === activityId).id,
+          vocabId: word.id,
+          english:
+            word.categoryId === categories.Verb.id
+              ? `${word.english} (dictionary form)`
+              : word.english,
+          japanese: word.japanese || "",
+          hiragana: word.hiragana,
+          readings: word.readings.length ? word.readings : [word.hiragana],
+          categoryName: word.category?.name || null,
+          previousStatus: "WEAK",
           status: i < weakCount ? "WEAK" : i < weakCount + goodCount ? "GOOD" : "PERFECT",
         };
       });
-      const sessionKey = require("node:crypto").createHash("sha256").update(`japanese-statistics-demo:${user.id}:${day}:${activityId}`).digest("hex").slice(0, 32).replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, "$1-$2-$3-$4-$5");
+      const sessionKey = require("node:crypto")
+        .createHash("sha256")
+        .update(`japanese-statistics-demo:${user.id}:${day}:${activityId}`)
+        .digest("hex")
+        .slice(0, 32)
+        .replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, "$1-$2-$3-$4-$5");
       const averageBefore = Number((10 + index * 0.25 + activityId * 0.1).toFixed(2));
       const data = {
-        userId: user.id, activityId, activityName: activities.find(([id]) => id === activityId)[1],
-        sessionKey, date: completedAt, completedAt, startedAt: new Date(completedAt.getTime() - durationSeconds * 1000), durationSeconds,
-        averageBefore, averageAfter: Number((averageBefore + (index % 5 === 0 ? -0.12 : 0.18 + activityId * 0.03)).toFixed(2)),
-        wordCount: count, weakCount: results.filter(word => word.status === "WEAK").length,
-        goodCount: results.filter(word => word.status === "GOOD").length, perfectCount: results.filter(word => word.status === "PERFECT").length,
-        selectedCategories: filtered ? [{ id: categories.Kanji.id, name: "Kanji" }] : [], starredOnly: false, words: results,
+        userId: user.id,
+        activityId,
+        activityName: activities.find(([id]) => id === activityId)[1],
+        sessionKey,
+        date: completedAt,
+        completedAt,
+        startedAt: new Date(completedAt.getTime() - durationSeconds * 1000),
+        durationSeconds,
+        averageBefore,
+        averageAfter: Number(
+          (averageBefore + (index % 5 === 0 ? -0.12 : 0.18 + activityId * 0.03)).toFixed(2),
+        ),
+        wordCount: count,
+        weakCount: results.filter((word) => word.status === "WEAK").length,
+        goodCount: results.filter((word) => word.status === "GOOD").length,
+        perfectCount: results.filter((word) => word.status === "PERFECT").length,
+        selectedCategories: filtered ? [{ id: categories.Kanji.id, name: "Kanji" }] : [],
+        starredOnly: false,
+        words: results,
       };
       // Upgrade only the exact old count-only fixture, leaving actual practices alone.
-      const legacy = await prisma.practice.findFirst({ where: { userId: user.id, activityId, date: completedAt, sessionKey: null, words: { equals: require("../src/generated/prisma").Prisma.DbNull }, perfectCount, goodCount, weakCount } });
+      const legacy = await prisma.practice.findFirst({
+        where: {
+          userId: user.id,
+          activityId,
+          date: completedAt,
+          sessionKey: null,
+          words: { equals: require("../src/generated/prisma").Prisma.DbNull },
+          perfectCount,
+          goodCount,
+          weakCount,
+        },
+      });
       if (legacy) await prisma.practice.update({ where: { id: legacy.id }, data });
       else await prisma.practice.upsert({ where: { sessionKey }, create: data, update: data });
     }
   }
-  console.log("Created or verified 56 distinct N5/N4 words and 100 days of development statistics examples.");
+  console.log(
+    "Created or verified 56 distinct N5/N4 words and 100 days of development statistics examples.",
+  );
 };

@@ -173,7 +173,7 @@ export default function CategoriesPage() {
             <ArrowLeftIcon className="w-5 h-5" /> Back
           </button>
           <h1 className="text-xl font-semibold">
-            Categories ({categories.reduce((sum, cat) => sum + cat.vocabularyCount, 0)}) 
+            Categories ({categories.reduce((sum, cat) => sum + cat.vocabularyCount, 0)})
           </h1>
         </div>
 
@@ -196,9 +196,7 @@ export default function CategoriesPage() {
 
         {/* Category list */}
         {categories.length === 0 ? (
-          <div className="text-center text-gray-500 py-8">
-            No categories found
-          </div>
+          <div className="text-center text-gray-500 py-8">No categories found</div>
         ) : (
           <ul className="space-y-2">
             {categories.map((cat) => (
@@ -252,9 +250,7 @@ export default function CategoriesPage() {
             ))}
           </ul>
         )}
-        <div className="text-white-700 font-medium mt-6">
-          Starred words: {starredCount}
-        </div>
+        <div className="text-white-700 font-medium mt-6">Starred words: {starredCount}</div>
       </div>
     </div>
   );

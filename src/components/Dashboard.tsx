@@ -33,10 +33,7 @@ export default function Home() {
     >
       {/* Header with title + progress */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-4">
-        <h1
-          className="text-3xl font-bold"
-          style={{ color: "var(--color-foreground)" }}
-        >
+        <h1 className="text-3xl font-bold" style={{ color: "var(--color-foreground)" }}>
           My Dashboard
         </h1>
         <LevelBar xp={userXp} coins={userCoins} />
