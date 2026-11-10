@@ -2,10 +2,10 @@
 
 ## Current position
 
-Updated: 2026-11-09 (America/Toronto).
+Updated: 2026-11-10 (America/Toronto).
 
-Phases 01–04 are implemented and verified in development. Production is untouched.
-Next assignment: Phase 05, which has not started. The architecture is not a production migration approval.
+Phases 01–05 are implemented and verified in development. Production is untouched.
+Next assignment: Phase 06, which has not started. The architecture is not a production migration approval.
 
 | Phase | Status | Evidence |
 | --- | --- | --- |
@@ -14,7 +14,7 @@ Next assignment: Phase 05, which has not started. The architecture is not a prod
 | 02 | Verified in development | See Phase 02 evidence below and OPERATIONS.md |
 | 03 | Verified in development | See Phase 03 evidence below and OPERATIONS.md |
 | 04 | Verified in development | See Phase 04 evidence below and OPERATIONS.md |
-| 05 | Not started | — |
+| 05 | Verified in development | See Phase 05 evidence below and OPERATIONS.md |
 | 06 | Not started | — |
 | 07 | Not started | — |
 | 08 | Not started | — |
@@ -758,3 +758,135 @@ and finance maintenance documents, plus `git diff --check`, passed. The retained
 synthetic desktop screenshot was visually inspected. Only temporary Phase 04 app
 and DB containers were stopped; private volumes/backups/evidence were retained,
 and the development app stays running. Phase 04 is complete in development.
+
+## Phase 05 — Checklists, real subtasks and relationships (2026-11-10)
+
+Implemented in development only; no production commands, reset, real-data seed,
+checklist promotion, task renumbering or Phase 06 work. Read CONTEXT.md and the
+assigned Phase 05/acceptance contract before implementation. The pre-existing local
+AppShell development-banner edit was preserved.
+
+### Delivered behavior and decisions
+
+- Existing Subtask is still Checklist, retaining every legacy ID/value/date and
+  endpoint. UI labels now use checklist terminology consistently.
+- Optional Todo.parentId makes a child an independent canonical task, with its own
+  reference, status, checklist, notes and other supported metadata. Create a child
+  or link/reparent an existing task; unlink never deletes it. Counts show checklist
+  completion and direct child Done/total separately, not guessed effort.
+- Closing/cancelling a parent warns about all unfinished descendants, including
+  archived/Cancelled ones, requires explicit acknowledgement and records the exact
+  reviewed descendant facts. No child status/reward/note/date changes cascade.
+- TodoDependency stores directed dependent → prerequisite edges. TodoRelation uses
+  ordered min/max IDs for symmetric, nonblocking uniqueness. Relationships offer
+  Child tasks / Blocked by / Blocks / Related, paginated lists/search, original task
+  navigation, loading/empty/error states and owner-scoped links across contexts.
+- Blocked is derived separately from Waiting/workaround. Only Done resolves a
+  prerequisite; Cancelled stays unresolved. Archive keeps history and relationships.
+- The canonical graph writer shares the existing transaction-scoped owner advisory
+  lock with task/checklist/event commands. It rejects self/duplicate/foreign links,
+  hierarchy/dependency cycles and simultaneous opposite-edge/reparent requests.
+  Both endpoints/old/new parents receive versions and activity. Hard deletion
+  requires explicitly unlinking graph/hierarchy first, or archive instead.
+- Start/Done/Cancelled review includes root/prerequisite/descendant versions and a
+  fingerprint. Commit recomputes under the lock before rewards. Blocked transitions
+  require an explicit override plus reason; unfinished-parent closure needs its own
+  acknowledgement. Changed/ABA facts invalidate prior confirmation with 409.
+- Legacy dependsOnId remains a derived sole-edge/null mirror; reads use canonical
+  edges. Omitted legacy PATCH does nothing; ID/null adapts through the graph writer
+  only with <=1 edge. Multiple edges always reject legacy replacement/clearing,
+  avoiding silent truncation. Demo seed no longer rewrites dependencies.
+- Migration copies original tuples without editing tasks or generating historical
+  activity. Self/cross-owner/cycle-path anomalies survive with review flags. New
+  edges cannot join flagged paths. Missing endpoints fail FK deployment for review;
+  no missing task is guessed and no tuple is erased. See OPERATIONS.md for recovery.
+- Relationship drafts follow existing browser-memory/discard/version patterns;
+  metadata editing cannot overwrite them. Phone selection uses ordinary labelled
+  controls, not drag/drop. Keyboard focus restoration waits for native dialog close
+  before focusing a refreshed original list row.
+
+### Preservation and migration evidence
+
+- Captured `private/work-management/phase05-dev-before.json` and whole-database
+  `phase05-dev-before.dump` (private, ignored). Restored into verified-empty
+  `dashboard-work-phase05` / work_test; no seed. Restored inventory
+  `phase05-copy-restored.json` compared to the source: **no differences/issues**.
+- Applied `20261110120000_task_relationships` on the copy. Comparison
+  `phase05-copy-restored.json` → `phase05-copy-after.json` with `--phase 05`:
+  **no original row/schema differences or inventory issues**, no pending migration.
+  Preserved 3 tasks, 5 checklist items, 17 calendar events, 1 existing real note,
+  its revision/activity/replay receipt, owner balances and all finance/Japanese rows.
+  Added exactly 1 original directed edge; no parents/related links were backfilled.
+- Separate pre-Phase-05 restore in work_relationship_fixtures: valid/self/cycle/
+  cycle-path/cross-owner fixture migration preserved exact original task/checklist/
+  event tuples, timestamps, balances and audit. Confirmed direction/review flags,
+  repeated extracted backfill and repeated deploy were no-ops. No invented history.
+- Fresh development cutover-before inventory matched the backed-up baseline exactly.
+  Stopped only development, ran migrate deploy explicitly without seed, compared
+  `phase05-dev-cutover-before.json` → `phase05-dev-cutover-after.json` with
+  `--phase 05`: **no original differences/issues**, no pending migrations. Generated
+  Prisma client, force-recreated only development using the existing work-dev
+  override. Production was not operated on.
+
+### Executed verification
+
+- `node --test tests/*.test.mjs`: **26 test files passed**, including new iterative
+  12,000-node dependency/hierarchy checks, diamonds, missing parents and cycles,
+  plus existing Japanese, finance, auth and calendar unit regressions.
+- Isolated serial DB suite (command in OPERATIONS.md): **45 TAP checks passed,
+  zero failures/skips**. Includes independent child notes/status; checklist versus
+  child counts; parent/self/missing/foreign/deep/concurrent cycles; multi-prerequisite
+  mirror and legacy protection; Waiting/Done/Cancelled/archive semantics; recorded
+  overrides; stale/ABA/new-link/descendant reviews; no cascade; duplicate/reverse
+  related pairs; replay; pagination; rejected writes and late-audit failure with
+  rollback of links, mirrors, peer revisions, history, receipts and rewards.
+  Prior Phase 01–04 work and event-completion regressions also passed.
+- `RUN_WORK_RELATIONSHIP_MIGRATION_TEST=1` with explicit disposable database URL:
+  **1 migration test passed**, including repeated backfill/deploy and anomalies.
+- `RUN_WORK_RELATIONSHIPS_BROWSER_TEST=1`: **passed** against real isolated API/DB
+  at 390×844, 844×390, 1440×900 and 2560×1440. Verified touch/keyboard selection,
+  independent child creation/navigation, multiple prerequisites, blocked start,
+  parent closure, failed stale review, explicit fresh confirmation and no cascade.
+  No browser runtime errors; inspected `/tmp/work-phase05-desktop.png`.
+- Existing Phase 01 mocked controls, Phase 02 real foundation/closure and Phase 04
+  real notes/files browser suites passed at all four sizes. Phase 03 real All Work
+  passed on rerun after fixing focus restoration; same four sizes, including
+  URL/back/drafts, stale saves, contacts, filters and responsive shared details.
+- Production Next.js build executed in isolated `/tmp/dashboard-work-build`;
+  source TypeScript check and targeted ESLint passed. Full repository ESLint is
+  **not clean**: default traversal hits the private inventory directory permissions,
+  and explicit source/scripts/tests traversal reports pre-existing generated/other
+  module lint issues. No claim that full-repository lint passed. Changed work paths
+  were linted directly without weakening private permissions or unrelated cleanup.
+- `git diff --check` passed. No new dependency or environment variable was added.
+
+### Limits and next step
+
+The primary development database has no new synthetic work fixtures. Browser and
+integration fixtures live only in the isolated project; Phase 04 browser fixtures
+retain private notes/files for recovery tests. Browser checks are Chromium device
+emulation, not physical phones. Graph validation scans the owner's graph; this is
+appropriate for the current personal dashboard, not a benchmark for very large
+multi-user installations. SQL administrators can bypass application locking and
+must use reviewed maintenance procedures. The permanent owner remains stored user
+1 and the existing pinned GitHub identity. Phase 06 dates/scheduling and all later
+features remain unimplemented. Production migration/recovery approval is separate.
+
+### Final Phase 05 verification additions
+
+- Live development `RUN_AUTH_HTTP_TEST=1 node tests/auth-security.integration.mjs`
+  passed: **120 protected handlers**, anonymous rejection, denied identities,
+  forged/legacy cookies, page redirects and owner access. New relationship and
+  transition reads were included in explicit non-owner/owner checks. No secret
+  was printed and no real user mutation was made.
+- `phase05-repeat-before.json` → `phase05-repeat-after.json` on the isolated DB:
+  repeat deploy reported no pending migrations; **no differences/issues**.
+- Read-only Prisma drift check found only the already documented unrelated
+  `ActivityVocab.lastPracticed` column. The proposed DROP SQL was **not executed**;
+  no work-schema drift was found. Never use db push/reset to clear this difference.
+- Final-source isolated Next.js production build, targeted ESLint, all 26 unit
+  test files and whitespace check passed after UI fixes. Phase 06 was not started.
+- Final `phase05-dev-final.json` compared to the post-cutover inventory: no
+  differences, no issues and no pending migrations. The authorization verification
+  left every development record unchanged. Isolated test app/database were stopped
+  after checks, retaining volumes/artifacts; development remains running.

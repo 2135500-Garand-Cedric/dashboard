@@ -73,6 +73,7 @@ test("Phase 03 real UI/API: shared list/board filters, contacts, responsive deta
       if (index === 0) {
         await activate(panel.getByRole("button", { name: "Close details", exact: true }));
         await page.waitForFunction(() => !document.querySelector('dialog[aria-label="Task details"]'));
+        await page.waitForFunction(id => document.activeElement?.getAttribute("data-open-task") === String(id), row.id);
         assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-open-task")), String(row.id));
         await page.keyboard.press("Enter");
         await panel.getByRole("heading", { name: title, exact: true }).waitFor();

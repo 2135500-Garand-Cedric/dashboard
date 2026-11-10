@@ -524,3 +524,95 @@ synthetic tasks/notes/attachments so recovery can be tested; no fixtures are add
 to the primary development DB. Test work/finance volumes are persistent and remain
 separate from real uploads. Physical phone camera hardware and production recovery
 have not been tested. Phase 05 is not started by these procedures.
+
+## Phase 05: canonical relationships and child tasks
+
+`Todo.parentId` links independent tasks; existing `Subtask` rows remain checklist
+items, with the same IDs, timestamps and endpoints. No checklist promotion runs.
+Direct child progress counts Done/total, including archived children. Parent
+closure checks every unfinished descendant (Cancelled is unfinished), records the
+explicit acknowledgement and leaves every child untouched. No effort estimate or
+implicit dependency is inferred from hierarchy. Reopen a closed ancestor before
+attaching unfinished work beneath it. To remove a relationship from an archived
+child, restore that child first.
+
+`TodoDependency` is authoritative, directed dependent → prerequisite. Only Done
+resolves a prerequisite. Waiting, workaround information, cancellation and archival
+are independent. `TodoRelation` stores the smaller task ID first and is symmetric,
+nonblocking and unique. Foreign keys use Restrict: unlink explicitly or archive;
+hard deletion never cascades through tasks. Cross-context links are permitted.
+
+All ordinary graph writes are in `graph.ts`, reached through the same owner lock,
+version and idempotency policy as other work commands. Both linked tasks receive
+new versions and activity. Parent edits also update old/new parents. Cycle checks
+use iterative traversal and run after acquiring the lock; competing opposite-edge
+or hierarchy requests cannot both succeed. New links cannot join a flagged legacy
+path. Graph edits on an owned dependent can remove its preserved foreign legacy
+prerequisite without exposing or changing the foreign task.
+
+Compatibility:
+
+- The retained database `Todo.dependsOnId` is a derived mirror: sole prerequisite
+  when exactly one exists, null when zero or multiple exist. Readers use canonical
+  edges, never synchronize on read. Omitted legacy PATCH leaves edges unchanged;
+  explicit ID/null uses the graph writer only with at most one current edge.
+  More than one always returns 409 rather than truncating the graph.
+- The additive migration copies all non-null legacy tuples in the same direction,
+  without touching original tasks/checklists/events/rewards/notes or inventing user
+  activity. Existing self, cross-owner and cycle-path edges are preserved with
+  `origin=LEGACY` and `legacyReviewReason`; they remain blocked until reviewed.
+  Remove an invalid link explicitly, then re-add any valid link through the UI.
+  A missing endpoint causes the FK/migration to fail rather than erase a tuple;
+  investigate and restore before retrying. Never bypass constraints to deploy.
+- The backfill's conflict-safe INSERT is tested twice on legacy fixtures; it
+  is a migration operation, not an ongoing synchronization job. Do not schedule it.
+- Explicit demo seeding no longer rewrites a task's dependency. Use the UI to add
+  sample relationships; never run demo seeds on restored real data.
+
+APIs (owner authentication first; all responses no-store):
+
+- GET `/api/todos/:id/relationships?section=children|blocked-by|blocks|related&page=1`
+  returns 20 links/page, stable IDs, totals and minimal navigation/status records.
+- POST/DELETE that route accepts `{ kind, targetId }`, with kind `parent`, `child`,
+  `blocked-by`, `blocks` or `related`, and the root's If-Match/Idempotency-Key.
+- Creating a child through POST `/api/todos` includes `parentId` and the parent's
+  current `parentRevision`; a stale parent cannot accept an unnoticed new child.
+  PATCH cannot reparent; use the relationship command.
+- GET `/api/todos/:id/transition?status=IN_PROGRESS|DONE|CANCELLED` returns a current
+  review, task version and fingerprint. PATCH uses that version and
+  `transitionToken`. A blocked transition also requires `allowBlocked: true` and
+  `overrideReason`. Parent closure with unfinished descendants additionally needs
+  `allowUnfinishedChildren: true`. These decisions get immutable activity entries.
+  Recompute under the lock before rewards; changes to graph, prerequisite versions,
+  descendant versions or the root invalidate the review, including ABA changes.
+  Refresh review and explicitly acknowledge again after a 409. No silent override.
+- Adding an unresolved prerequisite to already started/closed work is rejected.
+  Move back to To do, add the link, then explicitly review start/closure.
+
+Task details now offer separate Checklist and Relationships sections. Relationship
+search includes closed tasks, optionally archived tasks, and paginated results.
+Children open their own original task URL. Relationship drafts use browser memory
+and the existing leave/discard guard, retaining the original revision; they are
+not persistent work and a stale draft is not silently rebased. Metadata editing
+and relationship submission are kept separate to avoid overwriting local edits.
+
+Guarded checks (fresh disposable copy only):
+
+```sh
+node --test tests/work-relationships.test.mjs
+docker compose -p dashboard-work-phase05 -f docker-compose.work-test.yml run --rm -e RUN_EVENT_DB_TEST=1 runner node --test --test-concurrency=1 tests/work-relationships.integration.mjs tests/work-support.integration.mjs tests/work-all.integration.mjs tests/work-foundation.integration.mjs tests/work-management.integration.mjs tests/event-completion.integration.mjs
+RUN_WORK_RELATIONSHIPS_BROWSER_TEST=1 node tests/work-relationships.browser.mjs
+```
+
+Migration anomaly test `tests/work-relationships-migration.mjs` requires
+`RUN_WORK_RELATIONSHIP_MIGRATION_TEST=1`, the disposable guard and a separately
+restored **pre-Phase-05** database named `work_relationship_fixtures`. It refuses
+already-migrated databases. Its fixtures intentionally include invalid legacy
+edges and must never run on the primary development database.
+
+Use inventory `--phase 05` for this migration: it permits only parentId and the two
+graph tables, validates exact backfilled tuple direction, and detects unexpected
+parents/relations or historical activity. Inventories additionally report hierarchy
+and canonical dependency cycles, foreign links, flagged legacy anomalies and mirror
+disagreement. Review issues; inventory does not repair records. A repeat comparison
+after cutover should show no differences. No Phase 06 dates or scheduling are added.

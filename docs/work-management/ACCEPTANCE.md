@@ -126,3 +126,28 @@ physical camera hardware remains unverified. A29 includes all 25 unit-test files
 35 DB TAP checks, existing work regressions, live auth and production build; it
 is not an exhaustive finance/Japanese browser re-test. A31 exclusions remain.
 Production deployment/recovery, permanent erasure and later phases are pending.
+
+
+## Phase 05 evidence (2026-11-10)
+
+See PROGRESS.md for commands/private preservation artifacts and OPERATIONS.md for
+API, graph and recovery semantics. A01–A07, A12, A15–A17, A24, A28–A29 and A31
+were checked for the implemented scope in development. Whole-DB restore and exact
+migration inventories preserved original task/checklist/event IDs and values,
+old edge direction, balances, existing notes/history and unrelated module rows.
+Legacy anomaly fixtures verified preserved flags and repeat backfill/deploy.
+
+45 DB integration checks passed for independent children, hierarchy/dependency
+concurrency/cycles, multi-edge compatibility, owner scope, pagination, explicit
+fresh blocked/parent-closure decisions, Cancelled versus Done, no cascade and
+rollback/replay/reward behavior. New real graph and existing work UI workflows
+passed in Chromium at four portrait/landscape/desktop/wide sizes, including touch,
+keyboard, original task URLs and draft/conflict behavior. Live authorization
+checks passed across 120 handlers and explicit new-route owner/non-owner reads.
+
+26 unit-test files and an isolated production build passed; targeted changed-path
+lint passed. Full repository lint is not clean and was not claimed to pass.
+A24 covers task child counts/closure only; project acceptance remains Phase 08.
+No Phase 06 dates/scheduling, project features, physical-device tests or production
+migration/recovery approval are implied. The pre-existing unrelated
+ActivityVocab.lastPracticed schema difference was preserved without repair.

@@ -37,10 +37,10 @@ export function inventoryIssues(todos, subtasks, events, users, statuses) {
   return [...new Set(issues)];
 }
 export function compareInventories(before, after, phase = "01") {
-  const differences = [], foundation = phase === "02", contacts = phase === "03", notes = phase === "04";
-  if ((foundation || contacts || notes) && before.format !== 2) return ["Capture a fresh format-2 baseline before this migration."];
-  const allowedTables = notes ? ["WorkNote", "WorkNoteRevision", "WorkAttachment"] : contacts ? ["WorkContact", "TodoAffectedContact"] : foundation ? ["WorkMutationReceipt", "WorkContext", "WorkActivity"] : ["WorkMutationReceipt"];
-  const allowedColumns = (table, column) => technical[table]?.includes(column) || (foundation && table === "Todo" && foundationColumns.includes(column)) || (contacts && table === "Todo" && ["requesterId", "waitingOnContactId"].includes(column)) || (notes && table === "WorkActivity" && column === "noteRevisionId");
+  const differences = [], foundation = phase === "02", contacts = phase === "03", notes = phase === "04", graph = phase === "05";
+  if ((foundation || contacts || notes || graph) && before.format !== 2) return ["Capture a fresh format-2 baseline before this migration."];
+  const allowedTables = graph ? ["TodoDependency", "TodoRelation"] : notes ? ["WorkNote", "WorkNoteRevision", "WorkAttachment"] : contacts ? ["WorkContact", "TodoAffectedContact"] : foundation ? ["WorkMutationReceipt", "WorkContext", "WorkActivity"] : ["WorkMutationReceipt"];
+  const allowedColumns = (table, column) => technical[table]?.includes(column) || (graph && table === "Todo" && column === "parentId") || (foundation && table === "Todo" && foundationColumns.includes(column)) || (contacts && table === "Todo" && ["requesterId", "waitingOnContactId"].includes(column)) || (notes && table === "WorkActivity" && column === "noteRevisionId");
   for (const [name, table] of Object.entries(before.tables)) {
     const current = after.tables[name];
     if (current && table.count === current.count && table.hash === current.hash) continue;
@@ -62,6 +62,13 @@ export function compareInventories(before, after, phase = "01") {
   if (notes && ["WorkNote", "WorkNoteRevision", "WorkAttachment"].some(name => !(name in before.tables) && after.tables[name]?.count)) differences.push("Unexpected note, revision or attachment backfill.");
   if (contacts && ["WorkContact", "TodoAffectedContact"].some(name => !(name in before.tables) && after.tables[name]?.count)) differences.push("Unexpected contact or people backfill.");
   if (foundation && !("WorkActivity" in before.tables) && after.tables.WorkActivity?.count) differences.push("Unexpected historical work activity backfill.");
+  if (graph && !("TodoDependency" in before.tables) && "TodoDependency" in after.tables) {
+    const tasks = (before.tables.Todo?.rows ?? []).map(JSON.parse);
+    const expected = tasks.filter(task => task.dependsOnId !== null).map(task => `${task.id}:${task.dependsOnId}`).sort();
+    const edges = (after.tables.TodoDependency?.rows ?? []).map(JSON.parse);
+    if (JSON.stringify(expected) !== JSON.stringify(edges.map(edge => `${edge.dependentId}:${edge.prerequisiteId}`).sort()) || edges.some(edge => edge.origin !== "LEGACY")) differences.push("Legacy dependency directions/tuples changed during backfill.");
+    if (after.tables.TodoRelation?.count || (after.tables.Todo?.rows ?? []).some(raw => JSON.parse(raw).parentId !== null)) differences.push("Unexpected child or related-task backfill.");
+  }
   for (const column of before.columns) {
     const current = after.columns.find(value => value.table_name === column.table_name && value.column_name === column.column_name);
     if (JSON.stringify(column) === JSON.stringify(current)) continue;
@@ -108,6 +115,17 @@ export async function captureInventory(prisma) {
     if ([...notes.values()].some(note => taskOwners.get(note.todoId) !== note.userId) || (tables.WorkAttachment?.rows ?? []).some(raw => { const row = JSON.parse(raw); return taskOwners.get(row.todoId) !== row.userId; })) issues.push("Missing/cross-owner task supporting records require review.");
     const revisions = new Map((tables.WorkNoteRevision?.rows ?? []).map(raw => { const row = JSON.parse(raw); return [row.id, row]; }));
     if ((tables.WorkActivity?.rows ?? []).some(raw => { const row = JSON.parse(raw), note = row.noteRevisionId == null ? null : notes.get(revisions.get(row.noteRevisionId)?.noteId); return row.noteRevisionId != null && (!note || note.userId !== row.userId || note.todoId !== row.todoId); })) issues.push("Cross-record note activity requires review.");
+    if (tables.TodoDependency) {
+      const edges = tables.TodoDependency.rows.map(JSON.parse), byId = new Map(todos.map(task => [task.id, task]));
+      if (edges.some(edge => !byId.has(edge.dependentId) || !byId.has(edge.prerequisiteId) || byId.get(edge.dependentId)?.userId !== byId.get(edge.prerequisiteId)?.userId || edge.legacyReviewReason)) issues.push("Canonical legacy dependency anomalies require review; no edges were erased.");
+      if (todos.some(task => { const outgoing = edges.filter(edge => edge.dependentId === task.id); return task.dependsOnId !== (outgoing.length === 1 ? outgoing[0].prerequisiteId : null); })) issues.push("Legacy dependency mirror disagrees with canonical edges.");
+      if (todos.some(task => task.parentId != null && byId.get(task.parentId)?.userId !== task.userId)) issues.push("Missing/cross-owner task parent requires review.");
+      for (const task of todos) { const seen = new Set(); let current = task; while (current) { if (seen.has(current.id)) { issues.push("Hierarchy cycle requires review."); break; } seen.add(current.id); current = byId.get(current.parentId); } }
+      const adjacency = new Map(); for (const edge of edges) { const list = adjacency.get(edge.dependentId) ?? []; list.push(edge.prerequisiteId); adjacency.set(edge.dependentId, list); }
+      const done = new Set();
+      for (const task of todos) { const active = new Set(), stack = [{ id: task.id, exit: false }]; while (stack.length) { const node = stack.pop(); if (node.exit) { active.delete(node.id); done.add(node.id); continue; } if (active.has(node.id)) { issues.push("Canonical dependency cycle requires review."); break; } if (done.has(node.id)) continue; active.add(node.id); stack.push({ id: node.id, exit: true }); for (const id of adjacency.get(node.id) ?? []) stack.push({ id, exit: false }); } }
+      if ((tables.TodoRelation?.rows ?? []).some(raw => { const edge = JSON.parse(raw); return edge.firstId >= edge.secondId || !byId.has(edge.firstId) || byId.get(edge.firstId)?.userId !== byId.get(edge.secondId)?.userId; })) issues.push("Invalid related-task pair requires review.");
+    }
     const expected = { Todo: ["id", "title", "description", "status", "priority", "rewardXp", "rewardCoins", "userId", "dependsOnId", "createdAt", "updatedAt"], Subtask: ["id", "todoId", "title", "done", "createdAt"], Event: ["id", "title", "description", "date", "endDate", "completed", "type", "userId", "linkedTodoId", "createdAt", "updatedAt"] };
     for (const [table, required] of Object.entries(expected)) for (const column of required) if (!columns.some(row => row.table_name === table && row.column_name === column)) issues.push(`Required legacy column missing: ${table}.${column}`);
     const migrationRoot = path.join(root, "prisma/migrations");
@@ -127,7 +145,7 @@ async function main() {
     if (!["--output", "--compare", "--phase"].includes(args[i]) || !args[i + 1] || options[args[i]]) throw new Error("Use --output <private-file> [--compare <before-file>].");
     options[args[i]] = args[i] === "--phase" ? args[i + 1] : path.resolve(args[i + 1]);
   }
-  if (options["--phase"] && !["01", "02", "03", "04"].includes(options["--phase"])) throw new Error("Choose a supported phase.");
+  if (options["--phase"] && !["01", "02", "03", "04", "05"].includes(options["--phase"])) throw new Error("Choose a supported phase.");
   if (!options["--output"]) throw new Error("A private output path is required.");
   const output = options["--output"];
   await mkdir(path.dirname(output), { recursive: true, mode: 0o700 });

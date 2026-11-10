@@ -28,7 +28,7 @@ test("Phase 01: owner scope, atomic/replay-safe rewards, graph races, safe delet
   const keys = [];
   const taskIds = new Set();
   const command = row => { const requestKey = randomUUID(); keys.push(requestKey); return { requestKey, ...(row ? { revision: row.revision } : {}) }; };
-  const task = async (extra = {}) => { const row = await prisma.todo.create({ data: { userId: 1, title: prefix, status: "TODO", ...extra } }); taskIds.add(row.id); return row; };
+  const task = async (extra = {}) => { const row = await prisma.todo.create({ data: { userId: 1, title: prefix, status: "TODO", ...extra } }); taskIds.add(row.id); if (extra.dependsOnId) await prisma.todoDependency.create({ data: { dependentId: row.id, prerequisiteId: extra.dependsOnId, origin: "LEGACY" } }); return row; };
   const event = (extra = {}) => prisma.event.create({ data: { userId: 1, title: prefix, ...extra } });
   const fresh = row => prisma.todo.findUniqueOrThrow({ where: { id: row.id } });
   const balances = () => prisma.user.findUniqueOrThrow({ where: { id: 1 }, select: { totalXp: true, coins: true } });
@@ -56,6 +56,7 @@ test("Phase 01: owner scope, atomic/replay-safe rewards, graph races, safe delet
       const cleared = await api.patchTodo(row.id, { dependsOnId: null }, command(started)); assert.equal(cleared.dependsOnId, null);
       await rejects(api.patchTodo(row.id, { dependsOnId: row.id }, command(cleared)), 409);
       const cycle = await task(); await prisma.todo.update({ where: { id: cycle.id }, data: { dependsOnId: cycle.id } });
+      await prisma.todoDependency.create({ data: { dependentId: cycle.id, prerequisiteId: cycle.id, origin: "LEGACY", legacyReviewReason: "SELF" } });
       const preserved = await api.patchTodo(cycle.id, { description: "legacy anomaly remains reviewable" }, command(cycle)); assert.equal(preserved.dependsOnId, cycle.id);
       await rejects(api.patchTodo(row.id, { dependsOnId: cycle.id }, command(cleared)), 409);
     });
@@ -104,7 +105,7 @@ test("Phase 01: owner scope, atomic/replay-safe rewards, graph races, safe delet
       await rejects(api.deleteTodo(row.id, command(row)), 409);
       assert.ok(await prisma.subtask.findUnique({ where: { id: child.id } }));
       await api.patchTodo(dependent.id, { dependsOnId: null }, command(dependent));
-      await api.deleteTodo(row.id, command(row));
+      await api.deleteTodo(row.id, command(await fresh(row)));
       const remaining = await prisma.event.findUniqueOrThrow({ where: { id: second.id } }); assert.equal(remaining.linkedTodoId, null); assert.equal(remaining.revision, 2);
     });
     await t.test("late delete failure restores already-unlinked events and deleted checklist rows", async () => {
@@ -162,6 +163,7 @@ test("Phase 01: owner scope, atomic/replay-safe rewards, graph races, safe delet
       const ids = [...new Set([...(await db.todo.findMany({ where: { title: prefix }, select: { id: true } })).map(row => row.id), ...taskIds])];
       await db.workActivity.deleteMany({ where: { userId: 1, todoReference: { in: ids.map(id => `TASK-${String(id).padStart(4, "0")}`) } } });
       await db.event.deleteMany({ where: { title: prefix } });
+      await db.todoDependency.deleteMany({ where: { OR: [{ dependentId: { in: ids } }, { prerequisiteId: { in: ids } }] } });
       await db.todo.updateMany({ where: { id: { in: ids } }, data: { dependsOnId: null } });
       await db.subtask.deleteMany({ where: { todoId: { in: ids } } });
       await db.todo.deleteMany({ where: { id: { in: ids } } });

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
-import { OWNER_DATABASE_USER_ID, OWNER_GITHUB_ID } from "@/lib/owner-policy";
+import { OWNER_DATABASE_USER_ID } from "@/lib/owner-policy";
 import { validateEventDates } from "@/lib/event-dates";
 import { WorkValidationError, workBody, workId, workText, type WorkCommand } from "./validation";
 
@@ -9,22 +9,35 @@ import { parseWorkQuery, workQueryWhere, workQueryOrder, WORK_PAGE_SIZE } from "
 import { taskReference, isClosed } from "./types";
 import { TASK_FIELDS, parseTaskFields, lifecycleData, taskChanges, activityAction } from "./task-foundation";
 
+import { appendTaskActivity } from "./activity-server";
+export { appendTaskActivity } from "./activity-server";
+import { taskStubSelect, graphStub, graphStats, addDependency, legacyDependencyWrite, setParent, validateTransition } from "./graph";
+
 export const WORK_USER_ID = OWNER_DATABASE_USER_ID;
 type DB = Prisma.TransactionClient;
-const todoInclude = { requester: true, waitingOnContact: true, affectedPeople: { include: { contact: true }, orderBy: { contactId: "asc" as const } }, context: true, subtasks: { orderBy: { id: "asc" as const } }, dependsOn: true };
+const todoInclude = { prerequisites: { include: { prerequisite: { select: taskStubSelect } }, orderBy: { prerequisiteId: "asc" as const }, take: 2 }, parent: { select: taskStubSelect }, requester: true, waitingOnContact: true, affectedPeople: { include: { contact: true }, orderBy: { contactId: "asc" as const } }, context: true, subtasks: { orderBy: { id: "asc" as const } } };
 const eventInclude = { linkedTodo: true };
 type TodoRow = Prisma.TodoGetPayload<{ include: typeof todoInclude }>;
 type EventRow = Prisma.EventGetPayload<{ include: typeof eventInclude }>;
-const todoDTO = (row: TodoRow) => ({ ...row,
-  reference: taskReference(row.id), legacyPriority: row.priority,
-  // The old priority field is a compatibility projection, not another writer.
-  priority: row.priorityLevel === "LOW" ? 1 : row.priorityLevel === "NORMAL" ? 2 : row.priorityLevel === "HIGH" ? 3 : row.priorityLevel === "URGENT" ? null : row.priority,
-  requester: row.requester?.userId === WORK_USER_ID ? row.requester : null,
-  waitingOnContact: row.waitingOnContact?.userId === WORK_USER_ID ? row.waitingOnContact : null,
-  affectedPeople: row.affectedPeople.filter(link => link.contact.userId === WORK_USER_ID).map(link => link.contact),
-  context: row.context?.userId === WORK_USER_ID ? row.context : null,
-  dependsOn: row.dependsOn?.userId === WORK_USER_ID ? row.dependsOn : null,
-});
+const todoDTO = (row: TodoRow) => {
+  const { prerequisites, parent, ...fields } = row;
+  const single = prerequisites.length === 1 ? prerequisites[0].prerequisite : null;
+  return { ...fields, reference: taskReference(row.id), legacyPriority: row.priority,
+    priority: row.priorityLevel === "LOW" ? 1 : row.priorityLevel === "NORMAL" ? 2 : row.priorityLevel === "HIGH" ? 3 : row.priorityLevel === "URGENT" ? null : row.priority,
+    requester: row.requester?.userId === WORK_USER_ID ? row.requester : null,
+    waitingOnContact: row.waitingOnContact?.userId === WORK_USER_ID ? row.waitingOnContact : null,
+    affectedPeople: row.affectedPeople.filter(link => link.contact.userId === WORK_USER_ID).map(link => link.contact),
+    context: row.context?.userId === WORK_USER_ID ? row.context : null,
+    parent: parent?.userId === WORK_USER_ID ? graphStub(parent) : null,
+    dependsOnId: single?.id ?? null,
+    dependsOn: single?.userId === WORK_USER_ID ? graphStub(single) : null,
+    legacyDependencyWritable: prerequisites.length < 2,
+  };
+};
+export async function serializeTodos(db: DB, rows: TodoRow[]) {
+  const stats = await graphStats(db, rows.map(row => row.id));
+  return rows.map(row => { const detail = stats.get(row.id)!; return { ...todoDTO(row), ...detail, isBlocked: detail.blockingCount > 0 }; });
+}
 const eventDTO = (row: EventRow) => ({ ...row, linkedTodo: row.linkedTodo?.userId === WORK_USER_ID ? row.linkedTodo : null });
 
 // Every task/event/checklist writer takes the same transaction-scoped owner lock.
@@ -64,23 +77,25 @@ async function eventRow(db: DB, id: number) {
   return row;
 }
 export async function listTodos(includeArchived = false) {
-  return (await prisma.todo.findMany({ where: { userId: WORK_USER_ID, ...(includeArchived ? {} : { archivedAt: null }) }, include: todoInclude, orderBy: { createdAt: "desc" } })).map(todoDTO);
+  return prisma.$transaction(async db => serializeTodos(db, await db.todo.findMany({ where: { userId: WORK_USER_ID, ...(includeArchived ? {} : { archivedAt: null }) }, include: todoInclude, orderBy: { createdAt: "desc" } })), { isolationLevel: "RepeatableRead" });
+}
+export async function getTodoInDb(db: DB, id: number) {
+  const row = await todoRow(db, id);
+  const [edges, supportingRecordCount] = await Promise.all([
+    db.todoDependency.findMany({ where: { prerequisiteId: id, dependent: { userId: WORK_USER_ID } }, include: { dependent: { select: taskStubSelect } }, orderBy: { dependentId: "asc" }, take: 30 }),
+    db.workNote.count({ where: { todoId: id, userId: WORK_USER_ID } }).then(async count => count + await db.workAttachment.count({ where: { todoId: id, userId: WORK_USER_ID } })),
+  ]);
+  return { ...(await serializeTodos(db, [row]))[0], dependents: edges.map(edge => graphStub(edge.dependent)), supportingRecordCount };
 }
 export async function getTodo(id: number) {
-  const row = await todoRow(prisma, id);
-  const [dependents, dependentCount, supportingRecordCount] = await Promise.all([
-    prisma.todo.findMany({ where: { userId: WORK_USER_ID, dependsOnId: id }, select: { id: true, title: true, status: true }, orderBy: { id: "asc" }, take: 30 }),
-    prisma.todo.count({ where: { userId: WORK_USER_ID, dependsOnId: id } }),
-    prisma.workNote.count({ where: { todoId: id, userId: WORK_USER_ID } }).then(async count => count + await prisma.workAttachment.count({ where: { todoId: id, userId: WORK_USER_ID } })),
-  ]);
-  return { ...todoDTO(row), dependents, dependentCount, supportingRecordCount };
+  return prisma.$transaction(db => getTodoInDb(db, id), { isolationLevel: "RepeatableRead" });
 }
 export async function searchWork(params: URLSearchParams) {
   const query = parseWorkQuery(params), where = workQueryWhere(query, WORK_USER_ID);
   return prisma.$transaction(async db => {
     const total = await db.todo.count({ where }), page = Math.min(query.page, Math.max(1, Math.ceil(total / WORK_PAGE_SIZE)));
     const rows = await db.todo.findMany({ where, include: todoInclude, orderBy: workQueryOrder(query.sort), skip: (page - 1) * WORK_PAGE_SIZE, take: WORK_PAGE_SIZE });
-    return { items: rows.map(todoDTO), total, page, pageSize: WORK_PAGE_SIZE };
+    return { items: await serializeTodos(db, rows), total, page, pageSize: WORK_PAGE_SIZE };
   }, { isolationLevel: "RepeatableRead" });
 }
 export async function listEvents() {
@@ -88,20 +103,6 @@ export async function listEvents() {
 }
 export async function getEvent(id: number) { return eventDTO(await eventRow(prisma, id)); }
 
-async function dependency(db: DB, taskId: number | null, target: number | null) {
-  const seen = new Set<number>();
-  let current = target;
-  while (current !== null) {
-    if (current === taskId || seen.has(current)) throw new WorkValidationError("This dependency would create or join a cycle.", 409);
-    seen.add(current);
-    const row = await db.todo.findFirst({ where: { id: current, userId: WORK_USER_ID }, select: { dependsOnId: true } });
-    if (!row) throw new WorkValidationError("Choose a prerequisite belonging to the application owner.");
-    current = row.dependsOnId;
-  }
-}
-export async function appendTaskActivity(db: DB, id: number, action: string, changes: Prisma.InputJsonValue) {
-  await db.workActivity.create({ data: { userId: WORK_USER_ID, actorGithubId: OWNER_GITHUB_ID, todoId: id, todoReference: taskReference(id), action, changes, createdAt: new Date() } });
-}
 async function recordTaskActivity(db: DB, before: TodoRow | null, after: TodoRow) {
   const changes = taskChanges(before as unknown as Record<string, unknown> | null, after as unknown as Record<string, unknown>);
   if (!Object.keys(changes).length) return;
@@ -118,37 +119,41 @@ async function defaultContext(db: DB): Promise<number | null> {
 export async function createTodo(value: unknown, command: WorkCommand) {
   const body = workBody(value, TASK_FIELDS), data = parseTaskFields(body);
   if (body.archived !== undefined || body.closureMode !== undefined || body.acceptWorkaround !== undefined || data.completionSummary) throw new WorkValidationError("Create the task first, then close or archive it explicitly.");
+  if (body.transitionToken !== undefined || body.allowBlocked !== undefined || body.overrideReason !== undefined || body.allowUnfinishedChildren !== undefined) throw new WorkValidationError("Create the task first, then review starting or closing it explicitly.");
+  if (data.parentId != null && body.parentRevision === undefined) throw new WorkValidationError("Reload the parent before creating a child; its revision is required.", 428);
+  if (data.parentId == null && body.parentRevision !== undefined) throw new WorkValidationError("A parent revision requires a parent task.");
   if (isClosed(data.status ?? "NEW")) throw new WorkValidationError("Create the task first, then close it explicitly.");
   if (!data.title) throw new WorkValidationError("Enter a task title.");
   return mutation("todo:create", body, command, async db => {
-    await dependency(db, null, data.dependsOnId ?? null);
     const contextId = data.contextId === undefined ? await defaultContext(db) : data.contextId;
     await validateContext(db, contextId);
     await validatePeople(db, body);
-    if (data.status === "IN_PROGRESS" && data.dependsOnId != null && (await todoRow(db, data.dependsOnId)).status !== "DONE") throw new WorkValidationError("Complete the prerequisite before starting this task.", 409);
-    const row = await db.todo.create({ data: { ...data, title: data.title!, userId: WORK_USER_ID, contextId, status: data.status ?? "NEW", priorityLevel: data.priorityLevel ?? "NORMAL", kind: data.kind ?? "TASK" }, include: todoInclude });
+    const { dependsOnId, parentId, ...columns } = data;
+    const row = await db.todo.create({ data: { ...columns, title: data.title!, userId: WORK_USER_ID, contextId, status: data.status ?? "NEW", priorityLevel: data.priorityLevel ?? "NORMAL", kind: data.kind ?? "TASK" }, include: todoInclude });
+    if (parentId != null) await setParent(db, row.id, parentId, { bumpChild: false, recordChild: false, expectedParentRevision: workId(body.parentRevision) });
+    if (dependsOnId != null) await addDependency(db, row.id, dependsOnId, { bumpDependent: false, recordDependent: false });
     await replaceAffected(db, row.id, body);
     const created = await todoRow(db, row.id);
     await recordTaskActivity(db, null, created);
-    return todoDTO(created);
+    return (await serializeTodos(db, [created]))[0];
   });
 }
 export async function patchTodo(id: number, value: unknown, command: WorkCommand) {
   const body = workBody(value, TASK_FIELDS), parsed = parseTaskFields(body);
+  if (body.parentId !== undefined || body.parentRevision !== undefined) throw new WorkValidationError("Use Relationships to change a task parent.");
+  if (["transitionToken", "allowBlocked", "overrideReason", "allowUnfinishedChildren"].some(key => body[key] !== undefined) && !["IN_PROGRESS", "DONE", "CANCELLED"].includes(String(body.status))) throw new WorkValidationError("Transition decisions apply only when starting or closing the task.");
   return mutation(`todo:${id}:patch`, body, command, async db => {
     const row = await todoRow(db, id); version(row, command);
     if (body.priority === null && row.priorityLevel === "URGENT") throw new WorkValidationError("Use the named priority when editing an Urgent task.", 409);
     const data = lifecycleData(row, parsed, body, new Date());
     await validateContext(db, data.contextId, row.contextId);
     await validatePeople(db, body, row);
-    const target = data.dependsOnId === undefined ? row.dependsOnId : data.dependsOnId;
     const status = data.status ?? row.status;
-    const edgeChanged = target !== row.dependsOnId;
-    if (edgeChanged) await dependency(db, id, target);
-    if ((status === "IN_PROGRESS" || status === "DONE") && target !== null && (edgeChanged || data.status !== undefined)) {
-      const prerequisite = await db.todo.findFirst({ where: { id: target, userId: WORK_USER_ID }, select: { status: true } });
-      if (prerequisite?.status !== "DONE") throw new WorkValidationError("Complete the prerequisite before starting or completing this task.", 409);
+    if (data.dependsOnId !== undefined) {
+      await legacyDependencyWrite(db, id, data.dependsOnId, status);
+      delete data.dependsOnId;
     }
+    const review = body.status !== undefined && ["IN_PROGRESS", "DONE", "CANCELLED"].includes(status) ? await validateTransition(db, id, status, body) : null;
     let xp = 0, coins = 0;
     const reward: { rewardAppliedXp?: number; rewardAppliedCoins?: number; rewardAccountingBasis?: string } = {};
     if (row.status !== "DONE" && status === "DONE") {
@@ -169,14 +174,17 @@ export async function patchTodo(id: number, value: unknown, command: WorkCommand
     await replaceAffected(db, id, body);
     const updated = await db.todo.update({ where: { id, userId: WORK_USER_ID }, data: { ...data, ...reward, revision: { increment: 1 } }, include: todoInclude });
     await recordTaskActivity(db, row, updated);
-    return todoDTO(updated);
+    if (review?.blockingCount) await appendTaskActivity(db, id, "BLOCKED_OVERRIDE", { decision: { before: review.decision.blockers, after: { action: status, reason: String(body.overrideReason).trim(), reviewedToken: review.token } } });
+    if (review?.unfinishedChildCount) await appendTaskActivity(db, id, "UNFINISHED_CHILDREN_ACKNOWLEDGED", { decision: { before: review.decision.unfinishedChildren, after: { action: status, explicitlyAcknowledged: true, reviewedToken: review.token } } });
+    return (await serializeTodos(db, [updated]))[0];
   });
 }
 export async function deleteTodo(id: number, command: WorkCommand) {
   return mutation(`todo:${id}:delete`, null, command, async db => {
     const row = await todoRow(db, id); version(row, command);
     if (await db.workNote.count({ where: { todoId: id } }) || await db.workAttachment.count({ where: { todoId: id } })) throw new WorkValidationError("Archive this task to preserve its notes, revisions and attachment history. Tasks with supporting records cannot be permanently deleted.", 409);
-    if (await db.todo.count({ where: { dependsOnId: id } })) throw new WorkValidationError("Cannot delete this task because another task depends on it.", 409);
+    if (row.parentId !== null || await db.todo.count({ where: { parentId: id } })) throw new WorkValidationError("Unlink the parent and child tasks first, or archive this task. No tasks will be automatically reparented or deleted.", 409);
+    if (await db.todoDependency.count({ where: { OR: [{ dependentId: id }, { prerequisiteId: id }] } }) || await db.todoRelation.count({ where: { OR: [{ firstId: id }, { secondId: id }] } })) throw new WorkValidationError("Unlink the task relationships first, or archive it. Related tasks and dependency history will be preserved.", 409);
     if (await db.event.count({ where: { linkedTodoId: id, userId: { not: WORK_USER_ID } } })) throw new WorkValidationError("This task has an unexpected owner association. Review the inventory before deleting it.", 409);
     await db.event.updateMany({ where: { linkedTodoId: id, userId: WORK_USER_ID }, data: { linkedTodoId: null, revision: { increment: 1 } } });
     await appendTaskActivity(db, id, "DELETED", { task: { before: { title: row.title, status: row.status, reference: taskReference(id) }, after: null } });

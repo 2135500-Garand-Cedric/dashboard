@@ -45,6 +45,7 @@ export default function TodoCard({ todo, onOpen }: { todo: Todo; onOpen: () => v
           {todo.workaround && <p className="mt-1 text-xs text-amber-500">Workaround available</p>}
           {todo.nextAction && <p className="mt-2 break-words text-sm">{todo.nextAction}</p>}
           {todo.status === "WAITING" && <p className="mt-1 break-words text-sm text-amber-500">Waiting{todo.waitingOnContact?.name || todo.waitingOn ? ` on ${todo.waitingOnContact?.name ?? todo.waitingOn}` : ""}{todo.waitingReason ? ` · ${todo.waitingReason}` : ""}</p>}
+          {todo.isBlocked && <p className="mt-1 text-xs text-amber-500">Blocked · {todo.blockingCount} unresolved prerequisite(s)</p>}
           {todo.dependsOn && (
             <div className="text-xs text-gray-500">Depends on: {todo.dependsOn.title}</div>
           )}
@@ -55,6 +56,7 @@ export default function TodoCard({ todo, onOpen }: { todo: Todo; onOpen: () => v
       </div>
 
       <div className="mt-2">
+        <p className="text-xs text-gray-500">Child tasks {todo.completedChildCount ?? 0}/{todo.childCount ?? 0} Done</p>
         {total > 0 && (
           <div className="text-xs text-gray-500 mt-1">
             {completed}/{total} checklist items

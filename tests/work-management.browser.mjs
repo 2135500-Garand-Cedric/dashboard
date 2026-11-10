@@ -22,6 +22,12 @@ test("Phase 01 controls work on touch/keyboard, keep drafts on failure and send 
     await context.route(`${base}/api/work-items**`, route => route.fulfill({ json: { items: tasks, total: tasks.length, page: 1, pageSize: 30 } }));
     await context.route(`${base}/api/todos**`, async route => {
       const req = route.request(), path = new URL(req.url()).pathname, method = req.method();
+      const parentId = Number(path.split("/")[3]), parent = tasks.find(task => task.id === parentId);
+      if (method === "GET" && path.endsWith("/transition")) return route.fulfill({ json: { taskRevision: parent.revision, currentStatus: parent.status, archived: false, requestedStatus: new URL(req.url()).searchParams.get("status"), workaround: null, token: "a".repeat(64), blockingCount: parent.dependsOnId ? 1 : 0, blockers: parent.dependsOnId ? [{ id: parent.dependsOnId, reference: "TASK-999903", title: "Prerequisite", status: "TODO" }] : [], unfinishedChildCount: 0, unfinishedChildren: [], descendantCount: 0 } });
+      if (method === "GET" && path.endsWith("/relationships")) return route.fulfill({ json: { task: parent, total: 0, page: 1, pageSize: 20, items: [] } });
+      if (method === "GET" && path.endsWith("/timeline")) return route.fulfill({ json: { total: 0, page: 1, pageSize: 20, notes: [], activity: [] } });
+      if (method === "GET" && path.endsWith("/attachments")) return route.fulfill({ json: { total: 0, page: 1, pageSize: 20, items: [] } });
+      if (method === "GET" && path.endsWith("/activity")) return route.fulfill({ json: [] });
       const id = Number(path.split("/").at(-1)), row = tasks.find(task => task.id === id);
       if (method === "GET") return route.fulfill({ json: path === "/api/todos" ? tasks : row });
       const body = method === "DELETE" ? {} : req.postDataJSON();
@@ -60,12 +66,12 @@ test("Phase 01 controls work on touch/keyboard, keep drafts on failure and send 
       await activate(page.getByRole("link", { name: "Open full page", exact: true }));
       await page.waitForURL(url => url.pathname === "/todos/999901");
       const status = page.getByRole("combobox", { name: "Task status", exact: true });
-      await status.selectOption("IN_PROGRESS"); await page.waitForFunction(() => document.querySelector('[aria-label="Task status"]').value === "IN_PROGRESS" && !document.querySelector('[aria-label="Task status"]').disabled);
+      await status.selectOption("IN_PROGRESS"); await activate(page.getByRole("dialog").getByRole("button", { name: "Start task", exact: true })); await page.waitForFunction(() => document.querySelector('[aria-label="Task status"]').value === "IN_PROGRESS" && !document.querySelector('[aria-label="Task status"]').disabled);
       await status.selectOption("DONE"); await activate(page.getByRole("dialog").getByRole("button", { name: "Complete task", exact: true })); await page.waitForFunction(() => document.querySelector('[aria-label="Task status"]').value === "DONE");
       assert.equal(user.totalXp, 220); assert.equal(user.coins, 25);
       await activate(page.getByRole("button", { name: "Edit", exact: true }));
       await page.getByRole("textbox", { name: "Task title", exact: true }).fill("Unsaved task title");
-      const step = page.getByRole("textbox", { name: "Subtask title: Step one", exact: true });
+      const step = page.getByRole("textbox", { name: "Checklist item title: Step one", exact: true });
       await step.fill("Updated checklist step");
       await Promise.all([page.waitForResponse(response => response.url().endsWith("/api/todos/subtasks/999951") && response.request().method() === "PATCH"), step.press("Tab")]);
       await page.getByRole("button", { name: "Save", exact: true }).waitFor();
@@ -82,8 +88,9 @@ test("Phase 01 controls work on touch/keyboard, keep drafts on failure and send 
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "task detail/edit fits screen width");
       page.once("dialog", dialog => dialog.accept());
       await page.goto(`${base}/todos/999902`); await page.getByRole("combobox", { name: "Task status", exact: true }).selectOption("DONE");
-      await activate(page.getByRole("dialog").getByRole("button", { name: "Complete task", exact: true }));
-      await page.getByRole("dialog").getByRole("alert").waitFor();
+      await page.getByRole("dialog").getByRole("textbox", { name: "Override reason", exact: true }).waitFor();
+      assert.equal(await page.getByRole("dialog").getByRole("button", { name: "Complete task", exact: true }).isDisabled(), true);
+      await activate(page.getByRole("dialog").getByRole("button", { name: "Back", exact: true }));
       assert.equal(user.totalXp, 220); assert.equal(user.coins, 25); assert.equal(tasks[1].status, "TODO");
       await page.goto(`${base}/events/999911`);
       await activate(page.getByRole("button", { name: "Mark completed", exact: true }));

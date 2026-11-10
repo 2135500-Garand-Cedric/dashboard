@@ -17,6 +17,7 @@ export interface WorkContact { id: number; name: string; company: string | null;
 export interface WorkResults { items: WorkTodo[]; total: number; page: number; pageSize: number; }
 export interface ChecklistItem { id: number; todoId?: number; title: string; done: boolean; revision: number; }
 export interface WorkTodo {
+  parentId?: number | null; parent?: GraphTaskStub | null; childCount?: number; completedChildCount?: number; dependencyCount?: number; blockingCount?: number; isBlocked?: boolean; dependencyReviewRequired?: boolean; relatedCount?: number; legacyDependencyWritable?: boolean;
   id: number; reference?: string; revision: number; title: string; description?: string | null;
   status: WorkStatus; priority?: number | null; legacyPriority?: number | null; priorityLevel?: WorkPriority | null;
   requesterId?: number | null; requester?: WorkContact | null; waitingOnContactId?: number | null; waitingOnContact?: WorkContact | null; affectedPeople?: WorkContact[];
@@ -40,3 +41,7 @@ export interface WorkNoteVersion { id: number; noteId: number; revision: number;
 export interface WorkAttachment { id: number; todoId: number; originalName: string; mimeType: string; byteSize: number; revision: number; createdAt: string; updatedAt: string; removedAt: string | null; cleanupPending: boolean; }
 export interface SupportEditorHandle { discard: () => void; isDirty: () => boolean; isBusy: () => boolean; }
 export interface SupportEditorState { dirty: boolean; busy: boolean; }
+
+export interface GraphTaskStub { id: number; reference: string; title: string; status: WorkStatus | null; revision: number | null; parentId: number | null; archivedAt: string | null; reviewReason?: string | null; }
+export interface TransitionReview { taskRevision: number; currentStatus: WorkStatus; archived: boolean; requestedStatus: string; workaround: string | null; token: string; blockingCount: number; blockers: GraphTaskStub[]; unfinishedChildCount: number; unfinishedChildren: GraphTaskStub[]; descendantCount: number; }
+export interface RelationshipResults { task: WorkTodo; total: number; page: number; pageSize: number; items: { task: GraphTaskStub; origin: string; reviewReason: string | null }[]; }

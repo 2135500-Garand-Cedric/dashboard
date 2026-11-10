@@ -136,6 +136,14 @@ model Todo {
   dependsOn    Todo?      @relation("TodoDependencies", fields: [dependsOnId], references: [id])
   blockedBy    Todo[]     @relation("TodoDependencies")
   
+  parentId Int?
+  parent Todo? @relation("TodoHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children Todo[] @relation("TodoHierarchy")
+  prerequisites TodoDependency[] @relation("DependencyDependent")
+  blocking TodoDependency[] @relation("DependencyPrerequisite")
+  relationsAsFirst TodoRelation[] @relation("RelationFirst")
+  relationsAsSecond TodoRelation[] @relation("RelationSecond")
+
   subtasks     Subtask[]
   events       Event[] 
 
@@ -144,6 +152,7 @@ model Todo {
 
   @@index([userId, createdAt])
   @@index([dependsOnId])
+  @@index([parentId])
   @@index([userId, archivedAt, status])
   @@index([contextId])
   @@index([requesterId])
@@ -868,4 +877,31 @@ model WorkAttachment {
   todo Todo @relation(fields: [todoId], references: [id], onDelete: Restrict)
 
   @@index([userId, todoId, createdAt])
+}
+
+
+// The authoritative directional graph. dependsOnId is only a compatibility mirror.
+model TodoDependency {
+  dependentId Int
+  prerequisiteId Int
+  origin String @default("USER")
+  legacyReviewReason String?
+  createdAt DateTime @default(now())
+  dependent Todo @relation("DependencyDependent", fields: [dependentId], references: [id], onDelete: Restrict)
+  prerequisite Todo @relation("DependencyPrerequisite", fields: [prerequisiteId], references: [id], onDelete: Restrict)
+
+  @@id([dependentId, prerequisiteId])
+  @@index([prerequisiteId])
+}
+
+// One canonical unordered pair, always firstId < secondId.
+model TodoRelation {
+  firstId Int
+  secondId Int
+  createdAt DateTime @default(now())
+  first Todo @relation("RelationFirst", fields: [firstId], references: [id], onDelete: Restrict)
+  second Todo @relation("RelationSecond", fields: [secondId], references: [id], onDelete: Restrict)
+
+  @@id([firstId, secondId])
+  @@index([secondId])
 }

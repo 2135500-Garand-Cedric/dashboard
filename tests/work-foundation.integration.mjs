@@ -63,7 +63,7 @@ test("Phase 02 foundation: defaults, contexts, every status, closure/history, ar
       const waiting = await patch(row, { status: "WAITING" }); assert.equal(waiting.workaround, "Use a spare");
       const count = (await activity(waiting.id)).length;
       await reject(patch(waiting, { status: "DONE", closureMode: "ACCEPTED_WORKAROUND", acceptWorkaround: true, completionSummary: "Approved spare" }), 409); assert.equal((await activity(waiting.id)).length, count);
-      const ready = await patch(prerequisite, { status: "DONE" }); assert.equal(ready.status, "DONE");
+      const ready = await patch(await api.getTodo(prerequisite.id), { status: "DONE" }); assert.equal(ready.status, "DONE");
       for (const body of [{ status: "DONE", closureMode: "ACCEPTED_WORKAROUND" }, { status: "DONE", closureMode: "ACCEPTED_WORKAROUND", acceptWorkaround: true }]) await reject(patch(waiting, body), 400);
       const closed = await patch(waiting, { status: "DONE", closureMode: "ACCEPTED_WORKAROUND", acceptWorkaround: true, completionSummary: "Explicitly accepted spare as final outcome" });
       assert.equal(closed.closureType, "ACCEPTED_WORKAROUND");
@@ -113,6 +113,7 @@ test("Phase 02 foundation: defaults, contexts, every status, closure/history, ar
       const all = [...ids];
       await tx.workActivity.deleteMany({ where: { todoReference: { in: all.map(id => `TASK-${String(id).padStart(4,"0")}`) } } });
       await tx.event.deleteMany({ where: { title: prefix } }); await tx.subtask.deleteMany({ where: { todoId: { in: all } } });
+      await tx.todoDependency.deleteMany({ where: { OR: [{ dependentId: { in: all } }, { prerequisiteId: { in: all } }] } });
       await tx.todo.updateMany({ where: { id: { in: all } }, data: { dependsOnId: null } }); await tx.todo.deleteMany({ where: { id: { in: all } } });
       await tx.workMutationReceipt.deleteMany({ where: { requestKey: { in: keys } } }); await tx.workContext.deleteMany({ where: { id: { in: contextIds } } });
       if (foreign) { await tx.workContext.deleteMany({ where: { userId: foreign.id } }); await tx.user.delete({ where: { id: foreign.id } }); }

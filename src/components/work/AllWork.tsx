@@ -24,7 +24,7 @@ export default function AllWork() {
   const [data, setData] = useState<WorkResults | null>(null), [contexts, setContexts] = useState<WorkContext[] | null>(null), [person, setPerson] = useState<WorkContact[]>([]);
   const [refresh, setRefresh] = useState(0), [error, setError] = useState(""), [catalogError, setCatalogError] = useState(""), [actionError, setActionError] = useState("");
   const [creating, setCreating] = useState(!!captureDraft), [title, setTitle] = useState(captureDraft?.title ?? ""), [captureContext, setCaptureContext] = useState<number | null>(captureDraft?.contextId ?? null), [captureCompany, setCaptureCompany] = useState(captureDraft?.company ?? "");
-  const [busy, setBusy] = useState(false), [closure, setClosure] = useState<{ task: WorkTodo; status: "DONE" | "CANCELLED" } | null>(null), [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false), [closure, setClosure] = useState<{ task: WorkTodo; status: "IN_PROGRESS" | "DONE" | "CANCELLED" } | null>(null), [notice, setNotice] = useState("");
   const write = useRef(captureWriter), lock = useRef(false), lastOpened = useRef<number | null>(null);
   const captureRef = useRef<typeof captureDraft>(null);
   captureRef.current = creating && (!!title || !!captureCompany) ? { title, company: captureCompany, contextId: captureContext } : null;
@@ -58,7 +58,10 @@ export default function AllWork() {
     return () => { active = false; };
   }, [personId]);
   useEffect(() => {
-    if (!selectedId && lastOpened.current) document.querySelector<HTMLButtonElement>(`[data-open-task="${lastOpened.current}"]`)?.focus();
+    if (selectedId || !lastOpened.current) return;
+    // Let the native dialog finish restoring focus before targeting a refreshed row.
+    const frame = requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-open-task="${lastOpened.current}"]`)?.focus());
+    return () => cancelAnimationFrame(frame);
   }, [selectedId, data]);
   function open(task: WorkTodo) {
     if (!confirmLeave()) return;
@@ -74,7 +77,7 @@ export default function AllWork() {
   async function move(task: WorkTodo, status: WorkStatus) {
     if (lock.current || task.status === status) return;
     if (isClosed(task.status) || task.archivedAt) { open(task); return; }
-    if (isClosed(status)) { setActionError(""); setClosure({ task, status: status as "DONE" | "CANCELLED" }); return; }
+    if (isClosed(status) || status === "IN_PROGRESS") { setActionError(""); setClosure({ task, status: status as "IN_PROGRESS" | "DONE" | "CANCELLED" }); return; }
     await perform(async () => { await write.current(`/api/todos/${task.id}`, "PATCH", { status }, task.revision); setRefresh(value => value + 1); });
   }
   const page = data?.page ?? 1, pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
@@ -102,12 +105,12 @@ export default function AllWork() {
     {error ? <p role="alert" className="rounded-lg border border-rose-500/30 p-4 text-rose-500">{error} <button type="button" className="underline" onClick={() => setRefresh(value => value + 1)}>Retry work</button></p> : !data ? <p role="status" className="p-4">Loading work…</p> : <>
       {data.items.length === 0 ? <p className="rounded-xl border border-card-border p-6 text-gray-500">No tasks match these filters.</p> : mode === "board" ? <TodoBoard items={data.items} onOpen={open} onMove={(task, status) => void move(task, status)} /> : <section aria-label="Work list" className="overflow-hidden rounded-xl border border-card-border"><div className="hidden grid-cols-[minmax(0,1fr)_140px_90px_160px] gap-4 border-b border-card-border bg-card-bg px-4 py-3 text-xs font-medium text-gray-500 xl:grid"><span>Task / next action</span><span>Status</span><span>Priority</span><span>Context / people</span></div><ul className="divide-y divide-card-border">{data.items.map(task => { const priority = priorityOf(task); return <li key={task.id}><button type="button" data-open-task={task.id} onClick={() => open(task)} className="grid w-full min-w-0 gap-3 p-4 text-left hover:bg-blue-500/5 focus-visible:outline-2 focus-visible:outline-blue-500 xl:grid-cols-[minmax(0,1fr)_140px_90px_160px]">
         <span className="min-w-0"><span className="mb-1 block text-xs text-gray-500">{task.reference ?? taskReference(task.id)}{task.company ? ` · ${task.company}` : ""}{task.course ? ` · ${task.course}` : ""}</span><span className="block break-words font-medium [overflow-wrap:anywhere]">{task.title}</span>{task.nextAction && <span className="mt-1 block break-words text-sm text-gray-500">Next: {task.nextAction}</span>}{task.status === "WAITING" && <span className="mt-1 block break-words text-xs text-amber-500">Waiting{task.waitingOnContact || task.waitingOn ? ` on ${task.waitingOnContact?.name ?? task.waitingOn}` : ""}{task.waitingReason ? ` · ${task.waitingReason}` : ""}</span>}{task.workaround && <span className="mt-1 block text-xs text-amber-500">Workaround available</span>}</span>
-        <span className="text-sm">{STATUS_LABELS[task.status]}</span><span className={`text-sm ${priority === "URGENT" ? "font-semibold text-rose-500" : "text-gray-500"}`}>{priority ? PRIORITY_LABELS[priority] : "Unmapped"}</span><span className="min-w-0 break-words text-xs text-gray-500">{task.context?.name ?? "Unclassified"}{task.requester && <span className="mt-1 block">Requested by {task.requester.name}</span>}{task.affectedPeople && task.affectedPeople.length > 0 && <span className="mt-1 block">Affects {task.affectedPeople.map(person => person.name).join(", ")}</span>}</span>
+        <span className="text-sm">{STATUS_LABELS[task.status]}{task.isBlocked && <span className="mt-1 block text-xs text-amber-500">Blocked · {task.blockingCount}</span>}<span className="mt-1 block text-xs text-gray-500">Checklist {task.subtasks?.filter(item => item.done).length ?? 0}/{task.subtasks?.length ?? 0} · Children {task.completedChildCount ?? 0}/{task.childCount ?? 0}</span></span><span className={`text-sm ${priority === "URGENT" ? "font-semibold text-rose-500" : "text-gray-500"}`}>{priority ? PRIORITY_LABELS[priority] : "Unmapped"}</span><span className="min-w-0 break-words text-xs text-gray-500">{task.context?.name ?? "Unclassified"}{task.requester && <span className="mt-1 block">Requested by {task.requester.name}</span>}{task.affectedPeople && task.affectedPeople.length > 0 && <span className="mt-1 block">Affects {task.affectedPeople.map(person => person.name).join(", ")}</span>}</span>
       </button></li>; })}</ul></section>}
       <nav aria-label="Work pages" className="my-5 flex flex-wrap items-center justify-between gap-3 text-sm"><span>{data.total ? `${(page - 1) * data.pageSize + 1}–${Math.min(page * data.pageSize, data.total)} of ${data.total}` : "0 results"} · Page {page}/{pages}</span><div className="flex gap-2"><button type="button" disabled={page <= 1} onClick={() => navigate({ page: String(page - 1) })} className={buttonClass}>Previous page</button><button type="button" disabled={page >= pages} onClick={() => navigate({ page: String(page + 1) })} className={buttonClass}>Next page</button></div></nav>
     </>}
     <div className="mt-6 grid min-w-0 gap-3"><WorkContextManager contexts={contexts ?? []} onRefresh={async () => { setRefresh(value => value + 1); }} /><ContactManager /></div>
-    {closure && <TaskClosureDialog task={closure.task} status={closure.status} busy={busy} error={actionError} onCancel={() => setClosure(null)} onConfirm={body => perform(async () => { await write.current(`/api/todos/${closure.task.id}`, "PATCH", body, closure.task.revision); setClosure(null); setRefresh(value => value + 1); })} />}
+    {closure && <TaskClosureDialog task={closure.task} status={closure.status} busy={busy} error={actionError} onCancel={() => setClosure(null)} onConfirm={(body, revision) => perform(async () => { await write.current(`/api/todos/${closure.task.id}`, "PATCH", body, revision); setClosure(null); setRefresh(value => value + 1); })} />}
     {selectedId && <TaskQuickPanel key={selectedId} id={selectedId} returnTo={`/todos${(() => { const back = new URLSearchParams(serialized); back.delete("task"); return back.size ? `?${back}` : ""; })()}`} onClose={() => navigate({ task: null }, true)} onChanged={() => setRefresh(value => value + 1)} />}
   </div>;
 }

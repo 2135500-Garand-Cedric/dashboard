@@ -2,9 +2,9 @@ import type { Todo } from "@/generated/prisma";
 import { WorkValidationError, workId, workInteger, workText } from "./validation";
 import { WORK_STATUSES, WORK_PRIORITIES, WORK_KINDS, isClosed, legacyPriorityLevel } from "./types";
 
-export const TASK_FIELDS = ["title", "description", "priority", "priorityLevel", "status", "dependsOnId", "rewardXp", "rewardCoins", "contextId", "kind", "company", "course", "system", "tags", "desiredOutcome", "nextAction", "waitingOn", "waitingReason", "workaround", "completionSummary", "closureMode", "acceptWorkaround", "archived", "requesterId", "waitingOnContactId", "affectedContactIds"];
+export const TASK_FIELDS = ["title", "description", "priority", "priorityLevel", "status", "dependsOnId", "rewardXp", "rewardCoins", "contextId", "kind", "company", "course", "system", "tags", "desiredOutcome", "nextAction", "waitingOn", "waitingReason", "workaround", "completionSummary", "closureMode", "acceptWorkaround", "archived", "requesterId", "waitingOnContactId", "affectedContactIds", "parentId", "parentRevision", "transitionToken", "allowBlocked", "overrideReason", "allowUnfinishedChildren"];
 const optionalText = { company: 120, course: 120, system: 120, desiredOutcome: 10000, nextAction: 1000, waitingOn: 500, waitingReason: 5000, workaround: 10000, completionSummary: 10000 };
-export type TaskData = Partial<Pick<Todo, "title" | "description" | "priorityLevel" | "status" | "dependsOnId" | "rewardXp" | "rewardCoins" | "contextId" | "requesterId" | "waitingOnContactId" | "kind" | "company" | "course" | "system" | "tags" | "desiredOutcome" | "nextAction" | "waitingOn" | "waitingReason" | "workaround" | "completionSummary" | "closureType" | "completedAt" | "cancelledAt" | "archivedAt">>;
+export type TaskData = Partial<Pick<Todo, "title" | "description" | "priorityLevel" | "status" | "dependsOnId" | "parentId" | "rewardXp" | "rewardCoins" | "contextId" | "requesterId" | "waitingOnContactId" | "kind" | "company" | "course" | "system" | "tags" | "desiredOutcome" | "nextAction" | "waitingOn" | "waitingReason" | "workaround" | "completionSummary" | "closureType" | "completedAt" | "cancelledAt" | "archivedAt">>;
 export function parseTaskFields(body: Record<string, unknown>): TaskData {
   const data: TaskData = {};
   if (body.title !== undefined) data.title = workText(body.title, "title", 500)!;
@@ -27,12 +27,16 @@ export function parseTaskFields(body: Record<string, unknown>): TaskData {
     if (body.kind !== null && !WORK_KINDS.includes(body.kind as typeof WORK_KINDS[number])) throw new WorkValidationError("Choose a valid task kind.");
     data.kind = body.kind as TaskData["kind"];
   }
-  for (const key of ["contextId", "dependsOnId", "requesterId", "waitingOnContactId"] as const) if (body[key] !== undefined) data[key] = body[key] === null ? null : workId(body[key]);
+  for (const key of ["contextId", "dependsOnId", "requesterId", "waitingOnContactId", "parentId"] as const) if (body[key] !== undefined) data[key] = body[key] === null ? null : workId(body[key]);
   for (const key of ["rewardXp", "rewardCoins"] as const) if (body[key] !== undefined) data[key] = workInteger(body[key], key);
   if (body.tags !== undefined) {
     if (!Array.isArray(body.tags) || body.tags.length > 20 || body.tags.some(value => typeof value !== "string" || !value.trim() || value.trim().length > 50)) throw new WorkValidationError("Use up to 20 nonempty tags, each at most 50 characters.");
     data.tags = [...new Set((body.tags as string[]).map(value => value.trim().normalize("NFC")))];
   }
+  if (body.parentRevision !== undefined) workId(body.parentRevision);
+  for (const key of ["allowBlocked", "allowUnfinishedChildren"]) if (body[key] !== undefined && typeof body[key] !== "boolean") throw new WorkValidationError("Confirm the reviewed transition explicitly.");
+  if (body.overrideReason !== undefined) workText(body.overrideReason, "override reason", 2000, true);
+  if (body.transitionToken !== undefined && (typeof body.transitionToken !== "string" || !/^[a-f0-9]{64}$/.test(body.transitionToken))) throw new WorkValidationError("Reload the action review before confirming.");
   if (body.archived !== undefined && typeof body.archived !== "boolean") throw new WorkValidationError("Archive must be true or false.");
   if (body.acceptWorkaround !== undefined && typeof body.acceptWorkaround !== "boolean") throw new WorkValidationError("Confirm whether the workaround is accepted.");
   if (body.closureMode !== undefined && !["OUTCOME_ACHIEVED", "ACCEPTED_WORKAROUND"].includes(body.closureMode as string)) throw new WorkValidationError("Choose a valid completion outcome.");
@@ -70,7 +74,7 @@ export function lifecycleData(row: Pick<Todo, "status" | "archivedAt" | "workaro
   if (body.archived !== undefined) result.archivedAt = body.archived ? row.archivedAt ?? now : null;
   return result;
 }
-export const AUDIT_FIELDS = ["title", "description", "status", "priorityLevel", "context", "requester", "waitingOnContact", "affectedPeople", "kind", "company", "course", "system", "tags", "desiredOutcome", "nextAction", "waitingOn", "waitingReason", "workaround", "completionSummary", "closureType", "completedAt", "cancelledAt", "archivedAt", "dependsOnId", "rewardXp", "rewardCoins", "rewardAppliedXp", "rewardAppliedCoins"];
+export const AUDIT_FIELDS = ["title", "description", "status", "priorityLevel", "context", "requester", "waitingOnContact", "affectedPeople", "kind", "company", "course", "system", "tags", "desiredOutcome", "nextAction", "waitingOn", "waitingReason", "workaround", "completionSummary", "closureType", "completedAt", "cancelledAt", "archivedAt", "dependsOnId", "parentId", "rewardXp", "rewardCoins", "rewardAppliedXp", "rewardAppliedCoins"];
 export function taskChanges(before: Record<string, unknown> | null, after: Record<string, unknown>) {
   const changes: Record<string, { before: unknown; after: unknown }> = {};
   for (const field of AUDIT_FIELDS) {

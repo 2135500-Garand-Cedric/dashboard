@@ -173,10 +173,8 @@ async function main() {
     ));
   }
 
-  await prisma.todo.update({
-    where: { id: todos[1].id },
-    data: { dependsOnId: todos[0].id },
-  });
+  // Relationships are created through the canonical graph commands in the UI.
+  // Seeding must never overwrite existing prerequisites or a multi-edge graph.
 
   for (const [todo, subtasks] of [
     [todos[0], [["Read the example sentences", true], ["Practice the starred words", false]]],
