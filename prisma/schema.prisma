@@ -35,6 +35,7 @@ model User {
   coins     Int       @default(0)     // current coin balance
   
   // Relations
+  workContacts WorkContact[]
   workContexts WorkContext[]
   workActivity WorkActivity[]
   workMutationReceipts WorkMutationReceipt[]
@@ -99,6 +100,11 @@ model Todo {
   tags String[] @default([])
   desiredOutcome String?
   nextAction String?
+  requesterId Int?
+  requester WorkContact? @relation("TaskRequester", fields: [requesterId], references: [id], onDelete: Restrict)
+  waitingOnContactId Int?
+  waitingOnContact WorkContact? @relation("TaskWaitingContact", fields: [waitingOnContactId], references: [id], onDelete: Restrict)
+  affectedPeople TodoAffectedContact[]
   waitingOn String?
   waitingReason String?
   workaround String?
@@ -136,6 +142,8 @@ model Todo {
   @@index([dependsOnId])
   @@index([userId, archivedAt, status])
   @@index([contextId])
+  @@index([requesterId])
+  @@index([waitingOnContactId])
 }
 
 enum WorkPriority {
@@ -769,4 +777,33 @@ model FinancialExampleDataset {
   manifest Json
   createdAt DateTime @default(now())
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+}
+
+
+// Organizational people, never application users or assignees.
+model WorkContact {
+  id Int @id @default(autoincrement())
+  userId Int
+  name String @db.VarChar(120)
+  company String? @db.VarChar(120)
+  active Boolean @default(true)
+  revision Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  requestedTasks Todo[] @relation("TaskRequester")
+  waitingTasks Todo[] @relation("TaskWaitingContact")
+  affectedTasks TodoAffectedContact[]
+
+  @@index([userId, active, name])
+}
+
+model TodoAffectedContact {
+  todoId Int
+  contactId Int
+  todo Todo @relation(fields: [todoId], references: [id], onDelete: Restrict)
+  contact WorkContact @relation(fields: [contactId], references: [id], onDelete: Restrict)
+
+  @@id([todoId, contactId])
+  @@index([contactId])
 }

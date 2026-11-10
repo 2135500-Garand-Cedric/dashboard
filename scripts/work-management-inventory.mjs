@@ -37,10 +37,10 @@ export function inventoryIssues(todos, subtasks, events, users, statuses) {
   return [...new Set(issues)];
 }
 export function compareInventories(before, after, phase = "01") {
-  const differences = [], foundation = phase === "02";
-  if (foundation && before.format !== 2) return ["Capture a fresh format-2 baseline before Phase 02 migration."];
-  const allowedTables = foundation ? ["WorkMutationReceipt", "WorkContext", "WorkActivity"] : ["WorkMutationReceipt"];
-  const allowedColumns = (table, column) => technical[table]?.includes(column) || (foundation && table === "Todo" && foundationColumns.includes(column));
+  const differences = [], foundation = phase === "02", contacts = phase === "03";
+  if ((foundation || contacts) && before.format !== 2) return ["Capture a fresh format-2 baseline before this migration."];
+  const allowedTables = contacts ? ["WorkContact", "TodoAffectedContact"] : foundation ? ["WorkMutationReceipt", "WorkContext", "WorkActivity"] : ["WorkMutationReceipt"];
+  const allowedColumns = (table, column) => technical[table]?.includes(column) || (foundation && table === "Todo" && foundationColumns.includes(column)) || (contacts && table === "Todo" && ["requesterId", "waitingOnContactId"].includes(column));
   for (const [name, table] of Object.entries(before.tables)) {
     const current = after.tables[name];
     if (current && table.count === current.count && table.hash === current.hash) continue;
@@ -59,6 +59,7 @@ export function compareInventories(before, after, phase = "01") {
     if (!equal) differences.push(`Original records changed: ${name}`);
   }
   for (const name of Object.keys(after.tables)) if (!(name in before.tables) && !allowedTables.includes(name)) differences.push(`Unexpected new table: ${name}`);
+  if (contacts && ["WorkContact", "TodoAffectedContact"].some(name => !(name in before.tables) && after.tables[name]?.count)) differences.push("Unexpected contact or people backfill.");
   if (foundation && !("WorkActivity" in before.tables) && after.tables.WorkActivity?.count) differences.push("Unexpected historical work activity backfill.");
   for (const column of before.columns) {
     const current = after.columns.find(value => value.table_name === column.table_name && value.column_name === column.column_name);
@@ -98,6 +99,10 @@ export async function captureInventory(prisma) {
     const events = (tables.Event?.rows ?? []).map(row => JSON.parse(row));
     const users = (tables.User?.rows ?? []).map(row => JSON.parse(row));
     const issues = inventoryIssues(todos, subtasks, events, users, enums.filter(row => row.typname === "TodoStatus").map(row => row.enumlabel));
+    const contacts = new Map((tables.WorkContact?.rows ?? []).map(raw => { const row = JSON.parse(raw); return [row.id, row]; }));
+    if (todos.some(task => [task.requesterId, task.waitingOnContactId].some(id => id != null && contacts.get(id)?.userId !== task.userId))) issues.push("Missing/cross-owner task contacts require review.");
+    const taskOwners = new Map(todos.map(task => [task.id, task.userId]));
+    if ((tables.TodoAffectedContact?.rows ?? []).some(raw => { const link = JSON.parse(raw); return !taskOwners.has(link.todoId) || contacts.get(link.contactId)?.userId !== taskOwners.get(link.todoId); })) issues.push("Missing/cross-owner affected people require review.");
     const expected = { Todo: ["id", "title", "description", "status", "priority", "rewardXp", "rewardCoins", "userId", "dependsOnId", "createdAt", "updatedAt"], Subtask: ["id", "todoId", "title", "done", "createdAt"], Event: ["id", "title", "description", "date", "endDate", "completed", "type", "userId", "linkedTodoId", "createdAt", "updatedAt"] };
     for (const [table, required] of Object.entries(expected)) for (const column of required) if (!columns.some(row => row.table_name === table && row.column_name === column)) issues.push(`Required legacy column missing: ${table}.${column}`);
     const migrationRoot = path.join(root, "prisma/migrations");
@@ -117,7 +122,7 @@ async function main() {
     if (!["--output", "--compare", "--phase"].includes(args[i]) || !args[i + 1] || options[args[i]]) throw new Error("Use --output <private-file> [--compare <before-file>].");
     options[args[i]] = args[i] === "--phase" ? args[i + 1] : path.resolve(args[i + 1]);
   }
-  if (options["--phase"] && !["01", "02"].includes(options["--phase"])) throw new Error("Choose a supported phase.");
+  if (options["--phase"] && !["01", "02", "03"].includes(options["--phase"])) throw new Error("Choose a supported phase.");
   if (!options["--output"]) throw new Error("A private output path is required.");
   const output = options["--output"];
   await mkdir(path.dirname(output), { recursive: true, mode: 0o700 });

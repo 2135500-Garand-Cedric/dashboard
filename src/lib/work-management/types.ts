@@ -13,10 +13,14 @@ export function legacyPriorityLevel(value: number | null | undefined): WorkPrior
   return value === 1 ? "LOW" : value === 2 || value == null ? "NORMAL" : value === 3 ? "HIGH" : null;
 }
 export interface WorkContext { id: number; name: string; key: string; active: boolean; revision: number; }
+export interface WorkContact { id: number; name: string; company: string | null; active: boolean; revision: number; }
+export interface WorkResults { items: WorkTodo[]; total: number; page: number; pageSize: number; }
 export interface ChecklistItem { id: number; todoId?: number; title: string; done: boolean; revision: number; }
 export interface WorkTodo {
   id: number; reference?: string; revision: number; title: string; description?: string | null;
   status: WorkStatus; priority?: number | null; legacyPriority?: number | null; priorityLevel?: WorkPriority | null;
+  requesterId?: number | null; requester?: WorkContact | null; waitingOnContactId?: number | null; waitingOnContact?: WorkContact | null; affectedPeople?: WorkContact[];
+  dependents?: { id: number; title: string; status: string }[]; dependentCount?: number;
   contextId?: number | null; context?: WorkContext | null; kind?: WorkKind | null;
   company?: string | null; course?: string | null; system?: string | null; tags?: string[];
   desiredOutcome?: string | null; nextAction?: string | null; waitingOn?: string | null;

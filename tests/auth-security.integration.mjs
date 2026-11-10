@@ -40,6 +40,8 @@ test("live app denies all anonymous data routes, rejects other identities, and a
   ]) {
     const headers = { cookie: await cookie(token) };
     assert.equal((await fetch(`${base}/api/events`, { headers })).status, 403);
+    assert.equal((await fetch(`${base}/api/work-items?q=private`, { headers })).status, 403);
+    assert.equal((await fetch(`${base}/api/work-contacts`, { headers })).status, 403);
     const page = await fetch(base, { headers, redirect: "manual" });
     assert.equal(page.status, 307);
     assert.ok(page.headers.get("location").endsWith("/access-denied"));
@@ -55,6 +57,11 @@ test("live app denies all anonymous data routes, rejects other identities, and a
   const contexts = await fetch(`${base}/api/work-contexts`, { headers });
   assert.equal(contexts.status, 200, "owner context reads must work after schema changes");
   assert.ok(Array.isArray(await contexts.json()));
+  const work = await fetch(`${base}/api/work-items?view=all`, { headers });
+  assert.equal(work.status, 200);
+  const workData = await work.json(); assert.ok(Array.isArray(workData.items)); assert.ok(workData.items.length <= workData.pageSize);
+  const contacts = await fetch(`${base}/api/work-contacts`, { headers });
+  assert.equal(contacts.status, 200); assert.ok(Array.isArray((await contacts.json()).items));
   if (tasks.length) {
     const detail = await fetch(`${base}/api/todos/${tasks[0].id}`, { headers });
     assert.equal(detail.status, 200);

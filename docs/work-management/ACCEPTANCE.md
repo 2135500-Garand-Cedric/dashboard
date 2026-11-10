@@ -86,3 +86,23 @@ A29 has existing cross-module unit regression, preserved full original rows,
 isolated production build and four-viewport browser checks, not exhaustive finance
 or Japanese UI retesting. A31 phase boundaries are retained. Phase 03 and all
 later feature acceptance remain pending; production has not been operated on.
+
+## Phase 03 evidence (2026-11-09)
+
+See PROGRESS.md for exact commands, private migration comparisons and limits.
+A01–A03 preservation was rechecked on a full isolated restore and fresh development
+cutover: all original rows, IDs, links, timestamps, balances and unrelated records
+survive; contacts start empty. A04–A05 include owner-scoped paginated search/contact
+APIs, foreign-link denial, stale writes/replay and atomic people/audit rollback.
+A06–A10 remain covered by existing regressions plus list/board agreement,
+Unclassified/undated Urgent search, seven statuses and visible capture defaults.
+A11 is implemented: optional requester, distinct affected people and waiting
+contact, all separate from application users. A12 closure/reopen/archive/rewards
+was rechecked through the shared detail UI. A27–A28 include default compact list,
+shared URL criteria/results, closed/archived retrieval, stable full-page links,
+desktop panel/phone full screen, keyboard/touch controls, focus return and retained
+unsaved/conflicting drafts. A29 has all existing unit regressions, preserved whole
+DB rows, live auth/owner reads and isolated build/browser evidence; it does not
+claim exhaustive finance/Japanese browser testing. A31 exclusions were retained.
+Notes/attachments, expanded relationships, dates/calendar, projects and My Work
+remain later phases. Production and physical-device recovery are unverified.

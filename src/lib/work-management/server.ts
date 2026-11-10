@@ -5,12 +5,13 @@ import { OWNER_DATABASE_USER_ID, OWNER_GITHUB_ID } from "@/lib/owner-policy";
 import { validateEventDates } from "@/lib/event-dates";
 import { WorkValidationError, workBody, workId, workText, type WorkCommand } from "./validation";
 
+import { parseWorkQuery, workQueryWhere, workQueryOrder, WORK_PAGE_SIZE } from "./query";
 import { taskReference, isClosed } from "./types";
 import { TASK_FIELDS, parseTaskFields, lifecycleData, taskChanges, activityAction } from "./task-foundation";
 
 export const WORK_USER_ID = OWNER_DATABASE_USER_ID;
 type DB = Prisma.TransactionClient;
-const todoInclude = { context: true, subtasks: { orderBy: { id: "asc" as const } }, dependsOn: true };
+const todoInclude = { requester: true, waitingOnContact: true, affectedPeople: { include: { contact: true }, orderBy: { contactId: "asc" as const } }, context: true, subtasks: { orderBy: { id: "asc" as const } }, dependsOn: true };
 const eventInclude = { linkedTodo: true };
 type TodoRow = Prisma.TodoGetPayload<{ include: typeof todoInclude }>;
 type EventRow = Prisma.EventGetPayload<{ include: typeof eventInclude }>;
@@ -18,6 +19,9 @@ const todoDTO = (row: TodoRow) => ({ ...row,
   reference: taskReference(row.id), legacyPriority: row.priority,
   // The old priority field is a compatibility projection, not another writer.
   priority: row.priorityLevel === "LOW" ? 1 : row.priorityLevel === "NORMAL" ? 2 : row.priorityLevel === "HIGH" ? 3 : row.priorityLevel === "URGENT" ? null : row.priority,
+  requester: row.requester?.userId === WORK_USER_ID ? row.requester : null,
+  waitingOnContact: row.waitingOnContact?.userId === WORK_USER_ID ? row.waitingOnContact : null,
+  affectedPeople: row.affectedPeople.filter(link => link.contact.userId === WORK_USER_ID).map(link => link.contact),
   context: row.context?.userId === WORK_USER_ID ? row.context : null,
   dependsOn: row.dependsOn?.userId === WORK_USER_ID ? row.dependsOn : null,
 });
@@ -62,7 +66,22 @@ async function eventRow(db: DB, id: number) {
 export async function listTodos(includeArchived = false) {
   return (await prisma.todo.findMany({ where: { userId: WORK_USER_ID, ...(includeArchived ? {} : { archivedAt: null }) }, include: todoInclude, orderBy: { createdAt: "desc" } })).map(todoDTO);
 }
-export async function getTodo(id: number) { return todoDTO(await todoRow(prisma, id)); }
+export async function getTodo(id: number) {
+  const row = await todoRow(prisma, id);
+  const [dependents, dependentCount] = await Promise.all([
+    prisma.todo.findMany({ where: { userId: WORK_USER_ID, dependsOnId: id }, select: { id: true, title: true, status: true }, orderBy: { id: "asc" }, take: 30 }),
+    prisma.todo.count({ where: { userId: WORK_USER_ID, dependsOnId: id } }),
+  ]);
+  return { ...todoDTO(row), dependents, dependentCount };
+}
+export async function searchWork(params: URLSearchParams) {
+  const query = parseWorkQuery(params), where = workQueryWhere(query, WORK_USER_ID);
+  return prisma.$transaction(async db => {
+    const total = await db.todo.count({ where }), page = Math.min(query.page, Math.max(1, Math.ceil(total / WORK_PAGE_SIZE)));
+    const rows = await db.todo.findMany({ where, include: todoInclude, orderBy: workQueryOrder(query.sort), skip: (page - 1) * WORK_PAGE_SIZE, take: WORK_PAGE_SIZE });
+    return { items: rows.map(todoDTO), total, page, pageSize: WORK_PAGE_SIZE };
+  }, { isolationLevel: "RepeatableRead" });
+}
 export async function listEvents() {
   return (await prisma.event.findMany({ where: { userId: WORK_USER_ID }, include: eventInclude, orderBy: { date: "asc" } })).map(eventDTO);
 }
@@ -104,10 +123,13 @@ export async function createTodo(value: unknown, command: WorkCommand) {
     await dependency(db, null, data.dependsOnId ?? null);
     const contextId = data.contextId === undefined ? await defaultContext(db) : data.contextId;
     await validateContext(db, contextId);
+    await validatePeople(db, body);
     if (data.status === "IN_PROGRESS" && data.dependsOnId != null && (await todoRow(db, data.dependsOnId)).status !== "DONE") throw new WorkValidationError("Complete the prerequisite before starting this task.", 409);
     const row = await db.todo.create({ data: { ...data, title: data.title!, userId: WORK_USER_ID, contextId, status: data.status ?? "NEW", priorityLevel: data.priorityLevel ?? "NORMAL", kind: data.kind ?? "TASK" }, include: todoInclude });
-    await recordTaskActivity(db, null, row);
-    return todoDTO(row);
+    await replaceAffected(db, row.id, body);
+    const created = await todoRow(db, row.id);
+    await recordTaskActivity(db, null, created);
+    return todoDTO(created);
   });
 }
 export async function patchTodo(id: number, value: unknown, command: WorkCommand) {
@@ -117,6 +139,7 @@ export async function patchTodo(id: number, value: unknown, command: WorkCommand
     if (body.priority === null && row.priorityLevel === "URGENT") throw new WorkValidationError("Use the named priority when editing an Urgent task.", 409);
     const data = lifecycleData(row, parsed, body, new Date());
     await validateContext(db, data.contextId, row.contextId);
+    await validatePeople(db, body, row);
     const target = data.dependsOnId === undefined ? row.dependsOnId : data.dependsOnId;
     const status = data.status ?? row.status;
     const edgeChanged = target !== row.dependsOnId;
@@ -142,6 +165,7 @@ export async function patchTodo(id: number, value: unknown, command: WorkCommand
       if ([user.totalXp + xp, user.coins + coins].some(value => !Number.isSafeInteger(value) || value < -2147483648 || value > 2147483647)) throw new WorkValidationError("This reward change exceeds the supported balance range.", 409);
       await db.user.update({ where: { id: WORK_USER_ID }, data: { totalXp: { increment: xp }, coins: { increment: coins } } });
     }
+    await replaceAffected(db, id, body);
     const updated = await db.todo.update({ where: { id, userId: WORK_USER_ID }, data: { ...data, ...reward, revision: { increment: 1 } }, include: todoInclude });
     await recordTaskActivity(db, row, updated);
     return todoDTO(updated);
@@ -154,6 +178,7 @@ export async function deleteTodo(id: number, command: WorkCommand) {
     if (await db.event.count({ where: { linkedTodoId: id, userId: { not: WORK_USER_ID } } })) throw new WorkValidationError("This task has an unexpected owner association. Review the inventory before deleting it.", 409);
     await db.event.updateMany({ where: { linkedTodoId: id, userId: WORK_USER_ID }, data: { linkedTodoId: null, revision: { increment: 1 } } });
     await appendTaskActivity(db, id, "DELETED", { task: { before: { title: row.title, status: row.status, reference: taskReference(id) }, after: null } });
+    await db.todoAffectedContact.deleteMany({ where: { todoId: id } });
     await db.subtask.deleteMany({ where: { todoId: id } });
     await db.todo.delete({ where: { id, userId: WORK_USER_ID } });
     // Deletion does not reverse earned rewards, matching the previous behavior.
@@ -284,5 +309,72 @@ export async function patchWorkContext(id: number, value: unknown, command: Work
     version(row, command);
     if (data.normalizedName && await db.workContext.count({ where: { userId: WORK_USER_ID, normalizedName: data.normalizedName, id: { not: id } } })) throw new WorkValidationError("A context with this name already exists.", 409);
     return db.workContext.update({ where: { id, userId: WORK_USER_ID }, data: { ...data, revision: { increment: 1 } } });
+  });
+}
+
+
+function affectedIds(body: Record<string, unknown>): number[] | undefined {
+  if (body.affectedContactIds === undefined) return undefined;
+  if (!Array.isArray(body.affectedContactIds) || body.affectedContactIds.length > 30) throw new WorkValidationError("Choose at most 30 affected people.");
+  const ids = body.affectedContactIds.map(workId);
+  if (new Set(ids).size !== ids.length) throw new WorkValidationError("Choose each affected person only once.");
+  return ids;
+}
+async function validatePeople(db: DB, body: Record<string, unknown>, previous?: TodoRow) {
+  const links = affectedIds(body), prior = new Set(previous?.affectedPeople.map(link => link.contactId) ?? []);
+  const assignments = [
+    ...(["requesterId", "waitingOnContactId"] as const).filter(key => body[key] != null).map(key => ({ id: workId(body[key]), existing: previous?.[key] === body[key] })),
+    ...(links ?? []).map(id => ({ id, existing: prior.has(id) })),
+  ];
+  for (const assignment of assignments) {
+    const contact = await db.workContact.findFirst({ where: { id: assignment.id, userId: WORK_USER_ID } });
+    if (!contact || (!contact.active && !assignment.existing)) throw new WorkValidationError("Choose an active contact belonging to the application owner.");
+  }
+}
+async function replaceAffected(db: DB, todoId: number, body: Record<string, unknown>) {
+  const ids = affectedIds(body);
+  if (ids === undefined) return;
+  await db.todoAffectedContact.deleteMany({ where: { todoId } });
+  if (ids.length) await db.todoAffectedContact.createMany({ data: ids.map(contactId => ({ todoId, contactId })) });
+}
+function contactData(value: unknown) {
+  const body = workBody(value, ["name", "company", "active"]);
+  const data: { name?: string; company?: string | null; active?: boolean } = {};
+  if (body.name !== undefined) data.name = workText(body.name, "contact name", 120)!.normalize("NFC");
+  if (body.company !== undefined) data.company = workText(body.company, "contact company", 120, true)?.trim() || null;
+  if (body.active !== undefined) {
+    if (typeof body.active !== "boolean") throw new WorkValidationError("Active must be true or false.");
+    data.active = body.active;
+  }
+  return { body, data };
+}
+export async function listWorkContacts(params: URLSearchParams) {
+  const q = (params.get("q") || "").trim();
+  if (q.length > 120) throw new WorkValidationError("Contact search is too long.");
+  const page = params.has("page") ? workId(params.get("page")) : 1;
+  const where = { userId: WORK_USER_ID, ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" as const } }, { company: { contains: q, mode: "insensitive" as const } }] } : {}) };
+  return prisma.$transaction(async db => {
+    const total = await db.workContact.count({ where }), current = Math.min(page, Math.max(1, Math.ceil(total / 30)));
+    const items = await db.workContact.findMany({ where, orderBy: [{ active: "desc" }, { name: "asc" }, { id: "asc" }], skip: (current - 1) * 30, take: 30 });
+    return { items, total, page: current, pageSize: 30 };
+  }, { isolationLevel: "RepeatableRead" });
+}
+export async function getWorkContact(id: number) {
+  const row = await prisma.workContact.findFirst({ where: { id, userId: WORK_USER_ID } });
+  if (!row) throw new WorkValidationError("Contact not found.", 404);
+  return row;
+}
+export async function createWorkContact(value: unknown, command: WorkCommand) {
+  const { body, data } = contactData(value);
+  if (!data.name) throw new WorkValidationError("Enter a contact name.");
+  return mutation("contact:create", body, command, db => db.workContact.create({ data: { ...data, name: data.name!, userId: WORK_USER_ID } }));
+}
+export async function patchWorkContact(id: number, value: unknown, command: WorkCommand) {
+  const { body, data } = contactData(value);
+  return mutation(`contact:${id}:patch`, body, command, async db => {
+    const row = await db.workContact.findFirst({ where: { id, userId: WORK_USER_ID } });
+    if (!row) throw new WorkValidationError("Contact not found.", 404);
+    version(row, command);
+    return db.workContact.update({ where: { id, userId: WORK_USER_ID }, data: { ...data, revision: { increment: 1 } } });
   });
 }

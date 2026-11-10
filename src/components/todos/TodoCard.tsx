@@ -8,7 +8,6 @@ import { type WorkTodo as Todo, priorityOf, PRIORITY_LABELS, taskReference } fro
 export default function TodoCard({ todo, onOpen }: { todo: Todo; onOpen: () => void }) {
   const completed = useMemo(() => todo.subtasks?.filter((s) => s.done).length ?? 0, [todo]);
   const total = todo.subtasks?.length ?? 0;
-  const pct = total === 0 ? 0 : Math.round((completed / total) * 100);
 
   const dragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData("text/plain", String(todo.id));
@@ -42,8 +41,10 @@ export default function TodoCard({ todo, onOpen }: { todo: Todo; onOpen: () => v
               </span>
             </div>}
           </div>
+          {todo.requester && <p className="mt-1 break-words text-xs text-gray-500">Requested by {todo.requester.name}</p>}
+          {todo.workaround && <p className="mt-1 text-xs text-amber-500">Workaround available</p>}
           {todo.nextAction && <p className="mt-2 break-words text-sm">{todo.nextAction}</p>}
-          {todo.status === "WAITING" && <p className="mt-1 break-words text-sm text-amber-500">Waiting{todo.waitingOn ? ` on ${todo.waitingOn}` : ""}{todo.waitingReason ? ` · ${todo.waitingReason}` : ""}</p>}
+          {todo.status === "WAITING" && <p className="mt-1 break-words text-sm text-amber-500">Waiting{todo.waitingOnContact?.name || todo.waitingOn ? ` on ${todo.waitingOnContact?.name ?? todo.waitingOn}` : ""}{todo.waitingReason ? ` · ${todo.waitingReason}` : ""}</p>}
           {todo.dependsOn && (
             <div className="text-xs text-gray-500">Depends on: {todo.dependsOn.title}</div>
           )}
@@ -54,15 +55,9 @@ export default function TodoCard({ todo, onOpen }: { todo: Todo; onOpen: () => v
       </div>
 
       <div className="mt-2">
-        <div className="w-full h-2 bg-gray-200 rounded">
-          <div
-            style={{ width: `${pct}%` }}
-            className="h-2 bg-[var(--color-accent)] rounded"
-          />
-        </div>
         {total > 0 && (
           <div className="text-xs text-gray-500 mt-1">
-            {completed}/{total} subtasks
+            {completed}/{total} checklist items
           </div>
         )}
       </div>

@@ -2,9 +2,9 @@ import type { Todo } from "@/generated/prisma";
 import { WorkValidationError, workId, workInteger, workText } from "./validation";
 import { WORK_STATUSES, WORK_PRIORITIES, WORK_KINDS, isClosed, legacyPriorityLevel } from "./types";
 
-export const TASK_FIELDS = ["title", "description", "priority", "priorityLevel", "status", "dependsOnId", "rewardXp", "rewardCoins", "contextId", "kind", "company", "course", "system", "tags", "desiredOutcome", "nextAction", "waitingOn", "waitingReason", "workaround", "completionSummary", "closureMode", "acceptWorkaround", "archived"];
+export const TASK_FIELDS = ["title", "description", "priority", "priorityLevel", "status", "dependsOnId", "rewardXp", "rewardCoins", "contextId", "kind", "company", "course", "system", "tags", "desiredOutcome", "nextAction", "waitingOn", "waitingReason", "workaround", "completionSummary", "closureMode", "acceptWorkaround", "archived", "requesterId", "waitingOnContactId", "affectedContactIds"];
 const optionalText = { company: 120, course: 120, system: 120, desiredOutcome: 10000, nextAction: 1000, waitingOn: 500, waitingReason: 5000, workaround: 10000, completionSummary: 10000 };
-export type TaskData = Partial<Pick<Todo, "title" | "description" | "priorityLevel" | "status" | "dependsOnId" | "rewardXp" | "rewardCoins" | "contextId" | "kind" | "company" | "course" | "system" | "tags" | "desiredOutcome" | "nextAction" | "waitingOn" | "waitingReason" | "workaround" | "completionSummary" | "closureType" | "completedAt" | "cancelledAt" | "archivedAt">>;
+export type TaskData = Partial<Pick<Todo, "title" | "description" | "priorityLevel" | "status" | "dependsOnId" | "rewardXp" | "rewardCoins" | "contextId" | "requesterId" | "waitingOnContactId" | "kind" | "company" | "course" | "system" | "tags" | "desiredOutcome" | "nextAction" | "waitingOn" | "waitingReason" | "workaround" | "completionSummary" | "closureType" | "completedAt" | "cancelledAt" | "archivedAt">>;
 export function parseTaskFields(body: Record<string, unknown>): TaskData {
   const data: TaskData = {};
   if (body.title !== undefined) data.title = workText(body.title, "title", 500)!;
@@ -27,7 +27,7 @@ export function parseTaskFields(body: Record<string, unknown>): TaskData {
     if (body.kind !== null && !WORK_KINDS.includes(body.kind as typeof WORK_KINDS[number])) throw new WorkValidationError("Choose a valid task kind.");
     data.kind = body.kind as TaskData["kind"];
   }
-  for (const key of ["contextId", "dependsOnId"] as const) if (body[key] !== undefined) data[key] = body[key] === null ? null : workId(body[key]);
+  for (const key of ["contextId", "dependsOnId", "requesterId", "waitingOnContactId"] as const) if (body[key] !== undefined) data[key] = body[key] === null ? null : workId(body[key]);
   for (const key of ["rewardXp", "rewardCoins"] as const) if (body[key] !== undefined) data[key] = workInteger(body[key], key);
   if (body.tags !== undefined) {
     if (!Array.isArray(body.tags) || body.tags.length > 20 || body.tags.some(value => typeof value !== "string" || !value.trim() || value.trim().length > 50)) throw new WorkValidationError("Use up to 20 nonempty tags, each at most 50 characters.");
@@ -70,13 +70,16 @@ export function lifecycleData(row: Pick<Todo, "status" | "archivedAt" | "workaro
   if (body.archived !== undefined) result.archivedAt = body.archived ? row.archivedAt ?? now : null;
   return result;
 }
-export const AUDIT_FIELDS = ["title", "description", "status", "priorityLevel", "context", "kind", "company", "course", "system", "tags", "desiredOutcome", "nextAction", "waitingOn", "waitingReason", "workaround", "completionSummary", "closureType", "completedAt", "cancelledAt", "archivedAt", "dependsOnId", "rewardXp", "rewardCoins", "rewardAppliedXp", "rewardAppliedCoins"];
+export const AUDIT_FIELDS = ["title", "description", "status", "priorityLevel", "context", "requester", "waitingOnContact", "affectedPeople", "kind", "company", "course", "system", "tags", "desiredOutcome", "nextAction", "waitingOn", "waitingReason", "workaround", "completionSummary", "closureType", "completedAt", "cancelledAt", "archivedAt", "dependsOnId", "rewardXp", "rewardCoins", "rewardAppliedXp", "rewardAppliedCoins"];
 export function taskChanges(before: Record<string, unknown> | null, after: Record<string, unknown>) {
   const changes: Record<string, { before: unknown; after: unknown }> = {};
   for (const field of AUDIT_FIELDS) {
-    let old = before?.[field] ?? null, next = after[field] ?? null;
-    if (field === "context") {
-      const snapshot = (value: unknown) => { const context = value as { id: number; name: string } | null; return context ? { id: context.id, name: context.name } : null; };
+    let old: unknown = before?.[field] ?? null, next: unknown = after[field] ?? null;
+    if (["context", "requester", "waitingOnContact", "affectedPeople"].includes(field)) {
+      const snapshot = (value: unknown): unknown => {
+        if (Array.isArray(value)) return value.map(item => snapshot((item as { contact?: unknown }).contact ?? item)).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+        const person = value as { id: number; name: string } | null; return person ? { id: person.id, name: person.name } : null;
+      };
       old = snapshot(old); next = snapshot(next);
     }
     if (JSON.stringify(old) !== JSON.stringify(next)) changes[field] = { before: old, after: next };

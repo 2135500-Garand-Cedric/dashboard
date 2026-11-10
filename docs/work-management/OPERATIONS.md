@@ -272,3 +272,90 @@ docker compose -f docker-compose.dev.yml exec -T -e RUN_AUTH_HTTP_TEST=1 dashboa
 This checks authenticated task lists, contexts and (when a task exists) details and
 activity, as well as the other access-control checks. All requests are read-only
 or preview-only; it does not create test tasks in the primary development DB.
+
+## Phase 03 — All Work and contacts
+
+`20261109150000_work_contacts` adds WorkContact, TodoAffectedContact and nullable
+requester/waiting-contact links. Run the same whole-DB inventory/restore/rehearsal
+procedure with a fresh project (Phase 03 used `dashboard-work-phase03`). Use fresh
+format-2 inventories and `--phase 03` for the after/before comparison. It allows
+only these additions, requires the new tables to be empty at migration cutover,
+and checks cross-owner people links. No old people/text fields are inferred.
+
+After a successful rehearsal, inventory development, deploy explicitly, compare,
+generate the client and force-recreate with the no-mutation override. Verify owner
+reads with the live auth regression. Do not rely on `up -d` to refresh a running
+Prisma singleton. The documented maintenance/read-only rollback rules still apply.
+
+### Reading and filtering
+
+- `/todos` is All Work; default list and optional board share one result page.
+  `/todos/[id]` remains the canonical full-page URL. `?task=<id>` opens the same
+  content in a desktop panel/phone full-screen dialog. Full-page return links
+  accept only `/todos` and its query string, never an arbitrary external URL.
+- `/api/work-items` GET returns `{items,total,page,pageSize}` with 30-row pages,
+  deterministic ID tie-breaks and page clamping. It is read-only and owner-scoped.
+  Both UI modes use exactly these results. The original `/api/todos` array API
+  remains available to existing callers; it was not silently changed to an envelope.
+- URL/API filters: `q` (reference/title/description), `context` (ID or `none`),
+  `company`, `course`, `system` (case-insensitive contains), `tag` (exact stored tag),
+  `person` (contact ID in requester/affected/waiting roles), `kind`, `status`,
+  `priority`, `sort` (updated/created/priority/title) and `page`.
+  `kind=none`/`priority=none` expose unknown legacy values. No date/project filter
+  is implemented before the authoritative models exist.
+- `view=active` is unarchived open work; `history` is unarchived Done/Cancelled;
+  `archived` includes archived tasks of any status; `all` includes every unarchived
+  status. API criteria combine explicitly. The UI moves a selected open/closed
+  status into the corresponding view when necessary; switching views clears status.
+- Quick capture defaults to the selected active context, otherwise active Personal;
+  Unclassified stays selectable. A filtered inactive context defaults capture to
+  Unclassified rather than silently assigning inactive data. Title alone suffices.
+  Task details retain personal rewards; no separate reward writer was added.
+
+### Contacts and people
+
+- WorkContact has a name, optional company, active flag, owner, revision and server
+  timestamps. Contacts are organizational records, not app users/assignees/tenants.
+  Name collisions are allowed; company and ID distinguish people.
+- `/api/work-contacts` GET searches/paginates 30 contacts; POST creates.
+  `/api/work-contacts/[id]` GET reads and PATCH edits/deactivates/reactivates.
+  No DELETE route exists; restrictive FKs protect task associations. All handlers
+  check the owner before parsing, searching or mutating. Writes use replay/version
+  protection and the same owner lock as tasks.
+- Task writes accept nullable `requesterId`, nullable `waitingOnContactId` and
+  `affectedContactIds` (unique IDs, up to 30). Omitted fields preserve associations;
+  null/empty explicitly unlinks. Existing inactive associations may be retained or
+  unlinked, but new inactive or foreign assignments are rejected. Contact labels
+  remain visible on old tasks. Free-text `waitingOn` remains available for shipments
+  or other things, independently from a waiting contact.
+- People replacements, task revisions, reward state, automatic audit and replay
+  receipts are atomic. Renaming a contact does not rewrite earlier activity
+  snapshots. Explicit task deletion unlinks its affected people while preserving
+  contact rows and recorded activity facts. No contact seed/backfill is run.
+
+### Drafts, navigation and verification
+
+Explicit close/link actions and full reloads guard unsaved forms. Next browser
+Back cannot reliably be stopped by a page-level popstate listener; task drafts are
+instead kept in browser memory and restored when reopened. They retain the old
+revision, so an intervening server change still causes a conflict rather than
+silently overwriting it. Quick-capture and contact drafts also survive client
+navigation, with pending creation retry keys retained. Save/discard clears drafts.
+Nothing is written to localStorage or to the DB until a real command succeeds.
+A confirmed hard reload or tab/browser close loses browser-memory drafts.
+
+Run existing regressions plus:
+
+```sh
+node tests/work-all.test.mjs
+docker compose -p dashboard-work-phase03 -f docker-compose.work-test.yml run --rm -e RUN_EVENT_DB_TEST=1 runner node --test --test-concurrency=1 tests/work-management.integration.mjs tests/work-foundation.integration.mjs tests/work-all.integration.mjs tests/event-completion.integration.mjs
+RUN_WORK_ALL_BROWSER_TEST=1 node tests/work-all.browser.mjs
+```
+
+Browser tests require the isolated app/secret on localhost:3002 and temporary or
+existing Playwright/Chromium paths; never point them at the primary dev app.
+Synthetic zero-reward tasks are deleted through guarded APIs after normal test
+completion; audit facts remain. Synthetic contacts are deactivated and retained
+inside the disposable DB because normal APIs intentionally cannot delete them.
+Interrupted tests may leave synthetic fixtures there. No test data is seeded into
+the primary development DB. Full production migration approval is a later phase.

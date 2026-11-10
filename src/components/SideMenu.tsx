@@ -19,7 +19,7 @@ export default function SideMenu() {
 
   const menuItems = [
     { name: "Main Dashboard", href: "/", icon: HomeIcon },
-    { name: "Todos", href: "/todos", icon: DocumentTextIcon },
+    { name: "All Work", href: "/todos", icon: DocumentTextIcon },
     { name: "Calendar", href: "/events", icon: FolderIcon },
     { name: "Time Manager", href: "/timemanager", icon: ChartPieIcon },
     { name: "Finance", href: "/finance", icon: BanknotesIcon },

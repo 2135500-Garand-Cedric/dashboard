@@ -8,5 +8,6 @@ export function loadTaskFoundation(validation) {
   }
   const types = load("../../src/lib/work-management/types.ts");
   const fields = load("../../src/lib/work-management/task-foundation.ts", { "./validation": validation, "./types": types });
-  return { "./types": types, "./task-foundation": fields };
+  const query = load("../../src/lib/work-management/query.ts", { "./validation": validation, "./types": types });
+  return { "./types": types, "./task-foundation": fields, "./query": query };
 }
