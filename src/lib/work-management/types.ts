@@ -17,6 +17,7 @@ export interface WorkContact { id: number; name: string; company: string | null;
 export interface WorkResults { items: WorkTodo[]; total: number; page: number; pageSize: number; }
 export interface ChecklistItem { id: number; todoId?: number; title: string; done: boolean; revision: number; }
 export interface WorkTodo {
+  deadlineDate?: string | null; deadlineAt?: string | null; deadlineTimeZone?: string | null; deadlineState?: string | null; activeFollowUp?: WorkFollowUp | null; timeZone?: string;
   parentId?: number | null; parent?: GraphTaskStub | null; childCount?: number; completedChildCount?: number; dependencyCount?: number; blockingCount?: number; isBlocked?: boolean; dependencyReviewRequired?: boolean; relatedCount?: number; legacyDependencyWritable?: boolean;
   id: number; reference?: string; revision: number; title: string; description?: string | null;
   status: WorkStatus; priority?: number | null; legacyPriority?: number | null; priorityLevel?: WorkPriority | null;
@@ -45,3 +46,6 @@ export interface SupportEditorState { dirty: boolean; busy: boolean; }
 export interface GraphTaskStub { id: number; reference: string; title: string; status: WorkStatus | null; revision: number | null; parentId: number | null; archivedAt: string | null; reviewReason?: string | null; }
 export interface TransitionReview { taskRevision: number; currentStatus: WorkStatus; archived: boolean; requestedStatus: string; workaround: string | null; token: string; blockingCount: number; blockers: GraphTaskStub[]; unfinishedChildCount: number; unfinishedChildren: GraphTaskStub[]; descendantCount: number; }
 export interface RelationshipResults { task: WorkTodo; total: number; page: number; pageSize: number; items: { task: GraphTaskStub; origin: string; reviewReason: string | null }[]; }
+export interface WorkFollowUp { id: number; todoId: number; date: string | null; at: string | null; timeZone: string | null; reason: string | null; status: string; outcome: string | null; resolvedAt: string | null; previousId: number | null; createdAt: string; state?: string | null; }
+export interface WorkKeyDate { id: number; todoId: number; label: string; date: string | null; at: string | null; timeZone: string | null; removedAt: string | null; }
+export interface WorkDatesView { timeZone: string; taskRevision: number; actionable: boolean; deadline: { date: string | null; at: string | null; timeZone: string | null }; deadlineState: string | null; activeFollowUp: WorkFollowUp | null; followUps: WorkFollowUp[]; total: number; page: number; pageSize: number; keyDates: WorkKeyDate[]; keyTotal: number; keyPage: number; }

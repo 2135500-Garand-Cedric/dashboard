@@ -4,8 +4,8 @@
 
 Updated: 2026-11-10 (America/Toronto).
 
-Phases 01–05 are implemented and verified in development. Production is untouched.
-Next assignment: Phase 06, which has not started. The architecture is not a production migration approval.
+Phases 01–06 are implemented and verified in development. Production is untouched.
+Next assignment: Phase 07, which has not started. The architecture is not a production migration approval.
 
 | Phase | Status | Evidence |
 | --- | --- | --- |
@@ -15,7 +15,7 @@ Next assignment: Phase 06, which has not started. The architecture is not a prod
 | 03 | Verified in development | See Phase 03 evidence below and OPERATIONS.md |
 | 04 | Verified in development | See Phase 04 evidence below and OPERATIONS.md |
 | 05 | Verified in development | See Phase 05 evidence below and OPERATIONS.md |
-| 06 | Not started | — |
+| 06 | Verified in development | See Phase 06 evidence below and OPERATIONS.md |
 | 07 | Not started | — |
 | 08 | Not started | — |
 | 09 | Not started | — |
@@ -890,3 +890,175 @@ features remain unimplemented. Production migration/recovery approval is separat
   differences, no issues and no pending migrations. The authorization verification
   left every development record unchanged. Isolated test app/database were stopped
   after checks, retaining volumes/artifacts; development remains running.
+
+## Phase 06 — Deadlines, follow-ups and key dates (2026-11-10)
+
+Implemented in development only after reading CONTEXT.md, the Phase 06 contract,
+acceptance/progress and current task/graph/calendar/date code. No production
+operation, seed/reset, event conversion, calendar rendering or Phase 07 feature.
+The existing local AppShell development-banner edit was preserved.
+
+### Models, ownership, dates and lifecycle
+
+- `Todo.deadlineDate` is a validated calendar-date string, mutually exclusive with
+  `deadlineAt` (timestamptz) + `deadlineTimeZone`. All null means unknown/undated.
+  DB CHECKs enforce alternatives, valid calendar dates and timezone metadata.
+- `WorkFollowUp` is a task-owned lifecycle record, with original date/reason,
+  created/resolved time, outcome/status and a previousId chain on snooze.
+  A partial unique index enforces one ACTIVE follow-up per task. New commands
+  share the root task revision/idempotency receipt and existing owner lock.
+- `WorkKeyDate` has an ordinary required Todo FK, label and one date-only/exact
+  value. Removal is soft and audited. It is informational, never a deadline or
+  reserved period. Future project ownership can use another FK plus XOR parent
+  check in Phase 08; no generic IDs, project schema or guessed parents were added.
+- Server-only `APP_TIME_ZONE` defaults to America/Toronto, configured centrally in
+  `src/lib/app-time-zone.ts`, with an optional documented .env.example setting.
+  APIs send it explicitly to browsers. New task-date meaning never depends on
+  browser/server locale. Existing unrelated modules were not retimed.
+- Enter local wall time + named zone. Resolve and round-trip actual candidate
+  instants: DST gaps reject with an actionable error; folds require an explicit
+  earlier/later choice. Exact values retain instant + zone, rendering GMT offset
+  so repeated times remain distinguishable. Date-only values stay calendar dates.
+- Date-only deadlines become overdue after their local date; exact deadlines
+  strictly after their instant. Date-only follow-ups are due on their local date,
+  exact follow-ups at their instant. States derive on reads, not stored flags.
+  No-date Urgent work remains available. Refresh to update across clock boundaries.
+- Complete/cancel/snooze only affects the follow-up. Snooze preserves the resolved
+  original and atomically creates its replacement, without changing task outcome,
+  deadline, key dates, rewards or events. Explicit past dates remain possible for
+  manual recording; no inferred recurrence/duration or automatic notifications.
+- Done/Cancelled retires any active follow-up with TASK_CLOSED outcome atomically
+  with task history/rewards. Reopening never reactivates inactive follow-ups or
+  invents reminders; schedule a fresh follow-up explicitly. Original deadline
+  remains and overdue is re-evaluated. Archive preserves an active follow-up but
+  hides action indicators; restoring open work reveals the retained due state.
+- Key dates and historical deadlines survive closure. Any follow-up/key-date
+  history requires archive instead of hard task deletion. Children and events are
+  never retimed/completed by a date command.
+
+### UI and source changes
+
+- Added pure display/clock helpers, validated date parsing/resolution, transactional
+  date service and closure lifecycle hook under `src/lib/work-management/`.
+- Owner-first GET/POST `/api/todos/[id]/dates` with no-store responses, owned task/
+  child lookup, strict action bodies and existing If-Match/UUID behavior. Date
+  commands create old/new activity; stale/failed writes retain no partial effects.
+- `TaskDates.tsx` adds distinct Deadline, Follow-up/Next check and Informational key
+  dates beside task status/Waiting details. Labelled native phone inputs,
+  loading/empty/error/success states, explicit DST choice, editable key dates,
+  separate 20-row history/key-date pages and in-memory guarded date drafts.
+  Metadata/relationship changes cannot silently overwrite a date draft.
+- All Work adds overdue/today/upcoming/undated deadline filters, due/active/none
+  follow-up filters, inclusive deadline-from/through range, mixed date-only/exact
+  earliest-first sorting and separate deadline/follow-up labels. Filters remain
+  shared by list/board and persisted in URL. Quick capture still needs title only.
+  Sorting reads only ordering scalars before loading the bounded full-record page.
+- Task details use the server's configured zone for task creation/update/closure
+  display. Existing browser-local occurred-at note entry remains explicitly local.
+  Closure dialog explains follow-up retirement without adding another approval.
+- Inventory comparison supports `--phase 06` and checks no guessed date backfill;
+  lifecycle inventory also reports duplicate active records, closed active reminders
+  and invalid/cross-task predecessor links. Existing auth/mock test helpers updated
+  for the two new protected handlers and read shapes. No new dependency.
+
+### Preservation and migration evidence
+
+- Captured private `phase06-dev-before.json` and whole-DB
+  `phase06-dev-before.dump` under ignored `private/work-management/`.
+- Created new `dashboard-work-phase06` disposable project, verified work_test had
+  zero public tables, restored the dump with single-transaction pg_restore and no
+  seed. `phase06-copy-before.json` compared to the development baseline with
+  `--phase 06`: **no differences/issues**.
+- Applied explicit-transaction migration `20261110180000_task_dates` on the copy.
+  `phase06-copy-after.json` compared to copy-before: **no original differences or
+  issues**, no pending migration. Added only three nullable deadline fields and
+  empty WorkFollowUp/WorkKeyDate tables; all old dates remained unknown.
+- Preserved exact original rows: 3 tasks, 5 checklist items, 17 events, canonical
+  dependency tuple, context/contact links, 1 real note/revision/activity/receipt,
+  User XP/coins and every finance/Japanese record. No event date was inferred or
+  changed and no retrospective activity was manufactured.
+- Fresh `phase06-dev-cutover-before.json` still matched the backup baseline.
+  Stopped only development; explicit migrate deploy without seed; comparison
+  `phase06-dev-cutover-before.json` → `phase06-dev-cutover-after.json` with
+  `--phase 06`: **no original differences/issues**, zero follow-ups/key dates and
+  no deadlines on old records. Generated Prisma client and force-recreated only
+  development with the existing work-dev override; no production deployment.
+- Repeat isolated deploy reported no pending migrations. Comparison
+  `phase06-repeat-before.json` → `phase06-repeat-after.json`: no differences/issues.
+- Read-only Prisma drift check showed only the pre-existing unrelated
+  ActivityVocab.lastPracticed column. Proposed DROP SQL was **not executed**.
+  No work-schema drift appeared; no db push/reset or unrelated cleanup was used.
+
+### Executed tests and checks
+
+- `node --test tests/*.test.mjs`: **27 test files passed**. New work-date checks
+  include process zones UTC/Tokyo/Los Angeles, configured app-zone override and
+  invalid configuration, Toronto midnight boundaries, exact equality versus
+  strict overdue, leap/invalid dates, DST gap/fold earlier/later, 23/25-hour days,
+  mixed timed/date-only sorting and configured-zone date filters. Existing finance,
+  Japanese, auth, graph, notes, task and calendar unit regressions also passed.
+- Isolated serial integration command in OPERATIONS.md: **56 TAP checks passed,
+  no failures/skips**. New date suite covers optional/changed/cleared deadlines,
+  unchanged event times/priority/status/rewards, invalid input rollback, follow-up
+  completion/snooze/cancellation/retry, competing create/snooze/complete requests,
+  DB active uniqueness and date/lifecycle CHECKs, closure/reopen/archive policy,
+  retained key dates/history/soft removal, parent/record ownership, stale writes,
+  21-record history/key-date pagination, mixed sorting/filters and late audit
+  failure rollback of deadline/replacement/retirement/history/receipts/rewards.
+  All prior Phase 01–05 work and event integration regressions passed.
+- `RUN_WORK_DATES_BROWSER_TEST=1`: passed against real isolated DB/API with
+  server TZ=UTC and browser Asia/Tokyo at **390×844, 844×390, 1440×900,
+  2560×1440**. Touch/keyboard, date-only preservation, overdue labels, complete/
+  snooze history, closure/reopen retirement, DST errors with retained draft,
+  explicit repeated-time choice, independent key date, deadline clearing,
+  undated Urgent filter/sort and viewport width checks passed. No runtime errors;
+  inspected `/tmp/work-phase06-desktop.png`.
+- Existing Phase 01 mocked controls and Phase 02–05 real foundation, All Work,
+  notes/files and graph browser suites: **all five passed**, four sizes each,
+  sequentially, with no runtime errors. No DB suite ran concurrently with these
+  whole-DB rollback assertions in the final run.
+- Isolated final-source `npm run build` in /tmp/dashboard-work-build passed;
+  source TypeScript, targeted changed-path ESLint and `git diff --check` passed.
+  Full-repository lint retains prior unrelated/generated/private-directory issues;
+  it is not claimed clean. No private permissions were weakened.
+
+### Suggested manual acceptance
+
+1. Open a disposable task, set a date-only deadline and then an exact deadline;
+   check the distinct labels/zone and try clearing it. Confirm linked event times
+   do not move, and priority does not change.
+2. Set Waiting with an optional follow-up. Snooze and complete it, then inspect
+   Follow-up history and All activity. Task/deadline remain unchanged.
+3. Close a task with an active follow-up, then reopen. Deadline remains, overdue
+   returns when appropriate, history remains and no reminder is recreated.
+4. Add Delivery/Launch/custom key dates, edit/remove one and inspect its activity.
+   They must never cause task completion or appear as a deadline.
+5. Try Toronto 2026-03-08 02:30 (gap) and 2026-11-01 01:30 (fold), choose a fold
+   occurrence explicitly, and repeat in a browser set to another timezone.
+6. Filter/sort All Work by dates and find an undated Urgent task. Edit a date in two
+   windows: stale save must retain the draft and require reload rather than rebase.
+
+Limits: Chromium emulation is not physical mobile/Safari testing. Due indicators
+refresh on reads, with no notification/background scheduler. Sorting is designed
+for this personal app, not benchmarked at enterprise scale. Existing combined
+file-backup rules remain applicable; no uploaded document bytes were moved in this
+phase. Production recovery/deployment is untested and unauthorized. No Phase 07
+calendar projection, work session, conversion, external calendar or notification
+was implemented. Next assignment: Phase 07, not started automatically.
+
+### Final Phase 06 checks
+
+Live development `RUN_AUTH_HTTP_TEST=1 node tests/auth-security.integration.mjs`
+passed across **122 protected handlers**, page redirects, denied identities,
+forged/legacy cookies and owner access, including explicit date-route reads.
+No secret was printed and no real user mutation was performed. Final unit suite
+including configured app-zone override/invalid configuration passed all 27 files.
+The final build, source TypeScript, targeted lint and whitespace checks passed.
+
+Final `phase06-dev-final.json` comparison to post-cutover: no differences, no
+issues and no pending migration; live auth verification made no record changes.
+The final 56-check DB rerun additionally allowed follow-up retirement and reward
+writes before injecting a completion-audit failure: all changes rolled back.
+Isolated test app/database were stopped without deleting volumes/evidence;
+development remains running. Documentation fences and final whitespace check passed.
+Phase 06 is complete in development. Phase 07 has not started.

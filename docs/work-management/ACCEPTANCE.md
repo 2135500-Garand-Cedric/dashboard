@@ -151,3 +151,34 @@ A24 covers task child counts/closure only; project acceptance remains Phase 08.
 No Phase 06 dates/scheduling, project features, physical-device tests or production
 migration/recovery approval are implied. The pre-existing unrelated
 ActivityVocab.lastPracticed schema difference was preserved without repair.
+
+
+## Phase 06 evidence (2026-11-10)
+
+A01–A05, A10, A12, A18–A19, A22 task behavior, A28–A29 and A31 were checked for
+this phase in development; commands/artifacts/limits are in PROGRESS.md and
+OPERATIONS.md. Exact whole-DB restore/migration comparisons preserved original
+records/IDs/relations/timestamps/rewards and unrelated records. Existing dates
+remain unknown, new lifecycle/key-date tables begin empty, and no event was moved.
+Repeat deployment changed no records. Production was not operated on.
+
+56 DB integration checks passed, including valid/exclusive date alternatives,
+active follow-up uniqueness and concurrent complete/snooze/retry behavior,
+retained lifecycle/history, stale writes, owner scope, independent key dates,
+closure/reopen/archive policy, pagination/filters/sorting and late-failure rollback
+of records/history/rewards. 27 unit-test files passed, including midnight/exact
+boundaries, leap/invalid dates, DST gaps/folds, Toronto 23/25-hour days, process
+zones UTC/Tokyo/Los Angeles and configured app-zone override/invalid configuration.
+
+New date controls passed real Chromium/API tests at four phone/desktop sizes,
+using a Tokyo browser and UTC server. Five previous work browser suites also
+passed at all four sizes. Live authorization passed for 122 protected handlers,
+including the date API. Final-source isolated production build, TypeScript,
+targeted lint and whitespace checks passed; full repository lint is not claimed
+clean. Known unrelated ActivityVocab.lastPracticed drift was left intact.
+
+A19/A22 cover task-date behavior only: no task/event copies, no automatic task
+completion, closure hides outstanding indicators, reopen recomputes deadline
+without recreating inactive follow-ups. Calendar projection/work sessions and
+event conversion remain Phase 07. No production, physical phone/Safari, notification
+scheduler or enterprise-scale performance claim is implied.

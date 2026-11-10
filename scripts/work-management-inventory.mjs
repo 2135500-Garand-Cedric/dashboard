@@ -37,10 +37,10 @@ export function inventoryIssues(todos, subtasks, events, users, statuses) {
   return [...new Set(issues)];
 }
 export function compareInventories(before, after, phase = "01") {
-  const differences = [], foundation = phase === "02", contacts = phase === "03", notes = phase === "04", graph = phase === "05";
-  if ((foundation || contacts || notes || graph) && before.format !== 2) return ["Capture a fresh format-2 baseline before this migration."];
-  const allowedTables = graph ? ["TodoDependency", "TodoRelation"] : notes ? ["WorkNote", "WorkNoteRevision", "WorkAttachment"] : contacts ? ["WorkContact", "TodoAffectedContact"] : foundation ? ["WorkMutationReceipt", "WorkContext", "WorkActivity"] : ["WorkMutationReceipt"];
-  const allowedColumns = (table, column) => technical[table]?.includes(column) || (graph && table === "Todo" && column === "parentId") || (foundation && table === "Todo" && foundationColumns.includes(column)) || (contacts && table === "Todo" && ["requesterId", "waitingOnContactId"].includes(column)) || (notes && table === "WorkActivity" && column === "noteRevisionId");
+  const differences = [], foundation = phase === "02", contacts = phase === "03", notes = phase === "04", graph = phase === "05", dates = phase === "06";
+  if ((foundation || contacts || notes || graph || dates) && before.format !== 2) return ["Capture a fresh format-2 baseline before this migration."];
+  const allowedTables = dates ? ["WorkFollowUp", "WorkKeyDate"] : graph ? ["TodoDependency", "TodoRelation"] : notes ? ["WorkNote", "WorkNoteRevision", "WorkAttachment"] : contacts ? ["WorkContact", "TodoAffectedContact"] : foundation ? ["WorkMutationReceipt", "WorkContext", "WorkActivity"] : ["WorkMutationReceipt"];
+  const allowedColumns = (table, column) => technical[table]?.includes(column) || (dates && table === "Todo" && ["deadlineDate", "deadlineAt", "deadlineTimeZone"].includes(column)) || (graph && table === "Todo" && column === "parentId") || (foundation && table === "Todo" && foundationColumns.includes(column)) || (contacts && table === "Todo" && ["requesterId", "waitingOnContactId"].includes(column)) || (notes && table === "WorkActivity" && column === "noteRevisionId");
   for (const [name, table] of Object.entries(before.tables)) {
     const current = after.tables[name];
     if (current && table.count === current.count && table.hash === current.hash) continue;
@@ -68,6 +68,9 @@ export function compareInventories(before, after, phase = "01") {
     const edges = (after.tables.TodoDependency?.rows ?? []).map(JSON.parse);
     if (JSON.stringify(expected) !== JSON.stringify(edges.map(edge => `${edge.dependentId}:${edge.prerequisiteId}`).sort()) || edges.some(edge => edge.origin !== "LEGACY")) differences.push("Legacy dependency directions/tuples changed during backfill.");
     if (after.tables.TodoRelation?.count || (after.tables.Todo?.rows ?? []).some(raw => JSON.parse(raw).parentId !== null)) differences.push("Unexpected child or related-task backfill.");
+  }
+  if (dates && !("WorkFollowUp" in before.tables) && "WorkFollowUp" in after.tables) {
+    if (after.tables.WorkFollowUp.count || after.tables.WorkKeyDate?.count || (after.tables.Todo?.rows ?? []).some(raw => { const row = JSON.parse(raw); return row.deadlineDate !== null || row.deadlineAt !== null || row.deadlineTimeZone !== null; })) differences.push("Unexpected task-date backfill: old dates must remain unknown.");
   }
   for (const column of before.columns) {
     const current = after.columns.find(value => value.table_name === column.table_name && value.column_name === column.column_name);
@@ -126,6 +129,15 @@ export async function captureInventory(prisma) {
       for (const task of todos) { const active = new Set(), stack = [{ id: task.id, exit: false }]; while (stack.length) { const node = stack.pop(); if (node.exit) { active.delete(node.id); done.add(node.id); continue; } if (active.has(node.id)) { issues.push("Canonical dependency cycle requires review."); break; } if (done.has(node.id)) continue; active.add(node.id); stack.push({ id: node.id, exit: true }); for (const id of adjacency.get(node.id) ?? []) stack.push({ id, exit: false }); } }
       if ((tables.TodoRelation?.rows ?? []).some(raw => { const edge = JSON.parse(raw); return edge.firstId >= edge.secondId || !byId.has(edge.firstId) || byId.get(edge.firstId)?.userId !== byId.get(edge.secondId)?.userId; })) issues.push("Invalid related-task pair requires review.");
     }
+    if (tables.WorkFollowUp) {
+      const followUps = tables.WorkFollowUp.rows.map(JSON.parse), byId = new Map(followUps.map(row => [row.id,row])), active = new Set();
+      for (const row of followUps) {
+        if (!taskOwners.has(row.todoId)) issues.push("Follow-up without a task requires review.");
+        if (row.previousId !== null && (byId.get(row.previousId)?.todoId !== row.todoId || byId.get(row.previousId)?.status !== "SNOOZED")) issues.push("Cross-task or invalid follow-up predecessor requires review.");
+        if (row.status === "ACTIVE") { if (active.has(row.todoId)) issues.push("Multiple active follow-ups require review."); active.add(row.todoId); if (todos.some(task => task.id === row.todoId && ["DONE","CANCELLED"].includes(task.status))) issues.push("Closed task has an active follow-up requiring review."); }
+      }
+      if ((tables.WorkKeyDate?.rows ?? []).some(raw => !taskOwners.has(JSON.parse(raw).todoId))) issues.push("Key date without a task requires review.");
+    }
     const expected = { Todo: ["id", "title", "description", "status", "priority", "rewardXp", "rewardCoins", "userId", "dependsOnId", "createdAt", "updatedAt"], Subtask: ["id", "todoId", "title", "done", "createdAt"], Event: ["id", "title", "description", "date", "endDate", "completed", "type", "userId", "linkedTodoId", "createdAt", "updatedAt"] };
     for (const [table, required] of Object.entries(expected)) for (const column of required) if (!columns.some(row => row.table_name === table && row.column_name === column)) issues.push(`Required legacy column missing: ${table}.${column}`);
     const migrationRoot = path.join(root, "prisma/migrations");
@@ -145,7 +157,7 @@ async function main() {
     if (!["--output", "--compare", "--phase"].includes(args[i]) || !args[i + 1] || options[args[i]]) throw new Error("Use --output <private-file> [--compare <before-file>].");
     options[args[i]] = args[i] === "--phase" ? args[i + 1] : path.resolve(args[i + 1]);
   }
-  if (options["--phase"] && !["01", "02", "03", "04", "05"].includes(options["--phase"])) throw new Error("Choose a supported phase.");
+  if (options["--phase"] && !["01", "02", "03", "04", "05", "06"].includes(options["--phase"])) throw new Error("Choose a supported phase.");
   if (!options["--output"]) throw new Error("A private output path is required.");
   const output = options["--output"];
   await mkdir(path.dirname(output), { recursive: true, mode: 0o700 });

@@ -100,6 +100,11 @@ model Todo {
   course String?
   system String?
   tags String[] @default([])
+  deadlineDate String? @db.VarChar(10)
+  deadlineAt DateTime? @db.Timestamptz(3)
+  deadlineTimeZone String? @db.VarChar(100)
+  followUps WorkFollowUp[]
+  keyDates WorkKeyDate[]
   desiredOutcome String?
   nextAction String?
   requesterId Int?
@@ -153,6 +158,8 @@ model Todo {
   @@index([userId, createdAt])
   @@index([dependsOnId])
   @@index([parentId])
+  @@index([deadlineDate])
+  @@index([deadlineAt])
   @@index([userId, archivedAt, status])
   @@index([contextId])
   @@index([requesterId])
@@ -904,4 +911,36 @@ model TodoRelation {
 
   @@id([firstId, secondId])
   @@index([secondId])
+}
+
+// Task-scoped today; Phase 08 can add an exclusive project parent with its own FK.
+model WorkKeyDate {
+  id Int @id @default(autoincrement())
+  todoId Int
+  todo Todo @relation(fields: [todoId], references: [id], onDelete: Restrict)
+  label String @db.VarChar(120)
+  date String? @db.VarChar(10)
+  at DateTime? @db.Timestamptz(3)
+  timeZone String? @db.VarChar(100)
+  removedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  @@index([todoId, removedAt])
+}
+model WorkFollowUp {
+  id Int @id @default(autoincrement())
+  todoId Int
+  todo Todo @relation(fields: [todoId], references: [id], onDelete: Restrict)
+  date String? @db.VarChar(10)
+  at DateTime? @db.Timestamptz(3)
+  timeZone String? @db.VarChar(100)
+  reason String? @db.VarChar(2000)
+  status String @default("ACTIVE") @db.VarChar(20)
+  outcome String? @db.VarChar(2000)
+  resolvedAt DateTime? @db.Timestamptz(3)
+  previousId Int? @unique
+  previous WorkFollowUp? @relation("FollowUpChain", fields: [previousId], references: [id], onDelete: Restrict)
+  successor WorkFollowUp? @relation("FollowUpChain")
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@index([todoId, status])
 }

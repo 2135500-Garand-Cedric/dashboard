@@ -616,3 +616,111 @@ parents/relations or historical activity. Inventories additionally report hierar
 and canonical dependency cycles, foreign links, flagged legacy anomalies and mirror
 disagreement. Review issues; inventory does not repair records. A repeat comparison
 after cutover should show no differences. No Phase 06 dates or scheduling are added.
+
+## Phase 06: deadlines, follow-ups and informational key dates
+
+The server configuration `APP_TIME_ZONE` defaults to `America/Toronto` in
+`src/lib/app-time-zone.ts`. It must be a valid IANA zone; invalid configuration
+fails explicitly. The date API supplies the configured zone to browser controls.
+No `NEXT_PUBLIC` configuration or browser/server system timezone determines the
+meaning of task dates. This phase does not change finance/Japanese date handling
+or the existing browser-local optional occurred-at note input.
+
+Storage and boundaries:
+
+- Todo owns the only current deadline: `deadlineDate` is a validated YYYY-MM-DD
+  string, or `deadlineAt` is a timestamptz instant paired with
+  `deadlineTimeZone`. All three null means no deadline. Database CHECK constraints
+  enforce valid exclusive alternatives, real calendar dates and recognized zones.
+  Calendar dates are never stored as fabricated UTC-midnight deadline instants.
+- A date-only deadline becomes overdue after that date ends in APP_TIME_ZONE.
+  An exact deadline becomes overdue strictly after its instant. Undated tasks have
+  no due/overdue state. Closed/archived tasks have historical dates without an
+  outstanding-action indicator. States are derived on reads, not stored flags;
+  refresh a page to recompute when crossing a clock/day boundary.
+- Entered exact times are wall time plus named zone. The server round-trips
+  candidate offsets: a spring-forward gap is rejected, while a repeated fall-back
+  time requires explicit earlier/later choice. Rendering includes the stored zone
+  and GMT offset so repeated times are distinguishable. No silent DST adjustment.
+- Follow-up date-only values become due on their configured local date; timed
+  values at their instant. A follow-up is a next check, not a deadline/reservation.
+- `WorkKeyDate` is informational: label and one date-only/exact value, with an
+  ordinary required Todo foreign key. No generic parent ID or unattached records.
+  Phase 08 can make todoId nullable and add projectId with a separate FK and XOR
+  parent constraint. No project table or fake project parent is introduced now.
+
+Lifecycle and preservation:
+
+- `WorkFollowUp` keeps the original date, reason, creation time and resolved
+  outcome. A partial unique index allows at most one ACTIVE row per task.
+  Commands share the existing owner transaction lock, root task If-Match and UUID
+  replay receipt. Two simultaneous creates/completes/snoozes cannot both apply.
+- Complete/cancel resolves only the active follow-up. Snooze resolves it as SNOOZED
+  and creates a linked replacement (`previousId`) in the same transaction. It can
+  be explicitly rescheduled to a chosen calendar date/time; no hidden duration or
+  automatic recurrence is inferred. Past dates are allowed for manual recording.
+  Existing dates/outcomes remain in the paginated history and immutable activity.
+- Closing or cancelling the task retires its active follow-up as CANCELLED with
+  outcome TASK_CLOSED, atomically with closure, audit and rewards. Reopening never
+  reactivates completed/cancelled/snoozed follow-ups or manufactures a reminder.
+  Schedule a new one explicitly. The original deadline remains and is re-evaluated.
+- Archival preserves an active follow-up but suppresses its action indicator;
+  restoring an open task reveals its retained due state. Dates on archived tasks
+  cannot be edited until restore. Informational key dates survive closure.
+- Key-date removal is soft removal; old/new values remain in task activity.
+  Tasks with any follow-up/key-date history require archival rather than permanent
+  deletion. No linked calendar time or child task date is changed by these commands.
+
+API and UI:
+
+- GET `/api/todos/:id/dates?page=1&keyPage=1` returns deadline state, independently
+  selected active follow-up, and separate 20-item pages of follow-up history and
+  active key dates. Owner lookup precedes access; responses use no-store.
+- POST the same route with existing root `If-Match` / `Idempotency-Key` and
+  `{ action, ... }`. Actions: `deadline`, `followup-create`, `followup-complete`,
+  `followup-snooze`, `followup-cancel`, `key-create`, `key-edit`, `key-remove`.
+  A date is `{kind:"DATE",date:"2026-11-10"}` or
+  `{kind:"TIME",local:"2026-11-01T01:30",timeZone:"America/Toronto",occurrence:"later"}`.
+  Only deadline accepts null to clear. Resolve/edit/remove uses the owned record
+  `id`; key dates use `label`, follow-ups an optional `reason`/outcome note.
+- Task details offer progressively disclosed date forms and labelled phone inputs,
+  independent informational key dates, and follow-up history near Waiting/status
+  information. Browser-memory drafts preserve the original root revision, survive
+  client Back, and participate in existing discard guards. Stale saves retain the
+  draft; discard and Reload task before retrying a newly based edit.
+- All Work supports deadline overdue/today/upcoming/none, follow-up due/active/none,
+  inclusive deadline-from/through dates, and earliest deadline/follow-up sorting.
+  Date ranges are interpreted in APP_TIME_ZONE even for a record with a different
+  exact-time display zone. Action filters omit closed/archived tasks; date ranges
+  can retrieve history through the existing history/archive views. Priority remains
+  independent, and Urgent with no deadline remains searchable.
+- Mixed date-only/exact sorting uses semantic instants (end of local date for
+  deadlines; start for follow-ups), missing dates last and ID tie-breaking. It
+  loads only matching ordering scalars before the one bounded full-record page.
+  This personal-dashboard approach is not a large multi-tenant query benchmark.
+
+Migration `20261110180000_task_dates` uses an explicit transaction, adds only
+nullable deadline fields and empty lifecycle/key-date tables, and does no backfill.
+It never infers dates from event links, titles or updatedAt. Inventory `--phase 06`
+checks all original fingerprints/IDs/edges/timestamps/balances and rejects guessed
+historical dates or records. It also detects duplicate active follow-ups, closed
+active reminders and cross-task/invalid predecessor links. Production is untouched.
+
+Development/disposable verification:
+
+```sh
+node --test tests/work-dates.test.mjs
+docker compose -p dashboard-work-phase06 -f docker-compose.work-test.yml run --rm -e RUN_EVENT_DB_TEST=1 runner node --test --test-concurrency=1 tests/work-dates.integration.mjs tests/work-relationships.integration.mjs tests/work-support.integration.mjs tests/work-all.integration.mjs tests/work-foundation.integration.mjs tests/work-management.integration.mjs tests/event-completion.integration.mjs
+RUN_WORK_DATES_BROWSER_TEST=1 node tests/work-dates.browser.mjs
+```
+
+Use a fresh restored disposable DB, never production or primary development, for
+writing tests. Run DB and browser suites sequentially: whole-DB rollback assertions
+are invalid if another suite writes concurrently. Existing backup/recovery and
+private-volume rules still apply. A failed transactional migration must be reviewed
+and recovered from the private pre-migration snapshot into a fresh isolated DB;
+never reset real data or deploy an older Prisma client against a changed schema.
+The known unrelated ActivityVocab.lastPracticed drift is not a reason to drop data.
+
+No calendar projection, event conversion, work-session UI, notification job or
+external calendar is implemented here. Those calendar features remain Phase 07.

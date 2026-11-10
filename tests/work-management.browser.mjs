@@ -23,6 +23,7 @@ test("Phase 01 controls work on touch/keyboard, keep drafts on failure and send 
     await context.route(`${base}/api/todos**`, async route => {
       const req = route.request(), path = new URL(req.url()).pathname, method = req.method();
       const parentId = Number(path.split("/")[3]), parent = tasks.find(task => task.id === parentId);
+      if (method === "GET" && path.endsWith("/dates")) return route.fulfill({ json: { timeZone: "America/Toronto", taskRevision: parent.revision, actionable: true, deadline: { date: null, at: null, timeZone: null }, deadlineState: null, activeFollowUp: null, followUps: [], total: 0, page: 1, pageSize: 20, keyDates: [], keyTotal: 0, keyPage: 1 } });
       if (method === "GET" && path.endsWith("/transition")) return route.fulfill({ json: { taskRevision: parent.revision, currentStatus: parent.status, archived: false, requestedStatus: new URL(req.url()).searchParams.get("status"), workaround: null, token: "a".repeat(64), blockingCount: parent.dependsOnId ? 1 : 0, blockers: parent.dependsOnId ? [{ id: parent.dependsOnId, reference: "TASK-999903", title: "Prerequisite", status: "TODO" }] : [], unfinishedChildCount: 0, unfinishedChildren: [], descendantCount: 0 } });
       if (method === "GET" && path.endsWith("/relationships")) return route.fulfill({ json: { task: parent, total: 0, page: 1, pageSize: 20, items: [] } });
       if (method === "GET" && path.endsWith("/timeline")) return route.fulfill({ json: { total: 0, page: 1, pageSize: 20, notes: [], activity: [] } });

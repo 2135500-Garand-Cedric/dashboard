@@ -13,16 +13,23 @@ import { appendTaskActivity } from "./activity-server";
 export { appendTaskActivity } from "./activity-server";
 import { taskStubSelect, graphStub, graphStats, addDependency, legacyDependencyWrite, setParent, validateTransition } from "./graph";
 
+import { APP_TIME_ZONE } from "@/lib/app-time-zone";
+import { dateSortInstant, workDateState } from "./dates";
+import { retireFollowUps } from "./date-lifecycle";
+
 export const WORK_USER_ID = OWNER_DATABASE_USER_ID;
 type DB = Prisma.TransactionClient;
-const todoInclude = { prerequisites: { include: { prerequisite: { select: taskStubSelect } }, orderBy: { prerequisiteId: "asc" as const }, take: 2 }, parent: { select: taskStubSelect }, requester: true, waitingOnContact: true, affectedPeople: { include: { contact: true }, orderBy: { contactId: "asc" as const } }, context: true, subtasks: { orderBy: { id: "asc" as const } } };
+const todoInclude = { followUps: { where: { status: "ACTIVE" }, take: 1 }, prerequisites: { include: { prerequisite: { select: taskStubSelect } }, orderBy: { prerequisiteId: "asc" as const }, take: 2 }, parent: { select: taskStubSelect }, requester: true, waitingOnContact: true, affectedPeople: { include: { contact: true }, orderBy: { contactId: "asc" as const } }, context: true, subtasks: { orderBy: { id: "asc" as const } } };
 const eventInclude = { linkedTodo: true };
 type TodoRow = Prisma.TodoGetPayload<{ include: typeof todoInclude }>;
 type EventRow = Prisma.EventGetPayload<{ include: typeof eventInclude }>;
 const todoDTO = (row: TodoRow) => {
-  const { prerequisites, parent, ...fields } = row;
+  const { prerequisites, parent, followUps, ...fields } = row;
   const single = prerequisites.length === 1 ? prerequisites[0].prerequisite : null;
-  return { ...fields, reference: taskReference(row.id), legacyPriority: row.priority,
+  return { ...fields, timeZone: APP_TIME_ZONE,
+    deadlineState: workDateState({ date: row.deadlineDate, at: row.deadlineAt, timeZone: row.deadlineTimeZone }, "deadline", new Date(), APP_TIME_ZONE, !isClosed(row.status) && !row.archivedAt),
+    activeFollowUp: followUps[0] ? { ...followUps[0], state: workDateState(followUps[0], "followup", new Date(), APP_TIME_ZONE, !isClosed(row.status) && !row.archivedAt) } : null,
+    reference: taskReference(row.id), legacyPriority: row.priority,
     priority: row.priorityLevel === "LOW" ? 1 : row.priorityLevel === "NORMAL" ? 2 : row.priorityLevel === "HIGH" ? 3 : row.priorityLevel === "URGENT" ? null : row.priority,
     requester: row.requester?.userId === WORK_USER_ID ? row.requester : null,
     waitingOnContact: row.waitingOnContact?.userId === WORK_USER_ID ? row.waitingOnContact : null,
@@ -94,7 +101,19 @@ export async function searchWork(params: URLSearchParams) {
   const query = parseWorkQuery(params), where = workQueryWhere(query, WORK_USER_ID);
   return prisma.$transaction(async db => {
     const total = await db.todo.count({ where }), page = Math.min(query.page, Math.max(1, Math.ceil(total / WORK_PAGE_SIZE)));
-    const rows = await db.todo.findMany({ where, include: todoInclude, orderBy: workQueryOrder(query.sort), skip: (page - 1) * WORK_PAGE_SIZE, take: WORK_PAGE_SIZE });
+    let orderIds: number[] | null = null;
+    if (["deadline", "followup"].includes(query.sort)) {
+      // Fetch only ordering scalars, then load the one paginated set of full records.
+      const candidates = await db.todo.findMany({ where, select: { id: true, deadlineDate: true, deadlineAt: true, deadlineTimeZone: true, followUps: { where: { status: "ACTIVE" }, take: 1, select: { date: true, at: true, timeZone: true } } } });
+      const cache = new Map<string, number>();
+      const key = (row: typeof candidates[number]) => {
+        const value = query.sort === "deadline" ? { date: row.deadlineDate, at: row.deadlineAt, timeZone: row.deadlineTimeZone } : row.followUps[0] ?? { date: null, at: null, timeZone: null };
+        const identity = JSON.stringify(value); if (!cache.has(identity)) cache.set(identity, dateSortInstant(value, query.sort as "deadline" | "followup", APP_TIME_ZONE)); return cache.get(identity)!;
+      };
+      orderIds = candidates.sort((a,b) => { const left = key(a), right = key(b); return (left === right ? 0 : left < right ? -1 : 1) || a.id - b.id; }).slice((page - 1) * WORK_PAGE_SIZE, page * WORK_PAGE_SIZE).map(row => row.id);
+    }
+    const rows = await db.todo.findMany({ where: orderIds ? { AND: [where, { id: { in: orderIds } }] } : where, include: todoInclude, orderBy: workQueryOrder(query.sort), ...(orderIds ? {} : { skip: (page - 1) * WORK_PAGE_SIZE, take: WORK_PAGE_SIZE }) });
+    if (orderIds) { const rank = new Map(orderIds.map((id,index) => [id,index])); rows.sort((a,b) => rank.get(a.id)! - rank.get(b.id)!); }
     return { items: await serializeTodos(db, rows), total, page, pageSize: WORK_PAGE_SIZE };
   }, { isolationLevel: "RepeatableRead" });
 }
@@ -171,6 +190,7 @@ export async function patchTodo(id: number, value: unknown, command: WorkCommand
       if ([user.totalXp + xp, user.coins + coins].some(value => !Number.isSafeInteger(value) || value < -2147483648 || value > 2147483647)) throw new WorkValidationError("This reward change exceeds the supported balance range.", 409);
       await db.user.update({ where: { id: WORK_USER_ID }, data: { totalXp: { increment: xp }, coins: { increment: coins } } });
     }
+    if (!isClosed(row.status) && isClosed(status)) await retireFollowUps(db, id);
     await replaceAffected(db, id, body);
     const updated = await db.todo.update({ where: { id, userId: WORK_USER_ID }, data: { ...data, ...reward, revision: { increment: 1 } }, include: todoInclude });
     await recordTaskActivity(db, row, updated);
@@ -182,6 +202,7 @@ export async function patchTodo(id: number, value: unknown, command: WorkCommand
 export async function deleteTodo(id: number, command: WorkCommand) {
   return mutation(`todo:${id}:delete`, null, command, async db => {
     const row = await todoRow(db, id); version(row, command);
+    if (await db.workFollowUp.count({ where: { todoId: id } }) || await db.workKeyDate.count({ where: { todoId: id } })) throw new WorkValidationError("Archive this task to preserve its follow-up and key-date history.", 409);
     if (await db.workNote.count({ where: { todoId: id } }) || await db.workAttachment.count({ where: { todoId: id } })) throw new WorkValidationError("Archive this task to preserve its notes, revisions and attachment history. Tasks with supporting records cannot be permanently deleted.", 409);
     if (row.parentId !== null || await db.todo.count({ where: { parentId: id } })) throw new WorkValidationError("Unlink the parent and child tasks first, or archive this task. No tasks will be automatically reparented or deleted.", 409);
     if (await db.todoDependency.count({ where: { OR: [{ dependentId: id }, { prerequisiteId: id }] } }) || await db.todoRelation.count({ where: { OR: [{ firstId: id }, { secondId: id }] } })) throw new WorkValidationError("Unlink the task relationships first, or archive it. Related tasks and dependency history will be preserved.", 409);

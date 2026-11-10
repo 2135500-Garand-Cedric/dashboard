@@ -18,6 +18,7 @@ export default function TaskClosureDialog({ task, status, busy, error, onCancel,
   return <dialog ref={ref} aria-labelledby={titleId} onCancel={event => { event.preventDefault(); if (!busy) onCancel(); }} className="m-auto max-h-[90dvh] w-[calc(100%_-_2rem)] max-w-lg overflow-y-auto rounded-xl border border-card-border bg-card-bg p-5 text-foreground backdrop:bg-black/60">
     <h2 id={titleId} className="mb-4 text-xl font-semibold">{status === "IN_PROGRESS" ? "Start task" : status === "DONE" ? "Complete task" : "Cancel task"}</h2>
     <p className="mb-4 break-words">{task.title}</p>
+    {status !== "IN_PROGRESS" && <p className="mb-4 text-sm text-gray-500">Closing retires any active follow-up. The deadline and date history are kept; reopening will not recreate a reminder.</p>}
     {error && <p role="alert" className="mb-4 text-rose-500">{error}</p>}
     {reviewError && <p role="alert" className="mb-3 text-rose-500">{reviewError}</p>}
     {!review && !reviewError && <p role="status">Checking current prerequisites and children…</p>}
