@@ -59,7 +59,7 @@ test("Phase 02 real isolated UI/API: capture, metadata, Waiting, explained closu
       await activate(dialog.getByRole("button", { name: "Complete task", exact: true }));
       await dialog.waitFor({ state: "hidden" });
       await page.getByText("Closed with an explicitly accepted workaround", { exact: true }).waitFor();
-      await activate(page.locator("summary").filter({ hasText: "Recent changes" }));
+      await activate(page.getByRole("button", { name: "All activity", exact: true }));
       await page.getByText("completed", { exact: true }).waitFor();
       await activate(page.getByRole("button", { name: "Reopen task", exact: true }));
       await page.waitForFunction(() => { const node = document.querySelector('[aria-label="Task status"]'); return node?.value === "TODO" && !node.disabled; });

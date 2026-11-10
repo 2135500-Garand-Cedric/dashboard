@@ -359,3 +359,168 @@ completion; audit facts remain. Synthetic contacts are deactivated and retained
 inside the disposable DB because normal APIs intentionally cannot delete them.
 Interrupted tests may leave synthetic fixtures there. No test data is seeded into
 the primary development DB. Full production migration approval is a later phase.
+
+## Phase 04 — Notes, activity and private attachments
+
+Migration `20261109170000_work_notes_and_attachments` adds WorkNote,
+WorkNoteRevision and WorkAttachment, plus an optional WorkActivity FK to a note
+revision. Existing task rows and automatic history are not rewritten. Rehearse on
+a whole-database restore using fresh format-2 inventories and `--phase 04`.
+Comparison allows only these additions and requires the new tables to be empty at
+cutover. Inventory also flags cross-owner supporting records and cross-task note
+activity associations.
+
+### Notes and history
+
+- Notes are separate from description/next action and need no attachment. New
+  recorded timestamps/actors come from the server. Optional occurred-at accepts an
+  explicit-offset ISO timestamp; the UI labels entry in your browser's local time
+  and displays history in Toronto time. Occurred-at never determines feed ordering
+  or replaces created-at.
+- Current note, immutable revision snapshot, automatic activity and replay receipt
+  commit atomically under the existing owner lock. Meaningful edits increment the
+  note revision and retain earlier content/links/occurred-at. No-op saves do not
+  fabricate another revision or activity entry. Notes do not increment the parent
+  task revision or overwrite a concurrent task metadata draft.
+- Notes only shows one current note/tombstone per note; All activity also shows
+  automatic changes and each recorded note version. Both paginate at 20 entries,
+  with stable recorded-time/ID ordering. Revision history paginates at 20 versions.
+  Automatic entries and previous versions have no normal edit/delete APIs.
+- Remove note is a soft removal, not secure erasure. The current body/links are
+  cleared and a tombstone/version is added; earlier text remains accessible in
+  revision history. The confirmation states this. Privileged permanent redaction
+  would need a separate reviewed maintenance procedure; none is implemented.
+- Rendering uses escaped multiline plaintext and explicit HTTP/HTTPS links, up to
+  10 links of 2,048 characters and 50,000 note characters. Embedded credentials,
+  active URI schemes, malformed dates and writable recorded timestamps are
+  rejected. External links use no-referrer/noopener; nothing fetches their content.
+- Tasks with any note or attachment records must be archived rather than hard
+  deleted. Restrictive FKs and the task service preserve revision/audit chains,
+  including removed-note/removed-file history. Task deletion remains available
+  when it has no supporting records and passes the existing dependency checks.
+
+### Private files and lifecycle
+
+- `WORK_UPLOAD_DIR` defaults to `private/work`; Compose uses `/app/private/work`
+  with its own persistent volume (`work_files_dev` / proposed `work_files`). It
+  must not overlap finance storage or public files, including filesystem aliases.
+  New production Compose/environment changes are proposed deployment artifacts;
+  Phase 04 did not deploy them. Development storage was mounted during cutover.
+- `src/lib/documents/private-files.ts` provides bounded reads, byte/type checks,
+  opaque keys and private filesystem access; the work adapter maps actionable
+  errors. Finance upload/storage services remain unchanged. The passive PDF canvas
+  renderer is shared through `src/components/documents/PrivatePdfPreview.tsx`;
+  financial record/download authorization is not reused for work documents.
+- Images/PDFs: at most 15 MB; JPEG/PNG/WebP/single-frame GIF, at most 40 megapixels.
+  SVG/HTML, unsupported formats, corrupt images and declared MIME mismatches are
+  rejected. HEIC must be exported as JPEG. PDFs require a supported header and
+  coherent final xref/EOF structure; this is structural validation, not a malware
+  scan or a guarantee that every third-party PDF variant is supported. Preview is
+  passive PDF.js canvas rendering, not an embedded executable document viewer.
+- Original bytes are retained without image conversion; names are stripped of
+  paths/control/directional characters and bounded to 200 characters. UUID file
+  keys are server-generated. Directories/files are 0700/0600; reads reject
+  symlinks, non-files, traversal and size/hash mismatches. Responses are owner-
+  checked, no-store, MIME-protected and sandboxed, with no-referrer/same-origin
+  protection. Finance files cannot be selected by storage key through work APIs.
+- Replacement writes/validates the new file before committing the new pointer,
+  revision, activity and obsolete-key list. Only after commit are old bytes
+  removed. A failed DB command cleans an unreferenced staged file; an ambiguous
+  commit is checked before deleting anything. An unreachable DB leaves a private
+  orphan for maintenance rather than risking an active original.
+- Removal first commits a tombstone and durable pending-deletion keys, then unlinks
+  bytes. Failed unlink/cleanup keeps a retryable record and visible Retry file
+  cleanup action. Cleanup only touches obsolete/removed keys, never an active
+  original. Repeating the confirmed command does not duplicate activity or files.
+  Replacement/removal does not retain old file bytes indefinitely; back up first
+  if you need previous originals. Filename/hash change facts remain in history.
+- A crash can leave an orphan between file and DB commits. Keep all storage roots
+  private and include all files in backup. During maintenance, quiesce writers and
+  compare files with current storageKey and pendingDeletionKeys before considering
+  any orphan removal. Do not delete unfamiliar UUID files blindly. No scheduled
+  orphan purge or external document service is introduced.
+
+### APIs, drafts and operations
+
+All routes below require the GitHub owner before parsing or accessing data; parent
+and child IDs are checked together, including downloads and revision history:
+
+- `/api/todos/[id]/notes` POST; `/notes/[noteId]` PATCH/DELETE (soft removal).
+- `/notes/[noteId]/revisions` GET; `/timeline?filter=notes|all&page=...` GET.
+- `/attachments` GET/POST; `/attachments/[attachmentId]` PATCH (replacement)/DELETE.
+- `/attachments/[attachmentId]/file` GET (`?download=1` for original download).
+- `/attachments/[attachmentId]/cleanup` POST for pending physical cleanup.
+
+Creates use Idempotency-Key; note edits/removals and attachment replacement/
+removal/cleanup also use the child If-Match revision. Uploads use a file-only
+multipart form; notes use bounded JSON with body/documentationUrls/occurredAt.
+Selected files/note drafts survive client Back navigation in memory, with retry
+keys preserved; explicit exits/reload warn about unsaved work. Confirmed reload or
+closing the tab loses unsaved drafts. Save note and Upload attachment are separate
+commands; neither is implied by the task metadata Save button.
+
+Work task/contact search URLs are excluded from Next development access logging,
+like finance. Errors log fixed descriptions, not note bodies, filenames, paths,
+tokens or real contact details. Reverse-proxy/host log policy must independently
+omit sensitive query strings on work/finance routes.
+
+For storage cutover, stop the DEVELOPMENT app after inventory, run the reviewed
+migration/generate explicitly using the development configuration, then recreate
+with the no-startup-mutation override and compare inventories. This prevents
+uploads between schema change and mounting the new root. Do not use these commands
+against production without a separately approved deployment:
+
+```sh
+docker compose -f docker-compose.dev.yml stop dashboard
+docker compose -f docker-compose.dev.yml -f docker-compose.work-dev.yml run --rm --no-deps dashboard sh -c 'npx prisma migrate deploy && npx prisma generate'
+docker compose -f docker-compose.dev.yml -f docker-compose.work-dev.yml up -d --force-recreate --no-deps dashboard
+```
+
+### Combined backup and isolated recovery
+
+The existing NAS `scripts/backup-database.sh` remains a whole-database-only backup;
+notes/history are included automatically, but original uploads are outside the DB.
+For a database plus all private original files, use the host-side combined tool:
+
+```sh
+node scripts/finance-backup.mjs backup docker-compose.dev.yml /secure/backups/dashboard-new-unique-directory
+node scripts/finance-backup.mjs verify /secure/backups/dashboard-new-unique-directory
+```
+
+Version 2 manifests include all public-table fingerprints, the entire DB dump,
+finance `documents/` and work `work-documents/`, with original size/SHA-256 checks.
+The tool briefly stops the identified app container and restarts it if previously
+running. Pause other writers too, use persistent volumes, and check app health
+when finished. It refuses an existing destination; a directory without a completed
+manifest is incomplete. Restore verification uses a fresh network-isolated
+PostgreSQL container and temporary file directories, never a live DB/volume.
+
+For a real recovery restore into new empty volumes using the matching app/PG
+version, restore `documents/` under FINANCE_UPLOAD_DIR and `work-documents/` under
+WORK_UPLOAD_DIR with application ownership and 0700/0600 permissions. Verify before
+exposing traffic or running later migrations. Version 1 manifests still verify
+older finance-only backups; they do not provide work-file coverage. Configuration/
+secrets, encrypted off-host copies and scheduling remain separate responsibilities.
+See [finance maintenance](../FINANCE_MAINTENANCE.md) for the full recovery procedure.
+
+The isolated Phase 04 rehearsal used `BACKUP_PROJECT=dashboard-work-phase04`,
+`BACKUP_APP_CONTAINER=dashboard-work-phase04-browser` and
+`BACKUP_DB_SERVICE=work-db` with the standalone test Compose. These optional
+selectors are for choosing an explicitly matching environment, not permission to
+mix an app from one project with a DB from another. Normal deployments retain
+service defaults dashboard/dashboard-db and read upload paths from the selected
+container without printing its environment. Never point test scripts at production.
+
+Additional guarded checks:
+
+```sh
+node tests/work-support.test.mjs
+docker compose -p dashboard-work-phase04 -f docker-compose.work-test.yml run --rm -e RUN_EVENT_DB_TEST=1 runner node --test --test-concurrency=1 tests/work-support.integration.mjs tests/work-all.integration.mjs tests/work-foundation.integration.mjs tests/work-management.integration.mjs tests/event-completion.integration.mjs
+RUN_WORK_SUPPORT_BROWSER_TEST=1 node tests/work-support.browser.mjs
+```
+
+Browser tests use localhost:3002 and the isolated test secret. They retain archived
+synthetic tasks/notes/attachments so recovery can be tested; no fixtures are added
+to the primary development DB. Test work/finance volumes are persistent and remain
+separate from real uploads. Physical phone camera hardware and production recovery
+have not been tested. Phase 05 is not started by these procedures.

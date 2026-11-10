@@ -106,3 +106,23 @@ DB rows, live auth/owner reads and isolated build/browser evidence; it does not
 claim exhaustive finance/Japanese browser testing. A31 exclusions were retained.
 Notes/attachments, expanded relationships, dates/calendar, projects and My Work
 remain later phases. Production and physical-device recovery are unverified.
+
+## Phase 04 evidence (2026-11-09)
+
+See PROGRESS.md for executed commands and OPERATIONS.md for lifecycle/recovery.
+A01–A03 preservation was rechecked on an isolated whole-DB restore, additive
+migration, exact comparisons and development cutover, with no historical notes or
+file records manufactured. A04–A05 include owner/parent/child checks on notes,
+versions, file bytes and timeline, cross-record corruption suppression, immutable
+server timestamps, stale/replayed commands and atomic rollback/cleanup behavior.
+A13 now includes Notes only / All activity, editable current notes with immutable
+versions/edited indication, distinct occurred-at, explicit soft removal and read-
+only automatic facts. A14 covers private work namespace, bounded/byte-validated
+uploads, protected passive previews/original downloads, physical cleanup recovery,
+persistent volumes and an actual isolated DB/file restore matching 39 public
+record tables plus 12 finance and 4 work originals. A28 covers shared panel/full
+page, four viewports, keyboard/touch, draft retention and usable capture controls;
+physical camera hardware remains unverified. A29 includes all 25 unit-test files,
+35 DB TAP checks, existing work regressions, live auth and production build; it
+is not an exhaustive finance/Japanese browser re-test. A31 exclusions remain.
+Production deployment/recovery, permanent erasure and later phases are pending.

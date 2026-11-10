@@ -37,15 +37,15 @@ export function inventoryIssues(todos, subtasks, events, users, statuses) {
   return [...new Set(issues)];
 }
 export function compareInventories(before, after, phase = "01") {
-  const differences = [], foundation = phase === "02", contacts = phase === "03";
-  if ((foundation || contacts) && before.format !== 2) return ["Capture a fresh format-2 baseline before this migration."];
-  const allowedTables = contacts ? ["WorkContact", "TodoAffectedContact"] : foundation ? ["WorkMutationReceipt", "WorkContext", "WorkActivity"] : ["WorkMutationReceipt"];
-  const allowedColumns = (table, column) => technical[table]?.includes(column) || (foundation && table === "Todo" && foundationColumns.includes(column)) || (contacts && table === "Todo" && ["requesterId", "waitingOnContactId"].includes(column));
+  const differences = [], foundation = phase === "02", contacts = phase === "03", notes = phase === "04";
+  if ((foundation || contacts || notes) && before.format !== 2) return ["Capture a fresh format-2 baseline before this migration."];
+  const allowedTables = notes ? ["WorkNote", "WorkNoteRevision", "WorkAttachment"] : contacts ? ["WorkContact", "TodoAffectedContact"] : foundation ? ["WorkMutationReceipt", "WorkContext", "WorkActivity"] : ["WorkMutationReceipt"];
+  const allowedColumns = (table, column) => technical[table]?.includes(column) || (foundation && table === "Todo" && foundationColumns.includes(column)) || (contacts && table === "Todo" && ["requesterId", "waitingOnContactId"].includes(column)) || (notes && table === "WorkActivity" && column === "noteRevisionId");
   for (const [name, table] of Object.entries(before.tables)) {
     const current = after.tables[name];
     if (current && table.count === current.count && table.hash === current.hash) continue;
     let equal = false;
-    if (current && table.count === current.count && ["Todo", "Event", "Subtask"].includes(name) && table.rows && current.rows) {
+    if (current && table.count === current.count && ["Todo", "Event", "Subtask", "WorkActivity"].includes(name) && table.rows && current.rows) {
       const added = after.columns.filter(column => column.table_name === name && !before.columns.some(old => old.table_name === name && old.column_name === column.column_name)).map(column => column.column_name);
       if (added.every(column => allowedColumns(name, column))) {
         const excluded = before.format === 1 ? [...added, ...(technical[name] ?? [])] : added;
@@ -59,6 +59,7 @@ export function compareInventories(before, after, phase = "01") {
     if (!equal) differences.push(`Original records changed: ${name}`);
   }
   for (const name of Object.keys(after.tables)) if (!(name in before.tables) && !allowedTables.includes(name)) differences.push(`Unexpected new table: ${name}`);
+  if (notes && ["WorkNote", "WorkNoteRevision", "WorkAttachment"].some(name => !(name in before.tables) && after.tables[name]?.count)) differences.push("Unexpected note, revision or attachment backfill.");
   if (contacts && ["WorkContact", "TodoAffectedContact"].some(name => !(name in before.tables) && after.tables[name]?.count)) differences.push("Unexpected contact or people backfill.");
   if (foundation && !("WorkActivity" in before.tables) && after.tables.WorkActivity?.count) differences.push("Unexpected historical work activity backfill.");
   for (const column of before.columns) {
@@ -103,6 +104,10 @@ export async function captureInventory(prisma) {
     if (todos.some(task => [task.requesterId, task.waitingOnContactId].some(id => id != null && contacts.get(id)?.userId !== task.userId))) issues.push("Missing/cross-owner task contacts require review.");
     const taskOwners = new Map(todos.map(task => [task.id, task.userId]));
     if ((tables.TodoAffectedContact?.rows ?? []).some(raw => { const link = JSON.parse(raw); return !taskOwners.has(link.todoId) || contacts.get(link.contactId)?.userId !== taskOwners.get(link.todoId); })) issues.push("Missing/cross-owner affected people require review.");
+    const notes = new Map((tables.WorkNote?.rows ?? []).map(raw => { const row = JSON.parse(raw); return [row.id, row]; }));
+    if ([...notes.values()].some(note => taskOwners.get(note.todoId) !== note.userId) || (tables.WorkAttachment?.rows ?? []).some(raw => { const row = JSON.parse(raw); return taskOwners.get(row.todoId) !== row.userId; })) issues.push("Missing/cross-owner task supporting records require review.");
+    const revisions = new Map((tables.WorkNoteRevision?.rows ?? []).map(raw => { const row = JSON.parse(raw); return [row.id, row]; }));
+    if ((tables.WorkActivity?.rows ?? []).some(raw => { const row = JSON.parse(raw), note = row.noteRevisionId == null ? null : notes.get(revisions.get(row.noteRevisionId)?.noteId); return row.noteRevisionId != null && (!note || note.userId !== row.userId || note.todoId !== row.todoId); })) issues.push("Cross-record note activity requires review.");
     const expected = { Todo: ["id", "title", "description", "status", "priority", "rewardXp", "rewardCoins", "userId", "dependsOnId", "createdAt", "updatedAt"], Subtask: ["id", "todoId", "title", "done", "createdAt"], Event: ["id", "title", "description", "date", "endDate", "completed", "type", "userId", "linkedTodoId", "createdAt", "updatedAt"] };
     for (const [table, required] of Object.entries(expected)) for (const column of required) if (!columns.some(row => row.table_name === table && row.column_name === column)) issues.push(`Required legacy column missing: ${table}.${column}`);
     const migrationRoot = path.join(root, "prisma/migrations");
@@ -122,7 +127,7 @@ async function main() {
     if (!["--output", "--compare", "--phase"].includes(args[i]) || !args[i + 1] || options[args[i]]) throw new Error("Use --output <private-file> [--compare <before-file>].");
     options[args[i]] = args[i] === "--phase" ? args[i + 1] : path.resolve(args[i + 1]);
   }
-  if (options["--phase"] && !["01", "02", "03"].includes(options["--phase"])) throw new Error("Choose a supported phase.");
+  if (options["--phase"] && !["01", "02", "03", "04"].includes(options["--phase"])) throw new Error("Choose a supported phase.");
   if (!options["--output"]) throw new Error("A private output path is required.");
   const output = options["--output"];
   await mkdir(path.dirname(output), { recursive: true, mode: 0o700 });

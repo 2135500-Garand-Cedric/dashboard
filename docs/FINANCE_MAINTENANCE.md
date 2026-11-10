@@ -7,7 +7,7 @@
 - `src/lib/finance`: pure validation/money rules; owner-scoped Prisma services; CSV parsing/imports; reconciliation ledger; reporting; private file storage; CSV export serialization.
 - `src/components/finance`: entry forms, history, matching workspace, reports, shared document/camera controls and request/error helpers. `useHistoryFilters` retains **applied** transaction/receipt/income filters and page in the URL, including after opening a detail and going back. Unsaved draft fields do not change exported filters. Entry drafts and selected files are held only in memory until saved; refreshing or leaving a form can discard them. URL filters may be retained in browser history; avoid private notes in shared links.
 - `prisma/schema.prisma` and additive migrations: financial records, supporting documents, imports, confirmed allocations and immutable matching audit events. Phase 8 changes no database schema.
-- `scripts/finance-backup.mjs`: host-side backup and isolated restore verification using Docker/PostgreSQL 15.
+- `scripts/finance-backup.mjs`: host-side combined database/finance/work-file backup and isolated restore verification using Docker/PostgreSQL 15.
 - `tests/finance*`: unit, rollback-only database and browser coverage. Database tests require their explicit `RUN_FINANCE_*_DB_TEST=1` flags; live usability checks only read records. Existing entry-form browser tests mock financial mutations.
 
 Keep monetary values as decimal strings at API/CSV boundaries. Database amounts are `Decimal(19,4)`; calculations use Prisma Decimal or integer ten-thousandths. Reports use `sign(amount) × (abs(amount) − excludedAmount)`, never original amounts alone. Documents and payroll metadata add no money movements. Transfers/card payments contribute neither income nor expenses; refunds reduce spending, reimbursements entered as income remain income, and adjustments are separate. Currencies must never be summed together. A partial or uncertain match must remain explicit. Gross/net payroll details and deposit cash are different views of the same underlying earnings.
@@ -41,25 +41,25 @@ This Docker-only command backs up every database table, including Japanese and a
 
 ## Backup and restore rehearsal
 
-Run from the repository on a host with Docker access, the matching Compose environment and a pre-existing **private parent directory**. Example paths below must be outside public files and the live upload directory. Backups include the **entire dashboard database**, not just finance, and all original finance files. They contain sensitive information. Use an encrypted filesystem/archive and an off-host encrypted copy with restricted access and a retention policy. The script sets restrictive permissions but does not perform encryption or scheduling.
+Run from the repository on a host with Docker access, the matching Compose environment and a pre-existing **private parent directory**. Example paths below must be outside public files and the live upload directory. Backups include the **entire dashboard database**, not just finance, and all original finance and work files. They contain sensitive information. Use an encrypted filesystem/archive and an off-host encrypted copy with restricted access and a retention policy. The script sets restrictive permissions but does not perform encryption or scheduling.
 
 ```sh
 node scripts/finance-backup.mjs backup docker-compose.dev.yml /secure/backups/dashboard-2026-11-07
 node scripts/finance-backup.mjs verify /secure/backups/dashboard-2026-11-07
 ```
 
-For production backups, substitute `docker-compose.prod.yml` and the production project's actual Compose settings. The script uses the fixed service names `dashboard` and `dashboard-db` and standard file path `/app/private/finance`; if deployment names/path change, update the procedure first. Use the same Compose project environment that created the containers. The destination must not already exist.
+For production backups, substitute `docker-compose.prod.yml` and the production project's actual Compose settings. The script defaults to service names `dashboard` and `dashboard-db`, with upload roots read from the selected container (FINANCE_UPLOAD_DIR and WORK_UPLOAD_DIR; defaults `/app/private/finance` and `/app/private/work`). Optional BACKUP_PROJECT/BACKUP_APP_SERVICE/BACKUP_DB_SERVICE/BACKUP_APP_CONTAINER selectors support explicitly matching alternate environments; do not mix projects. Use the same Compose project environment that created the containers. The destination must not already exist.
 
-The backup command briefly stops the app, records table fingerprints and document metadata, runs a custom-format `pg_dump`, copies the stopped container's mounted uploads, checks every referenced file's size/content hash, and writes a completion manifest. It attempts to restart an app that was running even when backup fails; confirm service health afterward. Pause **all other writers**, including ad hoc scripts and database tools, while backing up: stopping the app alone cannot quiesce external writers. Plan for this maintenance window and sufficient disk space. A failed folder without `manifest.json` is incomplete and must not be used as a backup.
+The backup command briefly stops the app, records table fingerprints and document metadata, runs a custom-format `pg_dump`, copies the stopped container's mounted uploads, checks every referenced file's size/content hash, and writes a completion manifest. Version 2 also fingerprints every public database table and copies private work files into `work-documents/`, checking all active work originals against their metadata. Finance files remain under `documents/`. Both upload roots must be persistent and separate. It attempts to restart an app that was running even when backup fails; confirm service health afterward. Pause **all other writers**, including ad hoc scripts and database tools, while backing up: stopping the app alone cannot quiesce external writers. Plan for this maintenance window and sufficient disk space. A failed folder without `manifest.json` is incomplete and must not be used as a backup.
 
-`verify` checks dump/document SHA-256 checksums, creates a disposable PostgreSQL 15 container with **no network and no host data mounts**, restores the dump, and compares counts and deterministic row fingerprints for all 15 finance tables. It restores original document files into a separate temporary directory and validates them against the restored database. It removes the temporary container/volume and files afterward. It never restores into live data. Checksums detect accidental changes, not malicious tampering with a manifest; verify only trusted backups. A failed verification leaves the original backup intact.
+`verify` checks dump/document SHA-256 checksums, creates a disposable PostgreSQL 15 container with **no network and no host data mounts**, restores the dump, and compares counts and deterministic row fingerprints for every public table in version 2 backups, including all 15 finance tables, Japanese data and work records. It restores finance and work original files into separate temporary directories and validates them against the restored database. Version 1 manifests remain supported for older finance-only verification, but do not provide work-file recovery. It removes the temporary container/volume and files afterward. It never restores into live data. Checksums detect accidental changes, not malicious tampering with a manifest; verify only trusted backups. A failed verification leaves the original backup intact.
 
 A Phase 8 development rehearsal successfully restored all 15 finance tables and all 12 then-referenced original files, including private examples. Reporting/database regression tests independently compare summaries to SQL ledger totals. This confirms that the tested snapshot can be restored; it does not prove that future backups or production recovery will work without rehearsals.
 
 For an actual recovery:
 
 1. Keep the damaged environment intact for investigation. Restore into **new empty PostgreSQL and upload volumes**, isolated from traffic, using the matching app revision and PostgreSQL major version.
-2. Restore `database.dump` with `pg_restore --no-owner --no-privileges --exit-on-error` into the empty database under the deployment's database user. Restore the `documents/` contents at the configured private upload root with restrictive permissions and the application's filesystem ownership. Do not overlay or merge a backup into a newer live database.
+2. Restore `database.dump` with `pg_restore --no-owner --no-privileges --exit-on-error` into the empty database under the deployment's database user. Restore `documents/` at FINANCE_UPLOAD_DIR and, for version 2, `work-documents/` at WORK_UPLOAD_DIR with restrictive permissions and the application's filesystem ownership. Do not overlay or merge a backup into a newer live database.
 3. Verify the backup manifest and restored table/file fingerprints with a rehearsal first. Run `prisma migrate deploy` only after confirming which app revision and schema are being recovered; later migrations may change data.
 4. Start the restored app privately and check owner login, original downloads, sample import/reconciliation history, exact report totals and counts before directing traffic to it.
 5. Retain the former volumes until recovery is accepted. Record recovery time, snapshot age and any lost post-backup entries.
@@ -71,3 +71,27 @@ Keep database connection configuration, authentication secrets, Compose configur
 Phase 8 removes the unused Phase 1 `FinanceLanding` component and uses one `FinanceDocumentPanel` for receipt and pay-stub capture/preview/download. Existing Sharp (byte validation), PDF.js (private preview), Recharts (reports) and framework/ORM dependencies are still used; no new runtime dependencies were added. Avoid replacing these with separate upload/export frameworks without a concrete need.
 
 Recommended operational improvements: encrypted scheduled off-host backups and regular restore drills; external log policy and TLS review; periodic dependency updates; orphan-file audits after crashes. If history grows substantially, add streaming/cursor exports and bounded database-side report aggregation. Exports currently cap at 5,000 records, reporting reads owner history into memory, and backup checksums read files into memory. Optional future hardening includes malware scanning and signed backup manifests. None of these imply AI, OCR, Outlook ingestion or new financial modules.
+
+
+## Work-management Phase 04 backup extension
+
+The combined tool now protects notes, revision/activity history and work attachment
+metadata as part of the whole database, plus the separate work original-file root.
+The database-only NAS command remains unchanged; it does not include upload bytes.
+New development/production Compose artifacts declare a dedicated work file volume.
+The production artifact has not been deployed by Phase 04.
+
+An isolated Phase 04 rehearsal successfully restored all 39 then-existing public
+tables and verified 12 finance originals plus 4 work originals by size and content
+hash. Finance originals were copied read-only into isolated test storage for that
+rehearsal; live finance files/data were not changed. The backup stopped/restarted
+only the disposable app and verification used a new container with no network or
+live mounts. This evidence does not replace a future production restore drill.
+
+Work attachments use independent records, storage authorization and lifecycle;
+finance receipt/pay-stub permissions are never borrowed for work. The neutral
+private PDF canvas renderer is shared with its existing finance wrapper. Work
+removal/replacement can leave explicit pending file cleanup or a private orphan
+after interruption; do not remove unknown files without checking metadata while
+writers are stopped. See [work operations](work-management/OPERATIONS.md) for
+limits, mutation semantics and complete work-root recovery instructions.

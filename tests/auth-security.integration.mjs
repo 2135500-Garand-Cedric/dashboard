@@ -42,6 +42,7 @@ test("live app denies all anonymous data routes, rejects other identities, and a
     assert.equal((await fetch(`${base}/api/events`, { headers })).status, 403);
     assert.equal((await fetch(`${base}/api/work-items?q=private`, { headers })).status, 403);
     assert.equal((await fetch(`${base}/api/work-contacts`, { headers })).status, 403);
+    for (const suffix of ["timeline", "attachments", "notes/1/revisions", "attachments/1/file"]) assert.equal((await fetch(`${base}/api/todos/1/${suffix}`, { headers })).status, 403);
     const page = await fetch(base, { headers, redirect: "manual" });
     assert.equal(page.status, 307);
     assert.ok(page.headers.get("location").endsWith("/access-denied"));
@@ -69,6 +70,11 @@ test("live app denies all anonymous data routes, rejects other identities, and a
     const activity = await fetch(`${base}/api/todos/${tasks[0].id}/activity`, { headers });
     assert.equal(activity.status, 200);
     assert.ok(Array.isArray(await activity.json()));
+    for (const suffix of ["timeline?filter=notes", "timeline?filter=all", "attachments"]) {
+      const supporting = await fetch(`${base}/api/todos/${tasks[0].id}/${suffix}`, { headers });
+      assert.equal(supporting.status, 200, `owner supporting-record read: ${suffix}`);
+      assert.match(supporting.headers.get("cache-control"), /no-store/);
+    }
   }
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const historyUrl = `${base}/api/japanese-practice/practice-sessions?date=${today}&kind=vocab`;

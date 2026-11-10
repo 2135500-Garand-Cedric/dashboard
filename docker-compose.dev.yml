@@ -9,12 +9,14 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
+      - work_files_dev:/app/private/work
       - finance_files_dev:/app/private/finance
     env_file:
       - .env
     environment:
       NODE_ENV: development
       FINANCE_UPLOAD_DIR: /app/private/finance
+      WORK_UPLOAD_DIR: /app/private/work
     command: sh -c "npx prisma migrate deploy && npm run dev"
     depends_on:
       dashboard-db:
@@ -42,5 +44,6 @@ services:
       - dashboard_data_dev:/var/lib/postgresql/data
 
 volumes:
+  work_files_dev:
   finance_files_dev:
   dashboard_data_dev:

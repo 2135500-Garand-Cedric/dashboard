@@ -20,7 +20,7 @@ export interface WorkTodo {
   id: number; reference?: string; revision: number; title: string; description?: string | null;
   status: WorkStatus; priority?: number | null; legacyPriority?: number | null; priorityLevel?: WorkPriority | null;
   requesterId?: number | null; requester?: WorkContact | null; waitingOnContactId?: number | null; waitingOnContact?: WorkContact | null; affectedPeople?: WorkContact[];
-  dependents?: { id: number; title: string; status: string }[]; dependentCount?: number;
+  dependents?: { id: number; title: string; status: string }[]; dependentCount?: number; supportingRecordCount?: number;
   contextId?: number | null; context?: WorkContext | null; kind?: WorkKind | null;
   company?: string | null; course?: string | null; system?: string | null; tags?: string[];
   desiredOutcome?: string | null; nextAction?: string | null; waitingOn?: string | null;
@@ -34,3 +34,9 @@ export function priorityOf(task: Pick<WorkTodo, "priorityLevel" | "priority">): 
   return task.priorityLevel === undefined ? legacyPriorityLevel(task.priority) : task.priorityLevel;
 }
 export interface WorkActivityEntry { id: number; action: string; createdAt: string; todoReference: string; changes: Record<string, { before: unknown; after: unknown }>; }
+
+export interface WorkNote { id: number; todoId: number; body: string; documentationUrls: string[]; occurredAt: string | null; revision: number; createdAt: string; updatedAt: string; removedAt: string | null; }
+export interface WorkNoteVersion { id: number; noteId: number; revision: number; body: string; documentationUrls: string[]; occurredAt: string | null; action: string; recordedAt: string; note?: WorkNote; }
+export interface WorkAttachment { id: number; todoId: number; originalName: string; mimeType: string; byteSize: number; revision: number; createdAt: string; updatedAt: string; removedAt: string | null; cleanupPending: boolean; }
+export interface SupportEditorHandle { discard: () => void; isDirty: () => boolean; isBusy: () => boolean; }
+export interface SupportEditorState { dirty: boolean; busy: boolean; }

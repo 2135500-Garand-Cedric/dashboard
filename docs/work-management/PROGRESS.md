@@ -4,8 +4,8 @@
 
 Updated: 2026-11-09 (America/Toronto).
 
-Phases 01–03 are implemented and verified in development. Production is untouched.
-Next assignment: Phase 04, which has not started. The architecture is not a production migration approval.
+Phases 01–04 are implemented and verified in development. Production is untouched.
+Next assignment: Phase 05, which has not started. The architecture is not a production migration approval.
 
 | Phase | Status | Evidence |
 | --- | --- | --- |
@@ -13,7 +13,7 @@ Next assignment: Phase 04, which has not started. The architecture is not a prod
 | 01 | Verified in development | See Phase 01 evidence below and OPERATIONS.md |
 | 02 | Verified in development | See Phase 02 evidence below and OPERATIONS.md |
 | 03 | Verified in development | See Phase 03 evidence below and OPERATIONS.md |
-| 04 | Not started | — |
+| 04 | Verified in development | See Phase 04 evidence below and OPERATIONS.md |
 | 05 | Not started | — |
 | 06 | Not started | — |
 | 07 | Not started | — |
@@ -540,3 +540,221 @@ Verified for this scope: A01–A12, A27–A29 and A31 as applicable. The existin
 automatic A13 audit backbone remains, while notes and its later UI are deferred.
 All exclusions and the documented physical-device/production/file-recovery limits
 remain. Phase 04 has not started.
+
+## Phase 04 — Notes, activity and private attachments
+
+Date: 2026-11-09 (America/Toronto).
+
+Status: implementation and development verification completed; final documentation
+and test-container cleanup completed on resuming the interrupted assignment.
+Production is untouched. Phase 05 has not started.
+
+### Prerequisites, scope and decisions
+
+- Read CONTEXT.md, Phase 04, prior progress/acceptance and actual task/auth,
+  finance file/preview, backup, Docker, Prisma and test code. Phases 01–03 were
+  verified. Preserved the existing AppShell development-banner change.
+- Added WorkNote, WorkNoteRevision and WorkAttachment with real restrictive
+  owner/task/note FKs. WorkActivity can reference an immutable note revision.
+  No generic polymorphic storage, project model, date/calendar feature, AI, OCR,
+  external intake or notification service was introduced.
+- Notes are separate from current task description/next action. Create/edit,
+  revision snapshot, automatic activity and replay receipt commit together under
+  the existing owner lock. Recorded timestamps/actors are server-controlled;
+  optional occurred-at is distinct and never determines feed ordering. Meaningful
+  edits retain earlier versions; no-op saves do not create fake revisions.
+- Remove note explicitly clears the current body/links, retaining a tombstone and
+  earlier revision content. UI confirmation explains that this is not permanent
+  erasure. Normal APIs cannot modify recorded timestamps, earlier revisions or
+  automatic activity. Tasks with supporting records are archived rather than hard
+  deleted so note/revision/attachment history cannot be silently destroyed.
+- New Notes only / All activity UI paginates 20 entries; revision history paginates
+  20 versions. Text is escaped multiline plaintext, not HTML/Markdown execution.
+  Validated HTTP/HTTPS documentation links use no-referrer/noopener; no content is
+  fetched or synchronized. Links/occurred-at are optional form fields.
+- Work attachments use independent metadata, record authorization and private root.
+  Originals retain byte identity; uploads are bounded before multipart parsing,
+  actual format/MIME/size/dimensions are validated, keys are opaque, storage paths
+  cannot overlap public or finance roots, and symlinks/traversal are rejected.
+  Directories/files use 0700/0600. Original reads verify size and SHA-256 and return
+  protected, no-store, nosniff/sandbox/same-origin responses.
+- Replacement commits the new file pointer/revision/activity before cleaning old
+  bytes. Removal commits a tombstone plus durable pending-deletion keys before
+  unlinking. Failed cleanup is visible/retryable. Failed or ambiguous DB commits
+  never justify deleting a potentially referenced original; unreferenced staged
+  files are cleaned when safely identifiable. Interrupted writes can leave a
+  private orphan for reviewed maintenance, not an automatic blind purge.
+- Camera/library controls, file selection retention, private image/PDF previews,
+  download, replacement, removal and cleanup retry live in shared task details.
+  Notes/files have independent Save/Upload actions and revisions, retaining task
+  metadata drafts. Child drafts/selections survive client Back in memory and
+  participate in the task's explicit-exit/reload guard. No localStorage or automatic
+  draft/history writes were added.
+
+### Files and storage/backup changes
+
+- New `src/lib/work-management/{note-input,files,supporting}.ts`; extended existing
+  server primitives, task-supporting-record protection, types and activity value
+  formatting (including safe invalid date-like text).
+- New guarded routes under `/api/todos/[id]`: notes create/edit/soft-remove,
+  revision history, timeline, attachment list/upload/replace/remove/file/cleanup.
+  All requireOwner checks precede parsing, DB access and private file reads.
+  Parent/child/owner scope is enforced, including malformed cross-record activity
+  associations. Mutation revision/replay rules remain enforced.
+- New `src/lib/documents/private-files.ts`, TaskTimeline, TaskAttachments and neutral
+  PrivatePdfPreview. The existing finance PDF component wraps the neutral renderer;
+  finance upload/storage/download authorization and behavior remain independent.
+- Added WORK_UPLOAD_DIR and separate persistent work volumes to development and
+  proposed production Compose plus `.env.example`. Test work and finance uploads
+  use their own persistent volumes. Production config was edited only as a proposed
+  artifact; no production container, migration, data or deployment was touched.
+- Work/contact search URLs now join finance in Next development log exclusions.
+  Errors log fixed descriptions, not contents, filenames, contact names or tokens.
+  External reverse-proxy logging policy remains the operator's responsibility.
+- Extended `scripts/finance-backup.mjs` to version 2 manifests: entire database,
+  fingerprints for every public table, finance originals and work originals with
+  content checksums. Configured paths are read from the selected container without
+  printing its environment. Previously-running apps restart after backup/failure.
+  Version 1 finance-only manifests remain supported. The Docker-only NAS
+  `backup-database.sh` still backs up every DB table but not upload bytes.
+- Updated OPERATIONS.md, FINANCE_MAINTENANCE.md, roadmap and acceptance evidence.
+  No new runtime dependencies or production build/deployment scripts were added.
+
+### Migration and preservation evidence
+
+Migration: `20261109170000_work_notes_and_attachments`. Adds only the three new
+supporting tables, restrictive FKs/indexes and nullable WorkActivity.noteRevisionId.
+No retrospective notes/activity, task edits or guessed timestamps were backfilled.
+
+- Source: DEVELOPMENT only. Captured private format-2
+  `phase04-dev-before.json` and whole-DB `phase04-dev-before.dump` under ignored
+  `private/work-management/`. Confirmed fresh project `dashboard-work-phase04`,
+  work-db/work_test empty before restoring the dump, without a seed or reset.
+- `phase04-dev-before.json` → `phase04-copy-before.json`: no differences.
+  Applied reviewed migration; `phase04-copy-before.json` →
+  `phase04-copy-after.json` with `--phase 04`: no original row/schema differences
+  or issues; all new tables empty, original activity unchanged.
+- After rehearsal/tests, captured fresh development cutover-before inventory,
+  stopped only dashboard-dev to prevent upload-root races, explicitly ran migrate
+  deploy + generate in a development one-off, and FORCE-recreated dashboard-dev
+  with the no-migration/no-seed override and new work volume.
+- `phase04-dev-cutover-before.json` → `phase04-dev-cutover-after.json`: no issues,
+  differences or pending migrations. Original 3 tasks, 5 checklists, 17 events,
+  balances and all unrelated finance/Japanese records remain unchanged; note,
+  revision and attachment tables empty at cutover. Original finance files untouched.
+- Final `phase04-repeat-before.json` → `phase04-repeat-after.json`: no differences
+  or issues after repeating migrate deploy on the idle disposable DB; no pending
+  migrations, reseeding or duplicate history. These later snapshots include the
+  deliberately retained isolated synthetic recovery fixtures.
+- Schema-to-Prisma diff reports only the pre-existing Japanese
+  ActivityVocab.lastPracticed column discrepancy (exit 2). It was preserved,
+  not dropped/synchronized. No `db push`, reset or old migration edit was used.
+
+### Exact executed checks
+
+- `node --test tests/*.test.mjs`: all 25 test files passed before interruption and
+  again on resumption, including existing finance/Japanese/auth/calendar/backup
+  regressions. `node tests/work-support.test.mjs`: all 7 specific tests passed,
+  including unsafe URL/timestamp input, invalid/spoofed/oversized multipart,
+  filesystem permissions/traversal/symlinks/root aliases, migration preservation,
+  missing-backup-original rejection, invalid date-like text and an actual valid
+  compressed JPEG over 40 megapixels rejected below the byte-size limit.
+- `docker compose -p dashboard-work-phase04 -f docker-compose.work-test.yml run --rm -e RUN_EVENT_DB_TEST=1 runner node --test --test-concurrency=1 tests/work-support.integration.mjs tests/work-all.integration.mjs tests/work-foundation.integration.mjs tests/work-management.integration.mjs tests/event-completion.integration.mjs`:
+  35 TAP checks passed. New scenarios cover note create/edit/no-op/replay/revisions,
+  ordering vs occurred-at, soft removal, retained history, foreign/cross-task access,
+  corrupted cross-record activity suppression, atomic audit failure rollback,
+  original-byte read/hash checks, replacement/deletion/replay/conflict behavior,
+  failed disk writes, failed DB replacement, staged-file cleanup and durable retry
+  after unlink failure. Earlier task/reward/dependency/calendar regressions passed.
+- `RUN_WORK_SUPPORT_BROWSER_TEST=1 node tests/work-support.browser.mjs` using the
+  temporary Playwright/Chromium/library paths against the isolated localhost:3002
+  app: real notes, revisions, safe script-like/long text, optional occurred-at/links,
+  parent-close draft confirmation, stale notes retained, actual rejected upload
+  retry, camera/library controls, image/PDF preview, original download/security
+  headers, cross-record denial, replacement/removal and archive-vs-delete behavior
+  passed at 390×844, 844×390, 1440×900 and 2560×1440.
+- Adapted `RUN_WORK_FOUNDATION_BROWSER_TEST=1 node tests/work-foundation.browser.mjs`:
+  real four-viewport closure/workaround/history/reopen/archive/restore/cancellation
+  regression passed using All activity instead of the superseded preview summary.
+- `RUN_WORK_ALL_BROWSER_TEST=1 node tests/work-all.browser.mjs`: real four-viewport
+  list/board/context/contacts/direct URL/back/focus/draft/conflict regression passed.
+- `docker compose -f docker-compose.dev.yml exec -T -e RUN_AUTH_HTTP_TEST=1 dashboard node tests/auth-security.integration.mjs`: passed on the freshly recreated dev
+  app, checking 116 protected handlers, redirects, forged cookies, denied identities,
+  note/file/timeline denial and successful owner reads of task and supporting
+  records, finance/Japanese APIs and read-only practice preview.
+- `npm --prefix /tmp/dashboard-work-build run build`: isolated production build
+  passed compilation, strict type checking and route/page generation. A fresh
+  resumption build is also recorded in the final check record below. Source-only
+  `npx tsc --noEmit -p /tmp/work-tsconfig.json`, targeted ESLint and
+  `npx prisma validate` passed. `git diff --check` passed.
+
+### Actual combined backup/restore rehearsal
+
+- Read-only copied the 12 original development finance files into the isolated
+  persistent test finance volume. Work files/notes are synthetic opt-in isolated
+  fixtures; no example data was added to the primary development DB.
+- Executed:
+  `BACKUP_PROJECT=dashboard-work-phase04 BACKUP_DB_SERVICE=work-db BACKUP_APP_CONTAINER=dashboard-work-phase04-browser node scripts/finance-backup.mjs backup docker-compose.work-test.yml /tmp/dashboard-phase04-combined-backup`.
+  Backup succeeded, stopping/restarting only the disposable app. Manifest version
+  2 covers 39 public tables, 12 finance originals and 4 work originals.
+- Executed:
+  `node scripts/finance-backup.mjs verify /tmp/dashboard-phase04-combined-backup`.
+  Restore succeeded into a newly created network-isolated PostgreSQL 15 container
+  without live host data mounts. All 39 table fingerprints and all referenced
+  original file bytes/sizes/checksums matched; finance/work files were independently
+  copied into temporary restore directories. Only scratch resources were removed.
+  This verifies the tested snapshot, not production recovery or future backups.
+- Backups and preserved inventory/dump files remain private. Use the combined
+  procedure for original files; the NAS DB-only dump cannot recover file bytes.
+
+### Corrections during verification, manual review and limits
+
+Early unit checks caught an invalid PNG fixture and a PDF.js option removed in the
+installed library; replaced the fixture with a valid generated PNG and retained
+only supported renderer options. Browser checks caught overlapping current/revision
+text selectors and stale replacement chooser state; selectors and selection reset
+were corrected and all four viewports rerun successfully. These failures were not
+reported as passes. The usage-limit interruption left the implementation/test
+results intact; resumption reviewed them, finished missing maintenance/acceptance
+records and performed final checks/cleanup instead of reapplying a migration.
+
+Suggested manual review in development:
+
+1. Open a task, add a multiline note without a file, optionally include a link and
+   occurred-at time. Switch Notes only / All activity; recorded time remains server
+   time. Edit, inspect revisions, and remove; earlier content remains explicit.
+2. On phone, try Take photo and image/PDF selection; invalid/oversized input reports
+   an actionable message and preserves the previous selection/draft. Upload, preview
+   and download an original. Replace/remove only a disposable test attachment.
+3. Edit a note in two windows: stale Save keeps the draft and reports a conflict.
+   Unsaved notes/files participate in the close/reload guard and in-memory Back
+   recovery; confirmed reload/tab close loses unsaved drafts.
+4. Confirm supporting records require archival, leaving notes/history/files intact.
+   Pending physical cleanup is visible and retryable, never an invisible DB loss.
+
+Verified for this scope: preservation A01–A03; A04–A05, A13–A14, A28–A29 and A31.
+No physical phone camera hardware, production environment, complete external config
+recovery, malware scanning, encrypted/off-host scheduling or permanent-content
+redaction procedure was implemented/tested. PDF structural checks may reject some
+unusual PDFs; re-exporting is the supported remedy. Crash-created private orphans
+need reviewed maintenance; no automatic purge. Notes are plaintext with explicit
+links. Retained revision content must not be mistaken for permanent erasure.
+
+Next phase: 05, not started automatically.
+
+### Final resumption checks
+
+Reviewed the actual Phase 04 diff, persisted test logs, migration state and running
+containers after the usage-limit interruption. The implementation, live auth,
+35-check integration run, four-size support/closure/All Work browser runs and actual
+combined restore had completed; remaining work was documentation and finalization.
+
+Freshly executed on resumption: all 25 unit-test files (including 7 support tests),
+source TypeScript, targeted ESLint and an isolated production build passed. Repeat
+migration deployment and before/after inventories passed with no changes/issues.
+Development+override, standalone test and proposed production Compose passed
+`config --quiet` without deploying production. Local links/fences in all 17 work
+and finance maintenance documents, plus `git diff --check`, passed. The retained
+synthetic desktop screenshot was visually inspected. Only temporary Phase 04 app
+and DB containers were stopped; private volumes/backups/evidence were retained,
+and the development app stays running. Phase 04 is complete in development.

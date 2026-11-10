@@ -35,6 +35,8 @@ model User {
   coins     Int       @default(0)     // current coin balance
   
   // Relations
+  workNotes WorkNote[]
+  workAttachments WorkAttachment[]
   workContacts WorkContact[]
   workContexts WorkContext[]
   workActivity WorkActivity[]
@@ -113,6 +115,8 @@ model Todo {
   completedAt DateTime?
   cancelledAt DateTime?
   archivedAt DateTime?
+  notes WorkNote[]
+  attachments WorkAttachment[]
   activity WorkActivity[]
   priority     Int?
 
@@ -192,6 +196,8 @@ model WorkActivity {
   actorGithubId String
   todoId Int?
   todoReference String
+  noteRevisionId Int?
+  noteRevision WorkNoteRevision? @relation(fields: [noteRevisionId], references: [id], onDelete: Restrict)
   action String
   changes Json
   createdAt DateTime @default(now())
@@ -806,4 +812,60 @@ model TodoAffectedContact {
 
   @@id([todoId, contactId])
   @@index([contactId])
+}
+
+
+model WorkNote {
+  id Int @id @default(autoincrement())
+  userId Int
+  todoId Int
+  actorGithubId String
+  body String
+  documentationUrls String[] @default([])
+  occurredAt DateTime?
+  revision Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  removedAt DateTime?
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  todo Todo @relation(fields: [todoId], references: [id], onDelete: Restrict)
+  revisions WorkNoteRevision[]
+
+  @@index([userId, todoId, createdAt])
+}
+
+model WorkNoteRevision {
+  id Int @id @default(autoincrement())
+  noteId Int
+  revision Int
+  body String
+  documentationUrls String[] @default([])
+  occurredAt DateTime?
+  action String
+  actorGithubId String
+  recordedAt DateTime @default(now())
+  note WorkNote @relation(fields: [noteId], references: [id], onDelete: Restrict)
+  activity WorkActivity[]
+
+  @@unique([noteId, revision])
+}
+
+model WorkAttachment {
+  id Int @id @default(autoincrement())
+  userId Int
+  todoId Int
+  originalName String @db.VarChar(200)
+  mimeType String
+  byteSize Int
+  contentHash String @db.VarChar(64)
+  storageKey String @unique
+  pendingDeletionKeys String[] @default([])
+  revision Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  removedAt DateTime?
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  todo Todo @relation(fields: [todoId], references: [id], onDelete: Restrict)
+
+  @@index([userId, todoId, createdAt])
 }

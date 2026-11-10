@@ -3,9 +3,9 @@ import { useEffect, useState } from "react";
 import { workRead } from "@/lib/work-management/client";
 import { STATUS_LABELS, PRIORITY_LABELS, type WorkActivityEntry } from "@/lib/work-management/types";
 const timestamp = (value: string) => new Date(value).toLocaleString("en-CA", { timeZone: "America/Toronto", dateStyle: "medium", timeStyle: "short" });
-function valueLabel(value: unknown): string {
+export function valueLabel(value: unknown): string {
   if (value == null || value === "") return "Not recorded";
-  if (typeof value === "string") return (STATUS_LABELS as Record<string, string>)[value] ?? (PRIORITY_LABELS as Record<string, string>)[value] ?? (/^\d{4}-\d\d-\d\dT/.test(value) ? timestamp(value) : value);
+  if (typeof value === "string") return (STATUS_LABELS as Record<string, string>)[value] ?? (PRIORITY_LABELS as Record<string, string>)[value] ?? (/^\d{4}-\d\d-\d\dT/.test(value) && Number.isFinite(Date.parse(value)) ? timestamp(value) : value);
   if (Array.isArray(value)) return value.map(valueLabel).join(", ") || "None";
   if (typeof value === "object" && "name" in value) return String(value.name);
   if (typeof value === "object" && "title" in value) return `${value.title}${"done" in value ? value.done ? " (completed)" : " (not completed)" : ""}`;

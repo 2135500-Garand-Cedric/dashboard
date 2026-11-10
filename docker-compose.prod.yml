@@ -12,7 +12,9 @@ services:
     environment:
       NODE_ENV: production
       FINANCE_UPLOAD_DIR: /app/private/finance
+      WORK_UPLOAD_DIR: /app/private/work
     volumes:
+      - work_files:/app/private/work
       - finance_files:/app/private/finance
     command: sh -c "npx prisma migrate deploy && npm run start"
     depends_on:
@@ -56,6 +58,7 @@ services:
         condition: service_healthy
 
 volumes:
+  work_files:
   finance_files:
   dashboard_data:
 

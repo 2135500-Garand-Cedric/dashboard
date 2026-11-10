@@ -37,10 +37,10 @@ export async function workTransaction<T>(action: (db: DB) => Promise<T>): Promis
     return action(db);
   }, { isolationLevel: "ReadCommitted", timeout: 15000, maxWait: 15000 });
 }
-function version(row: { revision: number }, command: WorkCommand) {
+export function version(row: { revision: number }, command: WorkCommand) {
   if (row.revision !== command.revision) throw new WorkValidationError("This record changed in another window. Reload it before saving.", 409);
 }
-async function mutation(operation: string, input: unknown, command: WorkCommand, action: (db: DB) => Promise<unknown>) {
+export async function mutation(operation: string, input: unknown, command: WorkCommand, action: (db: DB) => Promise<unknown>) {
   const fingerprint = createHash("sha256").update(JSON.stringify([operation, command.revision ?? null, input && typeof input === "object" && !Array.isArray(input) ? Object.fromEntries(Object.entries(input).sort(([a], [b]) => a.localeCompare(b))) : input])).digest("hex");
   return workTransaction(async db => {
     const previous = await db.workMutationReceipt.findUnique({ where: { userId_requestKey: { userId: WORK_USER_ID, requestKey: command.requestKey } } });
@@ -53,7 +53,7 @@ async function mutation(operation: string, input: unknown, command: WorkCommand,
     return result;
   });
 }
-async function todoRow(db: DB, id: number) {
+export async function todoRow(db: DB, id: number) {
   const row = await db.todo.findFirst({ where: { id, userId: WORK_USER_ID }, include: todoInclude });
   if (!row) throw new WorkValidationError("Task not found.", 404);
   return row;
@@ -68,11 +68,12 @@ export async function listTodos(includeArchived = false) {
 }
 export async function getTodo(id: number) {
   const row = await todoRow(prisma, id);
-  const [dependents, dependentCount] = await Promise.all([
+  const [dependents, dependentCount, supportingRecordCount] = await Promise.all([
     prisma.todo.findMany({ where: { userId: WORK_USER_ID, dependsOnId: id }, select: { id: true, title: true, status: true }, orderBy: { id: "asc" }, take: 30 }),
     prisma.todo.count({ where: { userId: WORK_USER_ID, dependsOnId: id } }),
+    prisma.workNote.count({ where: { todoId: id, userId: WORK_USER_ID } }).then(async count => count + await prisma.workAttachment.count({ where: { todoId: id, userId: WORK_USER_ID } })),
   ]);
-  return { ...todoDTO(row), dependents, dependentCount };
+  return { ...todoDTO(row), dependents, dependentCount, supportingRecordCount };
 }
 export async function searchWork(params: URLSearchParams) {
   const query = parseWorkQuery(params), where = workQueryWhere(query, WORK_USER_ID);
@@ -98,7 +99,7 @@ async function dependency(db: DB, taskId: number | null, target: number | null) 
     current = row.dependsOnId;
   }
 }
-async function appendTaskActivity(db: DB, id: number, action: string, changes: Prisma.InputJsonValue) {
+export async function appendTaskActivity(db: DB, id: number, action: string, changes: Prisma.InputJsonValue) {
   await db.workActivity.create({ data: { userId: WORK_USER_ID, actorGithubId: OWNER_GITHUB_ID, todoId: id, todoReference: taskReference(id), action, changes, createdAt: new Date() } });
 }
 async function recordTaskActivity(db: DB, before: TodoRow | null, after: TodoRow) {
@@ -174,6 +175,7 @@ export async function patchTodo(id: number, value: unknown, command: WorkCommand
 export async function deleteTodo(id: number, command: WorkCommand) {
   return mutation(`todo:${id}:delete`, null, command, async db => {
     const row = await todoRow(db, id); version(row, command);
+    if (await db.workNote.count({ where: { todoId: id } }) || await db.workAttachment.count({ where: { todoId: id } })) throw new WorkValidationError("Archive this task to preserve its notes, revisions and attachment history. Tasks with supporting records cannot be permanently deleted.", 409);
     if (await db.todo.count({ where: { dependsOnId: id } })) throw new WorkValidationError("Cannot delete this task because another task depends on it.", 409);
     if (await db.event.count({ where: { linkedTodoId: id, userId: { not: WORK_USER_ID } } })) throw new WorkValidationError("This task has an unexpected owner association. Review the inventory before deleting it.", 409);
     await db.event.updateMany({ where: { linkedTodoId: id, userId: WORK_USER_ID }, data: { linkedTodoId: null, revision: { increment: 1 } } });
