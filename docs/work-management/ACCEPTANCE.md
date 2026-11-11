@@ -294,3 +294,57 @@ handlers and page/identity checks. Build, TypeScript, targeted lint and whitespa
 passed. Repeated isolated migration had no pending changes and identical record
 fingerprints; final development inventory was unchanged after auth reads. Phase 09
 is verified in development. Phase 10 and production acceptance remain pending.
+
+## Phase 10 cumulative acceptance (2026-11-11)
+
+The table below reconciles the implemented redesign with current source and
+executed Phase 10 checks. “Verified” means development/disposable evidence only;
+it does not claim production, physical-device or exhaustive cross-module UI
+acceptance. See PROGRESS.md for exact runs, the corrected browser fixture, private
+artifacts and limits; HANDOVER.md defines recovery and future deployment work.
+
+| ID | Development result | Supporting evidence |
+| --- | --- | --- |
+| A01 | Verified | Actual pre-redesign restore; every stage compares original values/IDs/links/timestamps, then repeat deploy |
+| A02 | Verified | No live reset/seed; empty inferred entities/nullable unknowns checked; synthetic workflow refuses real/restored targets |
+| A03 | Verified | Exact User and unrelated-table fingerprints at each migration; final live development inventory unchanged |
+| A04 | Verified | Live 152-handler/page/identity checks; supporting-record owner/parent scope tests; isolated original-file reads |
+| A05 | Verified | UUID/version/owner-lock protocol, retry/conflict/rollback suites and additional note/file/project races |
+| A06 | Verified | Event deletion/archival regressions retain tasks and independent reservations |
+| A07 | Verified | Canonical Todo/source IDs across shared list/board/project/calendar/My Work and original URLs |
+| A08 | Verified | Seven statuses/default capture, closed/history/archive UI and explicit legacy mappings |
+| A09 | Verified | Null/unknown/custom-status legacy fixtures; title-only capture with visible context |
+| A10 | Verified | Urgent undated query/browser cases, independent priority predicates and visible planning filter |
+| A11 | Verified | Independent contacts and optional requester/affected/waiting fields; no employee users |
+| A12 | Verified | Closure/workaround/reopen/archive history and reward-accounting concurrency/retry tests |
+| A13 | Verified | Notes/revisions/timestamps, All activity pagination, safe rendering and concurrent note edits |
+| A14 | Verified | Task/project private uploads, replacement/removal/cleanup tests; actual whole-DB plus 12 finance/8 work-file restore |
+| A15 | Verified | Original checklist IDs preserved; independent children and concurrent hierarchy-cycle protection |
+| A16 | Verified | Directed/symmetric graph rules, cycles/concurrency; exact anomalous legacy backfill and repeat |
+| A17 | Verified | Waiting versus Blocked, review-token overrides, Cancelled prerequisites and unfinished-child decisions |
+| A18 | Verified | Calendar dates/exact instants, DST gap/fold and app zone independent of UTC/Tokyo device/server |
+| A19 | Verified | Source-only dates/sessions and retained follow-up lifecycle; complete/snooze does not close task |
+| A20 | Verified | Existing calendar layers/context/project filters, source navigation, all-day/session moves at four sizes |
+| A21 | Verified | Explicit conversion/review/undo, provenance, duplicate placeholder suppression and retry tests |
+| A22 | Verified | Time passage has no completion side effect; retained closed/archived session labels and original reopen deadline |
+| A23 | Verified | Optional project/stage constraints, standalone/moved tasks and cross-project original relationships |
+| A24 | Verified | Done/total counts, exclusions and explicit unfinished-child/project warnings without cascades |
+| A25 | Verified | Shared daily sections/counts/context/project filters and real paginated sessions |
+| A26 | Verified | Unique dated focus, independent fields, no carryover, closure/reopen and midnight-under-lock cases |
+| A27 | Verified | Shared compact list/board filters/history; planning filter clears when switching to closed/archive views |
+| A28 | Verified with device limit | Four viewport sizes and keyboard/touch Chromium controls, shared panels/URLs and draft/conflict tests; physical/Safari pending |
+| A29 | Verified for tested scope | 31 unit files; 108 final serial DB checks including finance/Japanese; auth/build/lint; sanitized no-store error/logger tests |
+| A30 | Verified with recovery limits | Full historical chain/repeats, actual transactional migration interruption/resolution, legacy-client limitation, complete DB/file restores; production/power-loss/NAS pending |
+| A31 | Verified | Only reliability/tooling/docs fixes; no AI, external effects, notification or new feature module |
+
+The final browser evidence comprises nine files/ten distinct checks across the
+serial run and the successful final My Work/dashboard rerun. One initial new
+fixture missed its context; that failed attempt is explicitly excluded. No broad
+“all tests passed” claim applies to that first batch or to full-repository lint.
+
+Remaining manual/operational checks: physical phone/camera/Safari, production
+proxy/session/network/volume settings, real host reboot and arbitrary crash points,
+old binary deployment, off-host/encrypted/NAS restore and exhaustive finance/Japanese
+browser workflows. A verified development redesign does not authorize production
+cutover or prove those conditions. Production-specific checks remain pending; no
+automatic next phase exists.

@@ -237,6 +237,47 @@ test(
             url.searchParams.get("planning") === "urgent",
         );
         await page.locator(`[data-open-task="${urgent.id}"]`).first().waitFor();
+        assert.equal(
+          await page
+            .getByRole("combobox", { name: "Filter planning section" })
+            .inputValue(),
+          "urgent",
+        );
+        const completed = await write("/api/todos", {
+          title: `${prefix} completed history`,
+          company: prefix,
+          contextId: school.id,
+          rewardXp: 0,
+          rewardCoins: 0,
+        });
+        ids.push(completed.id);
+        await write(
+          `/api/todos/${completed.id}`,
+          { status: "DONE" },
+          completed.revision,
+          "patch",
+        );
+        await activate(
+          page.getByRole("button", { name: "Completed history", exact: true }),
+        );
+        await page.waitForURL(
+          (url) =>
+            url.searchParams.get("view") === "history" &&
+            !url.searchParams.has("planning"),
+        );
+        await page
+          .locator(`[data-open-task="${completed.id}"]`)
+          .first()
+          .waitFor();
+        await page
+          .getByRole("combobox", { name: "Filter planning section" })
+          .selectOption("urgent");
+        await page.waitForURL(
+          (url) =>
+            url.searchParams.get("planning") === "urgent" &&
+            !url.searchParams.has("view"),
+        );
+        await page.locator(`[data-open-task="${urgent.id}"]`).first().waitFor();
         await page.goto(
           `${base}/my-work?company=${encodeURIComponent(prefix)}`,
         );
@@ -282,6 +323,25 @@ test(
             exact: true,
           })
           .waitFor();
+        await page.route(`${base}/api/work-contexts`, (route) =>
+          route.fulfill({
+            status: 503,
+            json: { error: "Contexts temporarily unavailable" },
+          }),
+        );
+        await page.reload();
+        await page
+          .getByRole("alert")
+          .filter({ hasText: "Contexts temporarily unavailable" })
+          .waitFor();
+        await page.unroute(`${base}/api/work-contexts`);
+        await activate(
+          page.getByRole("button", { name: "Retry contexts", exact: true }),
+        );
+        await page
+          .getByRole("combobox", { name: "My Work context", exact: true })
+          .getByRole("option", { name: school.name, exact: true })
+          .waitFor({ state: "attached" });
         console.log(
           `Verified focus, capture, filters, lifecycle, source links and errors at ${viewport.width}×${viewport.height}.`,
         );

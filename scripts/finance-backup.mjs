@@ -117,6 +117,44 @@ export function backup(composeFile, destination) {
     : run([...compose, "ps", "-a", "-q", appService]);
   if (!/^[a-f0-9]{12,64}$/.test(container))
     throw new Error("Choose a Compose project with exactly one existing dashboard container.");
+  if (run(["inspect", "--format", "{{.HostConfig.AutoRemove}}", container]) === "true")
+    throw new Error(
+      "Choose a persistent app container for backup. An auto-remove container would be deleted when stopped.",
+    );
+  const environment = JSON.parse(run(["inspect", "--format", "{{json .Config.Env}}", container]));
+  const configured = (name) =>
+    environment.find((value) => value.startsWith(`${name}=`))?.slice(name.length + 1);
+  const databaseContainer = run([...compose, "ps", "-q", dbService]);
+  if (!/^[a-f0-9]{12,64}$/.test(databaseContainer))
+    throw new Error("Choose exactly one running database service for this backup.");
+  const projectOf = (id) =>
+    run(["inspect", "--format", '{{index .Config.Labels "com.docker.compose.project"}}', id]);
+  const appProject = projectOf(container);
+  if (!appProject || appProject === "<no value>" || appProject !== projectOf(databaseContainer))
+    throw new Error("Choose app and database containers from the same Compose project.");
+  const databaseEnvironment = JSON.parse(
+    run(["inspect", "--format", "{{json .Config.Env}}", databaseContainer]),
+  );
+  const databaseName = databaseEnvironment
+    .find((value) => value.startsWith("POSTGRES_DB="))
+    ?.slice(12);
+  const databaseHost = run(["inspect", "--format", "{{.Name}}", databaseContainer]).replace(
+    /^\//,
+    "",
+  );
+  let appDatabase;
+  try {
+    appDatabase = new URL(configured("DATABASE_URL"));
+  } catch {
+    throw new Error("The selected app must have an explicit valid database connection for backup.");
+  }
+  if (
+    ![dbService, databaseHost].includes(appDatabase.hostname) ||
+    decodeURIComponent(appDatabase.pathname.slice(1)) !== databaseName
+  )
+    throw new Error(
+      "The selected app and database service do not match. Choose matching backup containers before continuing.",
+    );
   const running = run(["inspect", "--format", "{{.State.Running}}", container]) === "true";
   const sql = (query) => {
     const output = run([
@@ -140,9 +178,6 @@ export function backup(composeFile, destination) {
     const hasWork = Object.hasOwn(databaseSnapshot, "WorkAttachment"),
       workDocuments = hasWork ? sql(workDocumentsSql) : [];
     // Read configured paths without logging environment variables or credentials.
-    const environment = JSON.parse(run(["inspect", "--format", "{{json .Config.Env}}", container]));
-    const configured = (name) =>
-      environment.find((value) => value.startsWith(`${name}=`))?.slice(name.length + 1);
     const financePath = configured("FINANCE_UPLOAD_DIR") || "/app/private/finance",
       workPath = configured("WORK_UPLOAD_DIR") || "/app/private/work";
     if (

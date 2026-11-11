@@ -7,6 +7,7 @@ import { describeWorkDate } from "@/lib/work-management/date-format";
 import {
   STATUS_LABELS,
   PRIORITY_LABELS,
+  PLANNING_LABELS as labels,
   priorityOf,
   type WorkTodo,
   type WorkContext,
@@ -14,18 +15,6 @@ import {
 import TaskQuickPanel from "./TaskQuickPanel";
 import ProjectPicker from "@/components/projects/ProjectPicker";
 import { useWorkDraftGuard } from "./useWorkDraftGuard";
-const labels: Record<string, string> = {
-  new: "New to review",
-  focus: "Today's focus",
-  overdue: "Overdue",
-  upcoming: "Due today / next 7 days",
-  followups: "Follow-ups due",
-  waiting: "Waiting",
-  blocked: "Blocked",
-  urgent: "Urgent work",
-  undated: "No deadline",
-  backlog: "Backlog",
-};
 type Data = {
   date: string;
   timeZone: string;
@@ -61,6 +50,8 @@ export default function MyWork() {
   const query = filterQuery.toString();
   const [data, setData] = useState<Data | null>(null),
     [contexts, setContexts] = useState<WorkContext[]>([]),
+    [catalogError, setCatalogError] = useState(""),
+    [catalogRefresh, setCatalogRefresh] = useState(0),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [refresh, setRefresh] = useState(0),
@@ -100,17 +91,18 @@ export default function MyWork() {
   }, [query, refresh]);
   useEffect(() => {
     let active = true;
+    setCatalogError("");
     void workRead<WorkContext[]>("/api/work-contexts")
       .then((rows) => {
         if (active) setContexts(rows);
       })
       .catch((error) => {
-        if (active) setError(error.message);
+        if (active) setCatalogError(error.message);
       });
     return () => {
       active = false;
     };
-  }, []);
+  }, [catalogRefresh]);
   useEffect(() => {
     const value = contextFilter;
     setCaptureContext(
@@ -327,6 +319,18 @@ export default function MyWork() {
           {params.get("project") && params.get("project") !== "none" ? " · Selected project" : ""}
         </span>
       </form>
+      {catalogError && (
+        <p role="alert" className="rounded border border-rose-500/40 p-3 text-rose-500">
+          {catalogError}{" "}
+          <button
+            type="button"
+            onClick={() => setCatalogRefresh((value) => value + 1)}
+            className="underline"
+          >
+            Retry contexts
+          </button>
+        </p>
+      )}
       {error && (
         <p role="alert" className="rounded border border-rose-500/40 p-3 text-rose-500">
           {error}{" "}

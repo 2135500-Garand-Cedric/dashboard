@@ -29,6 +29,18 @@ export const KIND_LABELS = {
   IMPROVEMENT: "Improvement",
   MAINTENANCE: "Maintenance",
 };
+export const PLANNING_LABELS = {
+  new: "New to review",
+  focus: "Today's focus",
+  overdue: "Overdue",
+  upcoming: "Due today / next 7 days",
+  followups: "Follow-ups due",
+  waiting: "Waiting",
+  blocked: "Blocked",
+  urgent: "Urgent work",
+  undated: "No deadline",
+  backlog: "Backlog",
+};
 export function taskReference(id: number): string {
   return `TASK-${String(id).padStart(4, "0")}`;
 }

@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { captureInventory, compareInventories } from "../scripts/work-management-inventory.mjs";
+import { createMigrationWorkspace } from "../scripts/rehearse-work-migrations.mjs";
 
 test(
   "Phase 02 migration preserves legacy null/unknown priorities and custom statuses without guessing history",
@@ -15,6 +16,7 @@ test(
     assert.equal(url.pathname, "/work_legacy_fixtures");
     const { PrismaClient } = await import("../src/generated/prisma/index.js");
     const db = new PrismaClient();
+    const workspace = createMigrationWorkspace("02");
     try {
       const columns =
         await db.$queryRaw`SELECT column_name FROM information_schema.columns WHERE table_name='Todo' AND column_name='priorityLevel'`;
@@ -46,7 +48,7 @@ test(
       assert.ok(before.issues.some((value) => value.includes("statuses")));
       assert.ok(before.issues.some((value) => value.includes("priorities")));
       const deploy = () =>
-        execFileSync("npx", ["prisma", "migrate", "deploy"], {
+        execFileSync("npx", ["prisma", "migrate", "deploy", "--schema", workspace.schema], {
           cwd: process.cwd(),
           env: process.env,
           stdio: "pipe",
@@ -93,6 +95,7 @@ test(
       assert.deepEqual(compareInventories(after, await captureInventory(db), "02"), []);
     } finally {
       await db.$disconnect();
+      workspace.dispose();
     }
   },
 );

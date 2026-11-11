@@ -9,6 +9,7 @@ import {
   STATUS_LABELS,
   PRIORITY_LABELS,
   KIND_LABELS,
+  PLANNING_LABELS,
   priorityOf,
   isClosed,
   taskReference,
@@ -105,6 +106,7 @@ export default function AllWork({
     personId = params.get("person") || "";
   function navigate(changes: Record<string, string | null>, replace = false) {
     const next = new URLSearchParams(window.location.search);
+    if (changes.view && changes.view !== "active") next.delete("planning");
     for (const [key, value] of Object.entries(changes)) {
       if (value == null || value === "") next.delete(key);
       else next.set(key, value);
@@ -119,7 +121,13 @@ export default function AllWork({
         ? { view: isClosed(value) ? "history" : null }
         : {};
     navigate(
-      { ...viewChange, ...(key === "project" ? { stage: null } : {}), [key]: value, page: null },
+      {
+        ...viewChange,
+        ...(key === "project" ? { stage: null } : {}),
+        ...(key === "status" && isClosed(value) ? { planning: null } : {}),
+        [key]: value,
+        page: null,
+      },
       true,
     );
   }
@@ -475,6 +483,31 @@ export default function AllWork({
           </label>
         </div>
         <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <label className="text-sm">
+            Planning section
+            <select
+              aria-label="Filter planning section"
+              value={params.get("planning") || ""}
+              onChange={(event) =>
+                navigate(
+                  {
+                    planning: event.target.value || null,
+                    ...(event.target.value ? { view: null, status: null } : {}),
+                    page: null,
+                  },
+                  true,
+                )
+              }
+              className={`${inputClass} mt-1`}
+            >
+              <option value="">All planning sections</option>
+              {Object.entries(PLANNING_LABELS).map(([key, label]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="text-sm">
             Deadline
             <select

@@ -5,6 +5,9 @@ Work-management redesign: [roadmap](docs/work-management/README.md),
 [Work-management operations](docs/work-management/OPERATIONS.md). Development startup no
 longer seeds example data automatically. Use the documented no-migration override
 for preservation work, and run demo seeding only explicitly on isolated data.
+The completed redesign's [maintenance handover](docs/work-management/HANDOVER.md)
+and [isolated examples](docs/work-management/SYNTHETIC_EXAMPLES.md) include migration,
+backup, compatibility and verification procedures.
 
 ## Backfill conditional verb forms
 

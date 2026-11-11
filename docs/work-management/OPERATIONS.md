@@ -3,6 +3,10 @@
 Use CONTEXT.md and the assigned phase as the execution boundary. These commands
 are development/disposable procedures, not permission to operate on production.
 Never combine the standalone work-test Compose file with production Compose.
+The completed architecture, cumulative rehearsal, compatibility limits and future
+deployment checklist are in [HANDOVER.md](HANDOVER.md). Opt-in isolated examples
+are in [SYNTHETIC_EXAMPLES.md](SYNTHETIC_EXAMPLES.md). Earlier sections below retain
+their phase-specific history; PROGRESS.md records what actually ran.
 
 ## What changed
 
@@ -161,8 +165,9 @@ docker compose -f docker-compose.dev.yml -f docker-compose.work-dev.yml up -d --
 ```
 
 No production deployment is performed by these procedures. For a later authorized
-deployment, use the reviewed migration and a complete verified backup. The old app
-can read original columns during an additive rollback, but MUST NOT accept writes
+deployment, use the reviewed migration and a complete verified backup. Selected
+original columns remain readable, but a legacy client cannot interpret new task
+statuses. General old-app reads are not guaranteed, and it MUST NOT accept writes
 through its old reward protocol: it would desynchronize accounting state. Use a
 maintenance/read-only window while resolving a failed cutover. Restoring an old
 backup after new writes loses those writes unless they are recovered separately;
@@ -1125,3 +1130,64 @@ running disposable localhost:3002 app. Full serial browser regression enables al
 nine RUN_WORK_*_BROWSER_TEST flags, not only the focus flag. Tests use UTC server
 and Tokyo browser independently of the configured Toronto planning zone. See
 PROGRESS.md for actual results and limits. Phase 10 is not started automatically.
+
+## Phase 10 — Reliability and handover
+
+No new model, migration, dependency or storage root is introduced. Historical SQL
+stays unchanged. Use HANDOVER.md for the current model/service/route map, statuses,
+owner mapping, dates/graph/rewards/focus rules, backup and production checklist.
+Use SYNTHETIC_EXAMPLES.md for the separately guarded empty work_examples workflow.
+It cannot seed the restored work_test baseline or a real owner's database.
+
+The combined backup now rejects auto-remove source containers, cross-project
+app/database pairs and configured DB host/name mismatches **before stopping**.
+Choose persistent matching Compose containers; complete both database/file roots.
+Work malformed/unexpected responses now also use no-store. Planning-filter/history
+navigation and context-catalog retry fixes are covered by four-size browser tests.
+
+The cumulative helper requires a fresh authorized pre-redesign restore and refuses
+an already migrated baseline. It creates private exclusive evidence, applies each
+historical stage in order, compares originals and repeats each deploy. Do not use
+it as a rollback tool. A separate actual interruption test demonstrates rollback,
+blocked retry and explicit resolution at the tested transactional point. An old
+Prisma enum client cannot read NEW; general old-app rollback is unsupported.
+Do not infer safe downgrade from an additive schema or replay separate rewards.
+
+Exact new maintenance checks (standalone disposable project only):
+
+```sh
+docker compose -p dashboard-work-phase10 -f docker-compose.work-test.yml run --rm --no-deps \
+  -e RUN_WORK_REHEARSAL=1 runner node scripts/rehearse-work-migrations.mjs \
+  /app/private/work-management/phase10-chain
+
+docker compose -p dashboard-work-phase10 -f docker-compose.work-test.yml run --rm --no-deps \
+  -e RUN_WORK_RELIABILITY_DB_TEST=1 runner node --test tests/work-reliability.integration.mjs
+
+docker compose -p dashboard-work-phase10 -f docker-compose.work-test.yml run --rm --no-deps \
+  -e RUN_WORK_REHEARSAL=1 -e RUN_WORK_RECOVERY_TEST=1 \
+  -e DATABASE_URL=postgresql://work_test:work_test_local_only@work-db:5432/work_recovery \
+  runner node --test tests/work-migration-recovery.mjs
+```
+
+The chain output directory must be new. Recovery requires its own **fresh legacy**
+restore named work_recovery before running both tests; it deliberately terminates
+only a blocked migration backend in that database. Its second test generates a
+minimal old-status client in a private scratch directory, proves enum incompatibility,
+then removes only its synthetic probe/client. The separate legacy Phase 02/05
+fixture tests require their existing pre-phase DB copies; bounded workspaces now
+prevent future migrations from leaking into those tests.
+
+Writing tests must never target primary development/production. Volume/rollback
+fingerprints and browser writers to the same DB run sequentially. The Phase 10
+serial backend batch used all RUN_WORK_FOCUS_DB_TEST, RUN_WORK_PROJECT_DB_TEST,
+RUN_EVENT_DB_TEST, RUN_FINANCE_*_DB_TEST, RUN_KANJI_DB_TEST and
+RUN_WORK_RELIABILITY_DB_TEST flags appropriate to the 20 files in PROGRESS.md;
+the base runner supplies RUN_WORK_MANAGEMENT_DB_TEST. See that record for actual
+counts and separate recovery/example/legacy tests. Node unit, TypeScript, targeted
+lint and isolated build commands remain unchanged. Browser source must be frozen;
+after a real fix, rerun the affected suite and document any failed attempts.
+
+Known unrelated ActivityVocab.lastPracticed drift is left intact. Early migrations
+without explicit BEGIN/COMMIT and arbitrary power loss still need real catalog/log
+review, not automatic resolve/reset. Physical-device/NAS/production procedures
+remain separately unverified. Stop after this handover; no new phase is implied.

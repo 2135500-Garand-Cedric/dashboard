@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { captureInventory, compareInventories } from "../scripts/work-management-inventory.mjs";
+import { createMigrationWorkspace } from "../scripts/rehearse-work-migrations.mjs";
 test(
   "Phase 05 migration preserves exact legacy tuples and anomalies; repeat backfill and deploy are no-ops",
   { skip: process.env.RUN_WORK_RELATIONSHIP_MIGRATION_TEST !== "1" },
@@ -15,6 +16,7 @@ test(
     assert.equal(url.pathname, "/work_relationship_fixtures");
     const { PrismaClient } = await import("../src/generated/prisma/index.js"),
       db = new PrismaClient();
+    const workspace = createMigrationWorkspace("05");
     try {
       const columns =
         await db.$queryRaw`SELECT column_name FROM information_schema.columns WHERE table_name='Todo' AND column_name='parentId'`;
@@ -41,7 +43,10 @@ test(
       await db.$executeRaw`INSERT INTO "Event" ("userId","title","linkedTodoId","date","updatedAt") VALUES (1,${prefix},${ids[0]}::integer,'2030-01-01','2001-01-01')`;
       const before = await captureInventory(db);
       const deploy = () =>
-        execFileSync("npx", ["prisma", "migrate", "deploy"], { stdio: "pipe", env: process.env });
+        execFileSync("npx", ["prisma", "migrate", "deploy", "--schema", workspace.schema], {
+          stdio: "pipe",
+          env: process.env,
+        });
       deploy();
       const after = await captureInventory(db);
       assert.deepEqual(compareInventories(before, after, "05"), []);
@@ -76,6 +81,7 @@ test(
       );
     } finally {
       await db.$disconnect();
+      workspace.dispose();
     }
   },
 );

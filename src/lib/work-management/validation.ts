@@ -72,7 +72,10 @@ export async function workResponse(
         { status: error.status, headers: { "Cache-Control": "no-store" } },
       );
     if (error instanceof SyntaxError)
-      return NextResponse.json({ error: "Enter a valid request." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Enter a valid request." },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
+      );
     // Never log request bodies, Prisma errors/parameters, notes or contact data.
     console.error("Work management: operation failed.");
     return NextResponse.json(
@@ -82,7 +85,7 @@ export async function workResponse(
             ? "Unable to load this data. Reload the page and try again."
             : "Unable to save this change. Reload the record and try again.",
       },
-      { status: 500 },
+      { status: 500, headers: { "Cache-Control": "no-store" } },
     );
   }
 }

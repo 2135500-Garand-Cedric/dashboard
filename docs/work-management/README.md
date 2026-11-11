@@ -9,7 +9,10 @@ every phase, together with applicable repository instructions,
 and the relevant current code. These plans describe proposed changes, not claims
 about features already implemented. Recheck the repository before acting.
 
-Phases 01–04 operational details and recovery limits: [OPERATIONS.md](OPERATIONS.md).
+Operational details and recovery limits: [OPERATIONS.md](OPERATIONS.md).
+Current model/service map, cumulative rehearsal, compatibility and future deployment
+checklist: [HANDOVER.md](HANDOVER.md). Isolated opt-in examples:
+[SYNTHETIC_EXAMPLES.md](SYNTHETIC_EXAMPLES.md).
 
 ## Execution order
 

@@ -4,8 +4,8 @@
 
 Updated: 2026-11-11 (America/Toronto).
 
-Phases 01–09 are implemented and verified in development. Production is untouched.
-Next assignment: Phase 10, which has not started.
+Phases 01–10 are implemented and verified in development within the recorded limits.
+Production is untouched. There is no automatically authorized next phase.
 The architecture is not a production migration approval.
 
 | Phase | Status | Evidence |
@@ -20,7 +20,7 @@ The architecture is not a production migration approval.
 | 07 | Verified in development | See Phase 07 evidence below and OPERATIONS.md |
 | 08 | Verified in development | See Phase 08 evidence below and OPERATIONS.md |
 | 09 | Verified in development | See Phase 09 evidence below and OPERATIONS.md |
-| 10 | Not started | — |
+| 10 | Verified in development; production/device/NAS limits recorded | See Phase 10, HANDOVER.md and cumulative ACCEPTANCE.md |
 
 ## Discovery evidence from Prompt 0
 
@@ -1517,3 +1517,276 @@ Whole-DB backups and exact inventories remain private under private/work-managem
 The disposable browser app and database were stopped without deleting volumes or
 evidence. Primary development app/database remain running. Production is untouched.
 Phase 09 is complete in development. Stop here; Phase 10 has not started.
+
+## Phase 10 — Reliability, cumulative rehearsal and handover
+
+Date: 2026-11-11 (America/Toronto).
+
+### Scope and findings
+
+Read the shared context, acceptance/progress/operations decisions, phase scope and
+actual model/service/routes/UI/tests/storage/Compose configuration. Phases 01–09
+were implemented with development evidence. The only pre-existing uncommitted
+change was the user's AppShell.tsx development banner; it remains untouched.
+No production connection/deployment, live record mutation, reset, automatic seed,
+credential change, external notification or new feature module was performed.
+No historical migration or dependency manifest changed; Phase 10 adds no schema
+migration. The known unrelated ActivityVocab.lastPracticed drift remains intact.
+
+Reliability changes:
+
+- All Work now exposes the My Work Planning section filter. Switching to completed
+  history/archive/non-active views or selecting a closed status clears its
+  incompatible open-task predicate. Selecting a planning section restores the
+  active view. Shared client-safe labels avoid duplicate daily section naming.
+- My Work context-catalog failures have a separate retained error and Retry
+  contexts action. Retrying data alone previously could clear the message without
+  reloading the failed context list. Capture text is not cleared by this retry.
+- Work malformed/unexpected error responses now explicitly carry no-store, like
+  successful/domain-error responses. Tests capture logger output and prove internal
+  note/request content appears in neither response nor logs.
+- Combined backup refuses an auto-remove app before stopping it, preventing loss
+  of the source container. It also verifies matching Compose project, configured
+  DB hostname/service and database name before selecting app files plus DB rows.
+  Tested all three refusal cases; sources remained running. Correctly matched
+  sources still back up/restore successfully. No new environment setting is needed.
+- Legacy migration fixtures now use a bounded unchanged migration workspace, so
+  old Phase 02/05 tests do not accidentally apply later phases. Added reusable
+  guarded chain rehearsal, recovery/compatibility and volume/concurrency checks.
+- Added an opt-in full showcase restricted to an empty work_examples test DB and
+  separate file volume, with server-retained manifest archival and repeat safety.
+
+Files: scripts/rehearse-work-migrations.mjs, scripts/work-showcase.mjs,
+scripts/finance-backup.mjs; work types/validation, AllWork/MyWork; work browser,
+unit, legacy-migration and new reliability/recovery/showcase tests; HANDOVER.md,
+SYNTHETIC_EXAMPLES.md, shared operations/acceptance/progress and README links.
+
+### Cumulative real-data rehearsal and exact preservation
+
+A suitable private original baseline exists: phase01-dev-before.dump plus its
+saved inventory. Restored it into a confirmed-empty isolated Phase 10 work_test
+DB. Comparison to the saved baseline reported no differences or integrity issues.
+It contains **30 original public record tables, three tasks, five checklist rows
+and 17 events**, plus original Japanese/finance data and User reward totals.
+
+Ran all nine work stages with unchanged historical SQL, saving a private inventory
+at each stage and repeating deployment after every stage. Reached **35 total
+migrations** from 25 earlier migrations (10 work SQL files across nine phases).
+Every phase's original-field/ID/relationship/schema comparison passed; every
+repeat preserved record fingerprints. Original raw status/priority, timestamps,
+checklist IDs, dependency direction, event associations, finance decimal values,
+Japanese progress and User balances survived. Final pending migrations are empty.
+
+Intentional additions are the previously reviewed technical revisions/reward
+reversal baseline, named-priority mapping and context catalog/defaults; canonical
+legacy dependency/event links with provenance; nullable unknown metadata/dates/
+membership; empty new supporting/date/project/focus tables and additive indexes/
+constraints. No historical note, closure/date, session, focus or project assignment
+was inferred. Original fields and values were never replaced by these additions.
+Private chain artifacts: private/work-management/phase10-chain/ (before, each
+stage, migration/repeat logs and report); phase10-restored-legacy.json verifies
+source restore equality. They contain private full rows; do not publish them.
+
+Additional separate historical copies passed:
+
+- Null/unknown priorities and custom-status preservation, future defaults, retained
+  timestamps and repeated Phase 02 deployment.
+- Legacy self/cycle-path/cross-owner dependencies, exact tuple direction,
+  preserved checklists/calendar links/balances, repeated raw conflict-safe backfill
+  and repeated Phase 05 deployment. Anomalies stay reviewable, not silently repaired.
+- Actual interruption of the unchanged Phase 09 migration while blocked on the
+  Todo table lock. Terminated only its migration backend in work_recovery; its DDL
+  rolled back. Prisma blocked blind retry. After catalog/fingerprint verification,
+  explicit resolve --rolled-back and redeploy/repeat succeeded. The tested enum
+  transaction also reproduced unsafe uncommitted-value error 55P04 and rolled back.
+- A separately generated minimal legacy-status Prisma client read original columns
+  but rejected NEW. Thus a generic pre-redesign app rollback is unsupported even
+  for general reads. New HTTP revision/replay guards and retired separate rewards
+  prevent stale browser protocols from silently updating current data.
+
+Interruption evidence covers the exercised real transaction/lock point, not every
+possible crash in every historical statement. Early files lacking explicit
+transaction boundaries require catalog/log review; do not assume rollback, edit
+applied SQL, mark partial work applied or blindly restore over post-cutover writes.
+The supported maintenance/compatible-release recovery procedure is in HANDOVER.md.
+
+### Backup, original files and development preservation
+
+Executed the combined tool against development using a fresh private local
+snapshot, briefly stopping/restarting only the development app. Actual isolated
+restore matched **49 public record tables, 12 finance originals and zero work
+originals** (there are no primary-development work uploads). No live rows changed.
+
+After isolated browser checks, copied only those backed-up finance originals into
+the separate test finance volume, stopped browser writers and backed up the migrated
+isolated DB plus task/project uploads. Restore matched **49 tables, 12 finance and
+eight work originals**, including project and task supporting records. Repeated
+with the final selector/container guards; the complete fresh restore again matched.
+All referenced file sizes/hashes and full-table fingerprints passed. Source apps
+with auto-remove, mismatched DB name, or different Compose projects were refused
+before stop. No original files were moved/deleted; temporary restore resources were
+isolated and removed by the existing verifier.
+
+Local test backups: /tmp/dashboard-phase10-current-backup,
+/tmp/dashboard-phase10-work-files-backup and
+/tmp/dashboard-phase10-final-guarded-backup. These private local snapshots are
+verification artifacts, not off-host durable backup storage. NAS DB-only backup
+still does not include original files. Encryption/off-host scheduling/retention,
+physical NAS restore and production recovery remain unverified operator work.
+
+Read-only primary-development inventories phase10-dev-before.json and
+phase10-dev-final.json match with **no differences/issues/pending migrations**.
+This phase did not add examples or change real tasks, events, finance/Japanese rows,
+notes, project membership, uploaded bytes or reward totals. Final repeat-migration
+and drift checks are recorded below; no proposed DROP SQL was applied.
+
+### Executed verification
+
+- Final `node --test tests/*.test.mjs`: **31 test files passed**, no failures/skips.
+  Includes guarded maintenance targets, exact cumulative-value preservation,
+  error no-store/privacy and existing finance/Japanese/auth/date/reward regressions.
+- Final serial isolated backend batch: **108 TAP checks passed**, no failures/skips.
+  It includes all nine work phases, event completion, finance CRUD/transactions/
+  receipts/income/CSV imports/reconciliation/reporting/exports, Japanese kanji
+  writing and the new realistic-volume/concurrency suite.
+- New volume suite: **1,000 synthetic tasks and 55 long notes**, bounded 30-task,
+  20-history and six-planning pages, clamped out-of-range pages, mixed date sorts,
+  no read mutations and competing note/file/project writes. One winner/one stale
+  conflict, retained note versions, valid original bytes and intact project/stage
+  membership. Fixture cleanup preserves every preceding record. Observed read
+  batch was roughly 0.6 seconds locally; this is not an enterprise benchmark.
+- Separate guarded recovery, actual legacy-client, legacy-priority/status,
+  legacy-graph/backfill and showcase suites each passed. They use dedicated DBs,
+  not concurrent writers to the browser/work_test snapshot.
+- All **nine browser files / ten checks** are verified at 390×844, 844×390,
+  1440×900 and 2560×1440. Eight prior work files passed in the serial run; the
+  expanded My Work/dashboard file passed a final targeted rerun. Real APIs are
+  used except the existing Phase 01 control mocks and explicit failure injection.
+  UTC server/Tokyo browser remain separate from the configured Toronto dates.
+  No runtime page errors in the final My Work/dashboard run. Inspected failure
+  screenshot for diagnosis; final responsive behavior is asserted by the browser.
+- The first My Work navigation regression timed out because its new completed
+  fixture lacked the selected School context. The planning filter had cleared
+  correctly; corrected the fixture's context and reran at all four sizes. That
+  failed attempt is not counted as passed. Final rerun also exercised separate
+  context-catalog 503/retry and the dashboard tile failure/retry checks.
+- Live authorization passed: **152 protected API handlers**, page redirects,
+  anonymous/non-owner/forged identity rejection and owner reads, including private
+  work originals and existing finance/Japanese checks. No secret/token/raw record
+  output was published. Prisma query logging remains disabled.
+- Final-source isolated `npm run build`, source TypeScript, targeted changed-path
+  ESLint and whitespace checks passed. Whole-repository lint and a production
+  Docker-image/deployment run are not claimed. No dependencies were added.
+
+The initial 103-check cross-module DB batch and five-check standalone load/race
+suite also passed; 108 above is the combined final run, not a sum with duplicate
+runs. Unit/build reruns followed actual fixes rather than counting retries twice.
+
+### Synthetic workflow and handover
+
+An empty dedicated work_examples DB received **16 tasks, 11 events and two
+projects**, plus synthetic contacts, checklists, children/dependencies/related links,
+project stages/milestone, independent dates/follow-up history/focus, task/project
+notes/revisions, valid PNG/PDF originals and explicit legacy conversion. The full
+seed repeated unchanged. Exact-manifest archive/retry passed and left an unrelated
+sentinel task and User balances untouched. It retains original/history records;
+this is archival, not permanent erasure. The dataset never touched restored real
+records or primary development. Start a new isolated project for a fresh showcase.
+
+HANDOVER.md documents model/service/routes, owner 1 mapping, date/graph/reward rules,
+private roots/backup, migration and rollback limits, environment/testing needs,
+query scaling limits, manual acceptance and a future deployment/recovery checklist.
+SYNTHETIC_EXAMPLES.md gives exact opt-in setup/seed/preview/archive commands.
+ACCEPTANCE.md reconciles all IDs with evidence and explicitly limited checks.
+
+Remaining unverified: production runtime/proxy/HTTPS/session/network conditions,
+physical phone/camera/Safari, host reboot/power-loss at every migration point,
+actual old-release deployment, encrypted/off-host/NAS restore and exhaustive
+finance/Japanese browser workflows. No production-specific acceptance is implied.
+No new integration, notification, AI, recurrence, time tracking or later module.
+
+### Phase 10 command record
+
+Commands below were executed against the standalone Phase 10 project (local log
+redirection omitted). The base runner provides the disposable guard and work DB
+flag. Recovery/legacy/example tests use the dedicated URLs documented above.
+
+```sh
+node --test tests/*.test.mjs
+node node_modules/typescript/bin/tsc --noEmit
+
+# Existing and new backend checks, final combined 108-check run:
+docker compose -p dashboard-work-phase10 -f docker-compose.work-test.yml run --rm --no-deps \
+  -e RUN_WORK_FOCUS_DB_TEST=1 -e RUN_WORK_PROJECT_DB_TEST=1 -e RUN_EVENT_DB_TEST=1 \
+  -e RUN_FINANCE_DB_TEST=1 -e RUN_FINANCE_TRANSACTION_DB_TEST=1 \
+  -e RUN_FINANCE_RECEIPT_DB_TEST=1 -e RUN_FINANCE_INCOME_DB_TEST=1 \
+  -e RUN_FINANCE_STATEMENT_DB_TEST=1 -e RUN_FINANCE_RECONCILIATION_DB_TEST=1 \
+  -e RUN_FINANCE_REPORT_DB_TEST=1 -e RUN_FINANCE_EXPORT_DB_TEST=1 \
+  -e RUN_KANJI_DB_TEST=1 -e RUN_WORK_RELIABILITY_DB_TEST=1 \
+  runner node --test --test-concurrency=1 \
+  tests/work-focus.integration.mjs tests/work-projects.integration.mjs \
+  tests/work-calendar.integration.mjs tests/work-dates.integration.mjs \
+  tests/work-relationships.integration.mjs tests/work-support.integration.mjs \
+  tests/work-all.integration.mjs tests/work-foundation.integration.mjs \
+  tests/work-management.integration.mjs tests/event-completion.integration.mjs \
+  tests/finance.integration.mjs tests/finance-transactions.integration.mjs \
+  tests/finance-receipts.integration.mjs tests/finance-income.integration.mjs \
+  tests/finance-statements.integration.mjs tests/finance-reconciliation.integration.mjs \
+  tests/finance-reporting.integration.mjs tests/finance-export.integration.mjs \
+  tests/kanji-writing.integration.mjs tests/work-reliability.integration.mjs
+
+# Live read-only authorization:
+docker compose -f docker-compose.dev.yml exec -T -e RUN_AUTH_HTTP_TEST=1 \
+  dashboard node tests/auth-security.integration.mjs
+
+# Full browser batch; one initial new fixture failed, final targeted rerun below passed:
+LD_LIBRARY_PATH=/tmp/work-browser-libs/extracted/usr/lib/x86_64-linux-gnu \
+NODE_PATH=/tmp/work-browser/node_modules PLAYWRIGHT_BROWSERS_PATH=/tmp/work-browser-cache \
+RUN_WORK_FOCUS_BROWSER_TEST=1 RUN_WORK_PROJECT_BROWSER_TEST=1 \
+RUN_WORK_MANAGEMENT_BROWSER_TEST=1 RUN_WORK_FOUNDATION_BROWSER_TEST=1 \
+RUN_WORK_ALL_BROWSER_TEST=1 RUN_WORK_SUPPORT_BROWSER_TEST=1 \
+RUN_WORK_RELATIONSHIPS_BROWSER_TEST=1 RUN_WORK_DATES_BROWSER_TEST=1 \
+RUN_WORK_CALENDAR_BROWSER_TEST=1 \
+node --test --test-concurrency=1 tests/work-focus.browser.mjs tests/work-projects.browser.mjs \
+  tests/work-management.browser.mjs tests/work-foundation.browser.mjs tests/work-all.browser.mjs \
+  tests/work-support.browser.mjs tests/work-relationships.browser.mjs \
+  tests/work-dates.browser.mjs tests/work-calendar.browser.mjs
+
+LD_LIBRARY_PATH=/tmp/work-browser-libs/extracted/usr/lib/x86_64-linux-gnu \
+NODE_PATH=/tmp/work-browser/node_modules PLAYWRIGHT_BROWSERS_PATH=/tmp/work-browser-cache \
+RUN_WORK_FOCUS_BROWSER_TEST=1 node --test tests/work-focus.browser.mjs
+```
+
+Build ran as `npm run build` in /tmp/dashboard-phase10-build with final source
+copies and isolated output. Source TypeScript and changed-path ESLint ran directly;
+no unrelated/generated/private paths or the user's banner edit were reformatted.
+Exact new rehearsal/recovery commands are in OPERATIONS.md; showcase setup and
+archive commands are in SYNTHETIC_EXAMPLES.md. Recovery's additional legacy-client
+probe was executed with `--test-name-pattern='legacy client'` after the interrupted
+migration test had completed in work_recovery. Both independent checks passed.
+Legacy fixture runs used their existing RUN_WORK_FOUNDATION_MIGRATION_TEST and
+RUN_WORK_RELATIONSHIP_MIGRATION_TEST guards on their own pre-phase copies.
+
+### Phase 10 final state
+
+Final repeat deployment: no pending migrations; before/after inventories have no
+record differences or integrity issues. Read-only schema diff shows only the known
+ActivityVocab.lastPracticed difference; no output SQL was executed. Primary
+development's before/final inventories also match with no differences/issues.
+
+The completed guarded backup again succeeded for the matching isolated source;
+its fresh restore verified 49 tables, 12 finance originals and eight task/project
+originals. Auto-remove, wrong database and cross-project refusals were actually
+executed without stopping the source apps. Final unit run passed 31 files; final
+backend batch passed 108 checks. Additional guarded migration/recovery/legacy/
+showcase suites and the corrected responsive browser checks passed as detailed
+above. Final source matches the isolated build copy. TypeScript, targeted lint,
+whitespace and documentation fence checks passed. No whole-repo lint or production
+image/deployment claim is made.
+
+Stopped the isolated browser app, showcase/recovery containers and work-db while
+retaining their private volumes/evidence. Primary development app/database are
+running. No real record/example/file/reward changes, dependency additions or
+historical SQL edits. Physical-device, off-host/NAS and production-specific limits
+remain explicitly pending; they are not an implied next assignment.
+Phase 10 is complete in development. Stop here; no further phase is authorized.

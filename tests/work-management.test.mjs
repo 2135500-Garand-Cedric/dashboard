@@ -89,24 +89,45 @@ test("preservation comparison checks row identity/content and schema, allowing o
     ),
   );
 });
-test("work HTTP errors never expose internal exception contents", async () => {
-  const response = await validation.workResponse(async () => {
-    throw new Error("private-note-secret");
-  });
-  assert.equal(response.status, 500);
-  assert.ok(!JSON.stringify(await response.json()).includes("private-note-secret"));
-  const readResponse = await validation.workResponse(
-    async () => {
-      throw new Error("private-query-secret");
-    },
-    200,
-    "load",
-  );
-  assert.equal(readResponse.status, 500);
-  assert.deepEqual(await readResponse.json(), {
-    error: "Unable to load this data. Reload the page and try again.",
-  });
+test("work HTTP errors keep responses private and never log internal exception contents", async () => {
+  const previous = console.error;
+  const messages = [];
+  console.error = (...values) => messages.push(values.join(" "));
+  try {
+    for (const operation of ["save", "load"]) {
+      const response = await validation.workResponse(
+        async () => {
+          throw new Error("private-note-secret");
+        },
+        200,
+        operation,
+      );
+      assert.equal(response.status, 500);
+      assert.equal(response.headers.get("cache-control"), "no-store");
+      const body = await response.json();
+      assert.ok(!JSON.stringify(body).includes("private-note-secret"));
+      assert.equal(
+        body.error,
+        operation === "load"
+          ? "Unable to load this data. Reload the page and try again."
+          : "Unable to save this change. Reload the record and try again.",
+      );
+    }
+    const syntax = await validation.workResponse(async () => {
+      throw new SyntaxError("private-body");
+    });
+    assert.equal(syntax.status, 400);
+    assert.equal(syntax.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await syntax.json(), { error: "Enter a valid request." });
+    assert.deepEqual(messages, [
+      "Work management: operation failed.",
+      "Work management: operation failed.",
+    ]);
+  } finally {
+    console.error = previous;
+  }
 });
+
 test("browser retries retain the same replay key after lost/unreadable responses", async () => {
   const { createWorkWriter } = load("../src/lib/work-management/client.ts");
   const original = global.fetch,
