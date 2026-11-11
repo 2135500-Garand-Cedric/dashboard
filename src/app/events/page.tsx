@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import ProjectPicker from "@/components/projects/ProjectPicker";
 import { useCallback, useEffect, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
@@ -40,6 +41,7 @@ export default function EventsPage() {
     [contexts, setContexts] = useState<WorkContext[]>([]),
     [layers, setLayers] = useState(allLayers.map(([key]) => key)),
     [context, setContext] = useState(""),
+    [project, setProject] = useState(""),
     [history, setHistory] = useState(false),
     [page, setPage] = useState(1),
     [refresh, setRefresh] = useState(0),
@@ -59,6 +61,7 @@ export default function EventsPage() {
       .then(setContexts)
       .catch((e) => setError(e.message));
     const query = new URLSearchParams(window.location.search);
+    if (query.has("project")) setProject(query.get("project") || "");
     if (query.get("new") === "session" && /^\d+$/.test(query.get("task") || "")) {
       void workRead<WorkTodo>(`/api/todos/${query.get("task")}`)
         .then((task) => {
@@ -75,6 +78,7 @@ export default function EventsPage() {
       ...range,
       layers: layers.join(","),
       context,
+      project,
       history: String(history),
       tbdPage: String(page),
     });
@@ -88,7 +92,7 @@ export default function EventsPage() {
     return () => {
       active = false;
     };
-  }, [range, layers, context, history, page, refresh]);
+  }, [range, layers, context, project, history, page, refresh]);
   const datesSet = useCallback(
     (info: DatesSetArg) => {
       setRange((previous) =>
@@ -176,6 +180,16 @@ export default function EventsPage() {
           ))}
         </div>
         <div className="flex flex-wrap items-center gap-4">
+          <div className="w-full max-w-sm">
+            <ProjectPicker
+              label="Calendar project"
+              value={project}
+              onChange={(value) => {
+                setProject(value);
+                setPage(1);
+              }}
+            />
+          </div>
           <label className="text-sm">
             Context
             <select
@@ -202,7 +216,7 @@ export default function EventsPage() {
               checked={history}
               onChange={(e) => setHistory(e.target.checked)}
             />
-            Show closed-task date history
+            Show closed task/project date history
           </label>
           <button type="button" onClick={() => setRefresh((value) => value + 1)} className={button}>
             Refresh calendar
@@ -289,7 +303,7 @@ export default function EventsPage() {
                 eventClick={(info) => {
                   info.jsEvent.preventDefault();
                   const href = info.event.extendedProps.href;
-                  if (typeof href === "string" && /^\/(todos|events)\//.test(href))
+                  if (typeof href === "string" && /^\/(todos|events|projects)\//.test(href))
                     pageRouter("/events", href);
                 }}
                 eventContent={(info) => (
@@ -370,7 +384,7 @@ export default function EventsPage() {
             </ul>
             {data?.items.length === 0 && (
               <p className="text-sm text-gray-500">
-                No items match these layers, context and range.
+                No items match these layers, context, project and range.
               </p>
             )}
             {!!data && data.items.length > 40 && (

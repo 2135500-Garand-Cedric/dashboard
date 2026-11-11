@@ -12,6 +12,8 @@ export const TASK_FIELDS = [
   "rewardXp",
   "rewardCoins",
   "contextId",
+  "projectId",
+  "stageId",
   "kind",
   "company",
   "course",
@@ -59,6 +61,8 @@ export type TaskData = Partial<
     | "rewardXp"
     | "rewardCoins"
     | "contextId"
+    | "projectId"
+    | "stageId"
     | "requesterId"
     | "waitingOnContactId"
     | "kind"
@@ -115,6 +119,8 @@ export function parseTaskFields(body: Record<string, unknown>): TaskData {
   }
   for (const key of [
     "contextId",
+    "projectId",
+    "stageId",
     "dependsOnId",
     "requesterId",
     "waitingOnContactId",

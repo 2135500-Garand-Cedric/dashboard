@@ -310,17 +310,20 @@ test(
       console.log("Browser runtime errors", errors);
       throw e;
     } finally {
-      if (page) await page.close();
-      for (const id of eventIds) {
-        const row = await read(`/api/events/${id}`);
-        await write(`/api/events/${id}`, null, row.revision, "delete");
+      try {
+        if (page) await page.close();
+        for (const id of eventIds) {
+          const row = await read(`/api/events/${id}`);
+          await write(`/api/events/${id}`, null, row.revision, "delete");
+        }
+        for (const id of taskIds) {
+          const row = await read(`/api/todos/${id}`);
+          if (!row.archivedAt)
+            await write(`/api/todos/${id}`, { archived: true }, row.revision, "patch");
+        }
+      } finally {
+        await browser.close();
       }
-      for (const id of taskIds) {
-        const row = await read(`/api/todos/${id}`);
-        if (!row.archivedAt)
-          await write(`/api/todos/${id}`, { archived: true }, row.revision, "patch");
-      }
-      await browser.close();
     }
   },
 );

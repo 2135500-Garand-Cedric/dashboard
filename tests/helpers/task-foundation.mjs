@@ -52,7 +52,12 @@ export function loadTaskFoundation(validation) {
     "./validation": validation,
     "@/lib/event-dates": legacyDates,
   });
+  const projectCore = load("../../src/lib/work-management/project-core.ts", {
+    "@/lib/owner-policy": policy,
+    "./validation": validation,
+  });
   return {
+    "./project-core": projectCore,
     "./event-core": core,
     "./dates": dates,
     "@/lib/app-time-zone": zone,

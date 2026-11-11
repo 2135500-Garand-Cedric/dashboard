@@ -35,6 +35,7 @@ export function loadWorkServices(db) {
     format: load("src/lib/work-management/date-format.ts"),
     config: load("src/lib/app-time-zone.ts"),
     server: load("src/lib/work-management/server.ts"),
+    projects: load("src/lib/work-management/project-server.ts"),
     calendar: load("src/lib/work-management/calendar-server.ts"),
     dates: load("src/lib/work-management/date-server.ts"),
     relationships: load("src/lib/work-management/relationships.ts"),

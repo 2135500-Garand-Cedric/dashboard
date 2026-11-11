@@ -60,6 +60,15 @@ test(
     ]) {
       const headers = { cookie: await cookie(token) };
       assert.equal((await fetch(`${base}/api/events`, { headers })).status, 403);
+      for (const suffix of [
+        "",
+        "/1",
+        "/1/timeline",
+        "/1/attachments/1/file",
+        "/1/milestones",
+        "/1/transition",
+      ])
+        assert.equal((await fetch(`${base}/api/projects${suffix}`, { headers })).status, 403);
       assert.equal((await fetch(`${base}/api/work-items?q=private`, { headers })).status, 403);
       assert.equal((await fetch(`${base}/api/work-contacts`, { headers })).status, 403);
       for (const suffix of [
@@ -119,6 +128,19 @@ test(
         const supporting = await fetch(`${base}/api/todos/${tasks[0].id}/${suffix}`, { headers });
         assert.equal(supporting.status, 200, `owner supporting-record read: ${suffix}`);
         assert.match(supporting.headers.get("cache-control"), /no-store/);
+      }
+    }
+    const projectResponse = await fetch(`${base}/api/projects?view=all`, { headers });
+    assert.equal(projectResponse.status, 200);
+    assert.match(projectResponse.headers.get("cache-control"), /no-store/);
+    const projectPage = await projectResponse.json();
+    assert.ok(Array.isArray(projectPage.items));
+    if (projectPage.items.length) {
+      const projectId = projectPage.items[0].id;
+      for (const suffix of ["", "/milestones", "/timeline", "/attachments", "/transition"]) {
+        const response = await fetch(`${base}/api/projects/${projectId}${suffix}`, { headers });
+        assert.equal(response.status, 200, `Owner project route: ${suffix}`);
+        assert.match(response.headers.get("cache-control"), /no-store/);
       }
     }
     const calendarRange = "start=2026-11-01T00:00:00Z&end=2026-12-01T00:00:00Z";
@@ -195,6 +217,8 @@ test(
       "/japanese/practice/history/1",
       "/japanese/statistics",
       "/todos",
+      "/projects",
+      "/projects/1",
       "/timemanager",
       "/finance",
       "/finance/accounts",

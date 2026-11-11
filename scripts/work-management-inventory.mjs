@@ -95,24 +95,35 @@ export function compareInventories(before, after, phase = "01") {
     notes = phase === "04",
     graph = phase === "05",
     dates = phase === "06",
-    calendar = phase === "07";
-  if ((foundation || contacts || notes || graph || dates || calendar) && before.format !== 2)
+    calendar = phase === "07",
+    projects = phase === "08";
+  if (
+    (foundation || contacts || notes || graph || dates || calendar || projects) &&
+    before.format !== 2
+  )
     return ["Capture a fresh format-2 baseline before this migration."];
-  const allowedTables = calendar
-    ? ["EventTaskLink", "WorkEventConversion", "WorkEventActivity"]
-    : dates
-      ? ["WorkFollowUp", "WorkKeyDate"]
-      : graph
-        ? ["TodoDependency", "TodoRelation"]
-        : notes
-          ? ["WorkNote", "WorkNoteRevision", "WorkAttachment"]
-          : contacts
-            ? ["WorkContact", "TodoAffectedContact"]
-            : foundation
-              ? ["WorkMutationReceipt", "WorkContext", "WorkActivity"]
-              : ["WorkMutationReceipt"];
+  const allowedTables = projects
+    ? ["WorkProject", "WorkProjectStage"]
+    : calendar
+      ? ["EventTaskLink", "WorkEventConversion", "WorkEventActivity"]
+      : dates
+        ? ["WorkFollowUp", "WorkKeyDate"]
+        : graph
+          ? ["TodoDependency", "TodoRelation"]
+          : notes
+            ? ["WorkNote", "WorkNoteRevision", "WorkAttachment"]
+            : contacts
+              ? ["WorkContact", "TodoAffectedContact"]
+              : foundation
+                ? ["WorkMutationReceipt", "WorkContext", "WorkActivity"]
+                : ["WorkMutationReceipt"];
   const allowedColumns = (table, column) =>
     technical[table]?.includes(column) ||
+    (projects &&
+      ((table === "Todo" && ["projectId", "stageId"].includes(column)) ||
+        (["WorkActivity", "WorkNote", "WorkAttachment", "WorkKeyDate"].includes(table) &&
+          column === "projectId") ||
+        (table === "WorkKeyDate" && column === "completedAt"))) ||
     (calendar &&
       table === "Event" &&
       ["kind", "busy", "timeZone", "allDayStart", "allDayEnd"].includes(column)) ||
@@ -130,7 +141,15 @@ export function compareInventories(before, after, phase = "01") {
     if (
       current &&
       table.count === current.count &&
-      ["Todo", "Event", "Subtask", "WorkActivity"].includes(name) &&
+      [
+        "Todo",
+        "Event",
+        "Subtask",
+        "WorkActivity",
+        "WorkNote",
+        "WorkAttachment",
+        "WorkKeyDate",
+      ].includes(name) &&
       table.rows &&
       current.rows
     ) {
@@ -247,6 +266,28 @@ export function compareInventories(before, after, phase = "01") {
         "Unexpected event meaning, times or historical conversion/activity backfill.",
       );
   }
+  if (
+    projects &&
+    before.tables.Todo &&
+    after.tables.Todo &&
+    after.columns.some(
+      (column) => column.table_name === "Todo" && column.column_name === "projectId",
+    ) &&
+    after.tables.Todo.rows.some((raw) => {
+      const row = JSON.parse(raw);
+      return row.projectId !== null || row.stageId !== null;
+    }) &&
+    !before.columns.some(
+      (column) => column.table_name === "Todo" && column.column_name === "projectId",
+    )
+  )
+    differences.push("Unexpected project membership backfill.");
+  if (
+    projects &&
+    !before.tables.WorkProject &&
+    (after.tables.WorkProject?.count || after.tables.WorkProjectStage?.count)
+  )
+    differences.push("Unexpected project or stage backfill.");
   for (const column of before.columns) {
     const current = after.columns.find(
       (value) => value.table_name === column.table_name && value.column_name === column.column_name,
@@ -261,7 +302,16 @@ export function compareInventories(before, after, phase = "01") {
       /'NEW'/.test(current.column_default) &&
       JSON.stringify({ ...column, column_default: null }) ===
         JSON.stringify({ ...current, column_default: null });
-    if (!statusDefault)
+    const projectParent =
+      projects &&
+      current &&
+      column.is_nullable === "NO" &&
+      current.is_nullable === "YES" &&
+      ((["WorkNote", "WorkAttachment", "WorkKeyDate"].includes(column.table_name) &&
+        column.column_name === "todoId") ||
+        (column.table_name === "WorkActivity" && column.column_name === "todoReference")) &&
+      JSON.stringify({ ...column, is_nullable: "YES" }) === JSON.stringify(current);
+    if (!statusDefault && !projectParent)
       differences.push(`Original column changed: ${column.table_name}.${column.column_name}`);
   }
   for (const column of after.columns)
@@ -366,6 +416,33 @@ export async function captureInventory(prisma) {
         })
       )
         issues.push("Missing/cross-owner affected people require review.");
+      const projects = new Map(
+        (tables.WorkProject?.rows ?? []).map((raw) => {
+          const row = JSON.parse(raw);
+          return [row.id, row];
+        }),
+      );
+      const stages = new Map(
+        (tables.WorkProjectStage?.rows ?? []).map((raw) => {
+          const row = JSON.parse(raw);
+          return [row.id, row];
+        }),
+      );
+      if (
+        todos.some(
+          (task) =>
+            (task.projectId != null && projects.get(task.projectId)?.userId !== task.userId) ||
+            (task.stageId != null &&
+              (!task.projectId || stages.get(task.stageId)?.projectId !== task.projectId)),
+        )
+      )
+        issues.push("Invalid project membership/owner/stage requires review.");
+      const supportOwner = (row) =>
+        row.projectId != null
+          ? row.todoId == null
+            ? projects.get(row.projectId)?.userId
+            : undefined
+          : taskOwners.get(row.todoId);
       const notes = new Map(
         (tables.WorkNote?.rows ?? []).map((raw) => {
           const row = JSON.parse(raw);
@@ -373,10 +450,10 @@ export async function captureInventory(prisma) {
         }),
       );
       if (
-        [...notes.values()].some((note) => taskOwners.get(note.todoId) !== note.userId) ||
+        [...notes.values()].some((note) => supportOwner(note) !== note.userId) ||
         (tables.WorkAttachment?.rows ?? []).some((raw) => {
           const row = JSON.parse(raw);
-          return taskOwners.get(row.todoId) !== row.userId;
+          return supportOwner(row) !== row.userId;
         })
       )
         issues.push("Missing/cross-owner task supporting records require review.");
@@ -395,7 +472,10 @@ export async function captureInventory(prisma) {
                 : notes.get(revisions.get(row.noteRevisionId)?.noteId);
           return (
             row.noteRevisionId != null &&
-            (!note || note.userId !== row.userId || note.todoId !== row.todoId)
+            (!note ||
+              note.userId !== row.userId ||
+              note.todoId !== row.todoId ||
+              (note.projectId ?? null) !== (row.projectId ?? null))
           );
         })
       )
@@ -502,8 +582,12 @@ export async function captureInventory(prisma) {
               issues.push("Closed task has an active follow-up requiring review.");
           }
         }
-        if ((tables.WorkKeyDate?.rows ?? []).some((raw) => !taskOwners.has(JSON.parse(raw).todoId)))
-          issues.push("Key date without a task requires review.");
+        if (
+          (tables.WorkKeyDate?.rows ?? []).some(
+            (raw) => supportOwner(JSON.parse(raw)) === undefined,
+          )
+        )
+          issues.push("Key date without one valid task or project requires review.");
       }
       if (tables.EventTaskLink) {
         const links = tables.EventTaskLink.rows.map(JSON.parse),
@@ -613,7 +697,7 @@ async function main() {
   }
   if (
     options["--phase"] &&
-    !["01", "02", "03", "04", "05", "06", "07"].includes(options["--phase"])
+    !["01", "02", "03", "04", "05", "06", "07", "08"].includes(options["--phase"])
   )
     throw new Error("Choose a supported phase.");
   if (!options["--output"]) throw new Error("A private output path is required.");

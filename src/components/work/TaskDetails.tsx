@@ -21,6 +21,7 @@ import TaskFoundationFields, {
   type TaskFoundationDraft,
 } from "@/components/todos/TaskFoundationFields";
 import TaskClosureDialog from "@/components/todos/TaskClosureDialog";
+import TaskProject from "@/components/projects/TaskProject";
 import TaskCalendar from "./TaskCalendar";
 import TaskDates from "./TaskDates";
 import TaskRelationships from "./TaskRelationships";
@@ -93,7 +94,8 @@ export default function TaskDetails({
   const notes = useRef<SupportEditorHandle>(null),
     files = useRef<SupportEditorHandle>(null),
     relationships = useRef<SupportEditorHandle>(null),
-    dates = useRef<SupportEditorHandle>(null);
+    dates = useRef<SupportEditorHandle>(null),
+    membership = useRef<SupportEditorHandle>(null);
   const [notesState, setNotesState] = useState<SupportEditorState>({ dirty: false, busy: false }),
     [filesState, setFilesState] = useState<SupportEditorState>({ dirty: false, busy: false });
   const [relationshipState, setRelationshipState] = useState<SupportEditorState>({
@@ -101,8 +103,16 @@ export default function TaskDetails({
     busy: false,
   });
   const [datesState, setDatesState] = useState<SupportEditorState>({ dirty: false, busy: false });
+  const [membershipState, setMembershipState] = useState<SupportEditorState>({
+    dirty: false,
+    busy: false,
+  });
   const supportingBusy =
-    datesState.busy || relationshipState.busy || notesState.busy || filesState.busy;
+    membershipState.busy ||
+    datesState.busy ||
+    relationshipState.busy ||
+    notesState.busy ||
+    filesState.busy;
   const recordAdded = useCallback(
     () =>
       setTodo((previous) =>
@@ -145,6 +155,7 @@ export default function TaskDetails({
   const confirmLeave = useWorkDraftGuard(
     () =>
       dirty ||
+      !!membership.current?.isDirty() ||
       !!notes.current?.isDirty() ||
       !!files.current?.isDirty() ||
       !!relationships.current?.isDirty() ||
@@ -155,6 +166,7 @@ export default function TaskDetails({
       files.current?.discard();
       relationships.current?.discard();
       dates.current?.discard();
+      membership.current?.discard();
     },
   );
   useEffect(
@@ -241,6 +253,7 @@ export default function TaskDetails({
       !files.current?.isBusy() &&
       !relationships.current?.isBusy() &&
       !dates.current?.isBusy() &&
+      !membership.current?.isBusy() &&
       confirmLeave()
     )
       onClose();
@@ -390,6 +403,7 @@ export default function TaskDetails({
                 supportingBusy ||
                 relationshipState.dirty ||
                 datesState.dirty ||
+                membershipState.dirty ||
                 !!todo.archivedAt
               }
               onClick={() => {
@@ -544,6 +558,7 @@ export default function TaskDetails({
                       supportingBusy ||
                       relationshipState.dirty ||
                       datesState.dirty ||
+                      membershipState.dirty ||
                       !!todo.archivedAt
                     }
                     onChange={(event) =>
@@ -638,8 +653,34 @@ export default function TaskDetails({
             ref={relationships}
             task={todo}
             contexts={contexts}
-            disabled={busy || editing || datesState.busy || datesState.dirty || !!todo.archivedAt}
+            disabled={
+              busy ||
+              editing ||
+              datesState.busy ||
+              datesState.dirty ||
+              membershipState.dirty ||
+              !!todo.archivedAt
+            }
             onStateChange={setRelationshipState}
+            onChanged={(task) => {
+              adopt(task);
+              onChanged?.();
+            }}
+          />
+          <TaskProject
+            ref={membership}
+            task={todo}
+            disabled={
+              busy ||
+              editing ||
+              supportingBusy ||
+              relationshipState.dirty ||
+              datesState.dirty ||
+              !!newStep ||
+              Object.keys(stepDrafts).length > 0 ||
+              !!todo.archivedAt
+            }
+            onStateChange={setMembershipState}
             onChanged={(task) => {
               adopt(task);
               onChanged?.();
@@ -673,6 +714,7 @@ export default function TaskDetails({
                   supportingBusy ||
                   relationshipState.dirty ||
                   datesState.dirty ||
+                  membershipState.dirty ||
                   !!todo.archivedAt ||
                   isClosed(todo.status)
                 }
@@ -697,7 +739,12 @@ export default function TaskDetails({
                 <button
                   type="button"
                   disabled={
-                    busy || editing || supportingBusy || relationshipState.dirty || datesState.dirty
+                    busy ||
+                    editing ||
+                    supportingBusy ||
+                    relationshipState.dirty ||
+                    datesState.dirty ||
+                    membershipState.dirty
                   }
                   onClick={() => void perform(() => patch({ status: "TODO" }))}
                   className={buttonClass}
@@ -708,7 +755,12 @@ export default function TaskDetails({
               <button
                 type="button"
                 disabled={
-                  busy || editing || supportingBusy || relationshipState.dirty || datesState.dirty
+                  busy ||
+                  editing ||
+                  supportingBusy ||
+                  relationshipState.dirty ||
+                  datesState.dirty ||
+                  membershipState.dirty
                 }
                 onClick={() => void perform(() => patch({ archived: !todo.archivedAt }))}
                 className={buttonClass}
@@ -725,6 +777,8 @@ export default function TaskDetails({
               editing ||
               relationshipState.busy ||
               relationshipState.dirty ||
+              membershipState.busy ||
+              membershipState.dirty ||
               !!todo.archivedAt
             }
             onStateChange={setDatesState}

@@ -13,11 +13,39 @@ import {
 import { workId, WorkValidationError, type WorkCommand } from "./validation";
 import { noteInput } from "./note-input";
 import { documentHash, fileOperation, workFileStore, type PreparedDocument } from "./files";
+import {
+  projectRow,
+  parentFields,
+  parentIdentity,
+  appendProjectActivity,
+  type WorkParent,
+} from "./project-core";
 type DB = Prisma.TransactionClient;
-const noteInclude = { todo: { select: { userId: true } } };
-async function noteRow(db: DB, todoId: number, id: number) {
+function supportWhere(parent: WorkParent) {
+  return {
+    ...parentFields(parent),
+    userId: WORK_USER_ID,
+    ...(typeof parent === "number"
+      ? { todo: { userId: WORK_USER_ID } }
+      : { project: { userId: WORK_USER_ID } }),
+  };
+}
+async function parentRow(db: DB, parent: WorkParent) {
+  return typeof parent === "number" ? todoRow(db, parent) : projectRow(db, parent.projectId);
+}
+async function appendParentActivity(
+  db: DB,
+  parent: WorkParent,
+  action: string,
+  changes: Prisma.InputJsonValue,
+) {
+  if (typeof parent === "number") await appendTaskActivity(db, parent, action, changes);
+  else await appendProjectActivity(db, parent.projectId, action, changes);
+}
+const noteInclude = { todo: { select: { userId: true } }, project: { select: { userId: true } } };
+async function noteRow(db: DB, parent: WorkParent, id: number) {
   const row = await db.workNote.findFirst({
-    where: { id, todoId, userId: WORK_USER_ID, todo: { userId: WORK_USER_ID } },
+    where: { id, ...supportWhere(parent) },
     include: noteInclude,
   });
   if (!row) throw new WorkValidationError("Note not found.", 404);
@@ -41,7 +69,8 @@ async function noteRevision(db: DB, note: WorkNote, action: string) {
       userId: WORK_USER_ID,
       actorGithubId: OWNER_GITHUB_ID,
       todoId: note.todoId,
-      todoReference: taskReference(note.todoId),
+      projectId: note.projectId,
+      todoReference: note.todoId === null ? null : taskReference(note.todoId),
       noteRevisionId: entry.id,
       action,
       changes: {
@@ -54,15 +83,15 @@ async function noteRevision(db: DB, note: WorkNote, action: string) {
     },
   });
 }
-export async function createNote(todoId: number, value: unknown, command: WorkCommand) {
+export async function createNote(parent: WorkParent, value: unknown, command: WorkCommand) {
   const data = noteInput(value);
-  return mutation(`todo:${todoId}:note:create`, data, command, async (db) => {
-    await todoRow(db, todoId);
+  return mutation(`${parentIdentity(parent)}:note:create`, data, command, async (db) => {
+    await parentRow(db, parent);
     const now = new Date();
     const row = await db.workNote.create({
       data: {
         ...data,
-        todoId,
+        ...parentFields(parent),
         userId: WORK_USER_ID,
         actorGithubId: OWNER_GITHUB_ID,
         createdAt: now,
@@ -73,10 +102,15 @@ export async function createNote(todoId: number, value: unknown, command: WorkCo
     return row;
   });
 }
-export async function patchNote(todoId: number, id: number, value: unknown, command: WorkCommand) {
+export async function patchNote(
+  parent: WorkParent,
+  id: number,
+  value: unknown,
+  command: WorkCommand,
+) {
   const data = noteInput(value);
-  return mutation(`todo:${todoId}:note:${id}:patch`, data, command, async (db) => {
-    const row = await noteRow(db, todoId, id);
+  return mutation(`${parentIdentity(parent)}:note:${id}:patch`, data, command, async (db) => {
+    const row = await noteRow(db, parent, id);
     version(row, command);
     if (row.removedAt)
       throw new WorkValidationError(
@@ -97,9 +131,9 @@ export async function patchNote(todoId: number, id: number, value: unknown, comm
     return updated;
   });
 }
-export async function removeNote(todoId: number, id: number, command: WorkCommand) {
-  return mutation(`todo:${todoId}:note:${id}:remove`, null, command, async (db) => {
-    const row = await noteRow(db, todoId, id);
+export async function removeNote(parent: WorkParent, id: number, command: WorkCommand) {
+  return mutation(`${parentIdentity(parent)}:note:${id}:remove`, null, command, async (db) => {
+    const row = await noteRow(db, parent, id);
     version(row, command);
     if (row.removedAt) return row;
     const now = new Date();
@@ -120,7 +154,7 @@ export async function removeNote(todoId: number, id: number, command: WorkComman
 function pageNumber(params: URLSearchParams) {
   return params.has("page") ? workId(params.get("page")) : 1;
 }
-export async function taskTimeline(todoId: number, params: URLSearchParams) {
+export async function taskTimeline(parent: WorkParent, params: URLSearchParams) {
   const filter = params.get("filter") || "notes";
   if (!["notes", "all"].includes(filter))
     throw new WorkValidationError("Choose Notes only or All activity.");
@@ -128,8 +162,8 @@ export async function taskTimeline(todoId: number, params: URLSearchParams) {
     pageSize = 20;
   return prisma.$transaction(
     async (db) => {
-      await todoRow(db, todoId);
-      const where = { todoId, userId: WORK_USER_ID };
+      await parentRow(db, parent);
+      const where = supportWhere(parent);
       const total =
         filter === "notes"
           ? await db.workNote.count({ where })
@@ -167,7 +201,8 @@ export async function taskTimeline(todoId: number, params: URLSearchParams) {
           ...entry,
           noteRevision:
             entry.noteRevision?.note.userId === WORK_USER_ID &&
-            entry.noteRevision.note.todoId === todoId
+            entry.noteRevision.note.todoId === parentFields(parent).todoId &&
+            entry.noteRevision.note.projectId === parentFields(parent).projectId
               ? entry.noteRevision
               : null,
         })),
@@ -176,12 +211,12 @@ export async function taskTimeline(todoId: number, params: URLSearchParams) {
     { isolationLevel: "RepeatableRead" },
   );
 }
-export async function noteRevisions(todoId: number, id: number, params: URLSearchParams) {
+export async function noteRevisions(parent: WorkParent, id: number, params: URLSearchParams) {
   const requested = pageNumber(params),
     pageSize = 20;
   return prisma.$transaction(
     async (db) => {
-      const note = await noteRow(db, todoId, id),
+      const note = await noteRow(db, parent, id),
         total = await db.workNoteRevision.count({ where: { noteId: note.id } });
       const page = Math.min(requested, Math.max(1, Math.ceil(total / pageSize)));
       return {
@@ -202,6 +237,7 @@ export async function noteRevisions(todoId: number, id: number, params: URLSearc
 const attachmentDTO = (row: WorkAttachment) => ({
   id: row.id,
   todoId: row.todoId,
+  projectId: row.projectId,
   originalName: row.originalName,
   mimeType: row.mimeType,
   byteSize: row.byteSize,
@@ -211,20 +247,20 @@ const attachmentDTO = (row: WorkAttachment) => ({
   removedAt: row.removedAt,
   cleanupPending: row.pendingDeletionKeys.length > 0,
 });
-async function attachmentRow(db: DB, todoId: number, id: number) {
+async function attachmentRow(db: DB, parent: WorkParent, id: number) {
   const row = await db.workAttachment.findFirst({
-    where: { id, todoId, userId: WORK_USER_ID, todo: { userId: WORK_USER_ID } },
+    where: { id, ...supportWhere(parent) },
   });
   if (!row) throw new WorkValidationError("Attachment not found.", 404);
   return row;
 }
-export async function listAttachments(todoId: number, params: URLSearchParams) {
+export async function listAttachments(parent: WorkParent, params: URLSearchParams) {
   const requested = pageNumber(params),
     pageSize = 12;
   return prisma.$transaction(
     async (db) => {
-      await todoRow(db, todoId);
-      const where = { todoId, userId: WORK_USER_ID },
+      await parentRow(db, parent);
+      const where = supportWhere(parent),
         total = await db.workAttachment.count({ where });
       const page = Math.min(requested, Math.max(1, Math.ceil(total / pageSize)));
       const rows = await db.workAttachment.findMany({
@@ -238,10 +274,10 @@ export async function listAttachments(todoId: number, params: URLSearchParams) {
     { isolationLevel: "RepeatableRead" },
   );
 }
-export async function cleanupAttachment(todoId: number, id: number) {
+export async function cleanupAttachment(parent: WorkParent, id: number) {
   try {
     return await workTransaction(async (db) => {
-      const row = await attachmentRow(db, todoId, id),
+      const row = await attachmentRow(db, parent, id),
         pending: string[] = [];
       for (const key of row.pendingDeletionKeys) {
         if (key === row.storageKey && !row.removedAt) {
@@ -267,7 +303,7 @@ export async function cleanupAttachment(todoId: number, id: number) {
   }
 }
 export async function uploadAttachment(
-  todoId: number,
+  parent: WorkParent,
   file: PreparedDocument,
   command: WorkCommand,
   replacementId?: number,
@@ -275,7 +311,7 @@ export async function uploadAttachment(
   let stagedKey: string | null = null;
   try {
     const result = (await mutation(
-      `todo:${todoId}:attachment:${replacementId ?? "create"}:upload`,
+      `${parentIdentity(parent)}:attachment:${replacementId ?? "create"}:upload`,
       {
         hash: file.contentHash,
         name: file.originalName,
@@ -284,8 +320,8 @@ export async function uploadAttachment(
       },
       command,
       async (db) => {
-        await todoRow(db, todoId);
-        const previous = replacementId ? await attachmentRow(db, todoId, replacementId) : null;
+        await parentRow(db, parent);
+        const previous = replacementId ? await attachmentRow(db, parent, replacementId) : null;
         if (previous) {
           version(previous, command);
           if (previous.removedAt)
@@ -311,10 +347,12 @@ export async function uploadAttachment(
                 revision: { increment: 1 },
               },
             })
-          : await db.workAttachment.create({ data: { ...data, todoId, userId: WORK_USER_ID } });
-        await appendTaskActivity(
+          : await db.workAttachment.create({
+              data: { ...data, ...parentFields(parent), userId: WORK_USER_ID },
+            });
+        await appendParentActivity(
           db,
-          todoId,
+          parent,
           previous ? "ATTACHMENT_REPLACED" : "ATTACHMENT_ADDED",
           {
             attachment: {
@@ -328,7 +366,7 @@ export async function uploadAttachment(
         return attachmentDTO(row);
       },
     )) as ReturnType<typeof attachmentDTO>;
-    const cleanupPending = await cleanupAttachment(todoId, result.id);
+    const cleanupPending = await cleanupAttachment(parent, result.id);
     return { ...result, cleanupPending };
   } catch (error) {
     if (stagedKey) {
@@ -347,13 +385,13 @@ export async function uploadAttachment(
     throw error;
   }
 }
-export async function removeAttachment(todoId: number, id: number, command: WorkCommand) {
+export async function removeAttachment(parent: WorkParent, id: number, command: WorkCommand) {
   const result = (await mutation(
-    `todo:${todoId}:attachment:${id}:remove`,
+    `${parentIdentity(parent)}:attachment:${id}:remove`,
     null,
     command,
     async (db) => {
-      const row = await attachmentRow(db, todoId, id);
+      const row = await attachmentRow(db, parent, id);
       version(row, command);
       if (row.removedAt) return attachmentDTO(row);
       const updated = await db.workAttachment.update({
@@ -364,25 +402,30 @@ export async function removeAttachment(todoId: number, id: number, command: Work
           revision: { increment: 1 },
         },
       });
-      await appendTaskActivity(db, todoId, "ATTACHMENT_REMOVED", {
+      await appendParentActivity(db, parent, "ATTACHMENT_REMOVED", {
         attachment: { before: { id, name: row.originalName }, after: null },
       });
       return attachmentDTO(updated);
     },
   )) as ReturnType<typeof attachmentDTO>;
-  return { ...result, cleanupPending: await cleanupAttachment(todoId, id) };
+  return { ...result, cleanupPending: await cleanupAttachment(parent, id) };
 }
-export async function retryAttachmentCleanup(todoId: number, id: number, command: WorkCommand) {
-  await mutation(`todo:${todoId}:attachment:${id}:cleanup`, null, command, async (db) => {
-    const row = await attachmentRow(db, todoId, id);
-    version(row, command);
-    return { id };
-  });
-  return { id, cleanupPending: await cleanupAttachment(todoId, id) };
+export async function retryAttachmentCleanup(parent: WorkParent, id: number, command: WorkCommand) {
+  await mutation(
+    `${parentIdentity(parent)}:attachment:${id}:cleanup`,
+    null,
+    command,
+    async (db) => {
+      const row = await attachmentRow(db, parent, id);
+      version(row, command);
+      return { id };
+    },
+  );
+  return { id, cleanupPending: await cleanupAttachment(parent, id) };
 }
-export async function readAttachment(todoId: number, id: number) {
+export async function readAttachment(parent: WorkParent, id: number) {
   return workTransaction(async (db) => {
-    const row = await attachmentRow(db, todoId, id);
+    const row = await attachmentRow(db, parent, id);
     if (row.removedAt) throw new WorkValidationError("This attachment was removed.", 404);
     const buffer = await fileOperation(() => workFileStore().read(row.storageKey));
     if (buffer.length !== row.byteSize || documentHash(buffer) !== row.contentHash)

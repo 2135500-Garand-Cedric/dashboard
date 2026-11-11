@@ -25,6 +25,8 @@ export function parseWorkQuery(params: URLSearchParams) {
     q: text("q", 500),
     view: choice("view", ["active", "history", "archived", "all"], "active"),
     context: id("context", true),
+    project: id("project", true),
+    stage: id("stage"),
     person: id("person"),
     company: text("company", 120),
     course: text("course", 120),
@@ -58,6 +60,13 @@ export function workQueryWhere(
   ];
   if (query.view === "active") AND.push({ status: { notIn: ["DONE", "CANCELLED"] } });
   if (query.view === "history") AND.push({ status: { in: ["DONE", "CANCELLED"] } });
+  if (query.project)
+    AND.push(
+      query.project === "none"
+        ? { projectId: null }
+        : { projectId: Number(query.project), project: { userId } },
+    );
+  if (query.stage) AND.push({ stageId: Number(query.stage), stage: { project: { userId } } });
   if (query.context)
     AND.push({ contextId: query.context === "none" ? null : Number(query.context) });
   for (const field of ["company", "course", "system"] as const)

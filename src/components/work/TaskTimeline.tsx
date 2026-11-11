@@ -60,7 +60,7 @@ export function NoteText({ body, urls }: { body: string; urls: string[] }) {
     </>
   );
 }
-function RevisionHistory({ todoId, noteId }: { todoId: number; noteId: number }) {
+function RevisionHistory({ basePath, noteId }: { basePath: string; noteId: number }) {
   const [page, setPage] = useState(1),
     [data, setData] = useState<{
       items: WorkNoteVersion[];
@@ -75,7 +75,7 @@ function RevisionHistory({ todoId, noteId }: { todoId: number; noteId: number })
     setData(null);
     setError("");
     void workRead<{ items: WorkNoteVersion[]; total: number; page: number; pageSize: number }>(
-      `/api/todos/${todoId}/notes/${noteId}/revisions?page=${page}`,
+      `${basePath}/notes/${noteId}/revisions?page=${page}`,
     )
       .then((value) => {
         if (active) setData(value);
@@ -86,7 +86,7 @@ function RevisionHistory({ todoId, noteId }: { todoId: number; noteId: number })
     return () => {
       active = false;
     };
-  }, [todoId, noteId, page, retry]);
+  }, [basePath, noteId, page, retry]);
   return (
     <div className="mt-3 space-y-3 border-t border-card-border pt-3">
       {error ? (
@@ -143,18 +143,22 @@ function RevisionHistory({ todoId, noteId }: { todoId: number; noteId: number })
   );
 }
 type Draft = { editing: WorkNote | null; body: string; urls: string; occurred: string };
-const drafts = new Map<number, Draft>(),
+const drafts = new Map<string, Draft>(),
   writer = createWorkWriter();
 const TaskTimeline = forwardRef<
   SupportEditorHandle,
   {
     id: number;
+    basePath?: string;
     revision: number;
     onStateChange: (state: SupportEditorState) => void;
     onRecordsChanged: () => void;
   }
->(function TaskTimeline({ id, revision, onStateChange, onRecordsChanged }, ref) {
-  const cached = drafts.get(id);
+>(function TaskTimeline(
+  { id, basePath = `/api/todos/${id}`, revision, onStateChange, onRecordsChanged },
+  ref,
+) {
+  const cached = drafts.get(basePath);
   const [filter, setFilter] = useState("notes"),
     [page, setPage] = useState(1),
     [refresh, setRefresh] = useState(0);
@@ -184,7 +188,7 @@ const TaskTimeline = forwardRef<
       occurred !== localTime(editing?.occurredAt ?? null));
   liveDraft.current = dirty ? { editing, body, urls, occurred } : null;
   const discard = useCallback(() => {
-    drafts.delete(id);
+    drafts.delete(basePath);
     liveDraft.current = null;
     setAdding(false);
     setEditing(null);
@@ -192,7 +196,7 @@ const TaskTimeline = forwardRef<
     setUrls("");
     setOccurred("");
     setError("");
-  }, [id]);
+  }, [basePath]);
   useImperativeHandle(ref, () => ({ discard, isDirty: () => dirty, isBusy: () => lock.current }), [
     discard,
     dirty,
@@ -202,17 +206,15 @@ const TaskTimeline = forwardRef<
   }, [dirty, busy, onStateChange]);
   useEffect(
     () => () => {
-      if (liveDraft.current) drafts.set(id, liveDraft.current);
+      if (liveDraft.current) drafts.set(basePath, liveDraft.current);
     },
-    [id],
+    [basePath],
   );
   useEffect(() => {
     let active = true;
     setData(null);
     setLoadError("");
-    void workRead<NonNullable<typeof data>>(
-      `/api/todos/${id}/timeline?filter=${filter}&page=${page}`,
-    )
+    void workRead<NonNullable<typeof data>>(`${basePath}/timeline?filter=${filter}&page=${page}`)
       .then((value) => {
         if (active) setData(value);
       })
@@ -225,7 +227,7 @@ const TaskTimeline = forwardRef<
     return () => {
       active = false;
     };
-  }, [id, revision, filter, page, refresh]);
+  }, [basePath, revision, filter, page, refresh]);
   async function perform(action: () => Promise<void>) {
     if (lock.current) return;
     lock.current = true;
@@ -245,7 +247,7 @@ const TaskTimeline = forwardRef<
   }
   function start(note: WorkNote | null) {
     if (dirty && !window.confirm("Discard the unsaved note changes?")) return;
-    drafts.delete(id);
+    drafts.delete(basePath);
     setEditing(note);
     setBody(note?.body ?? "");
     setUrls(note?.documentationUrls.join("\n") ?? "");
@@ -317,7 +319,7 @@ const TaskTimeline = forwardRef<
                 )
                   void perform(async () => {
                     await writer(
-                      `/api/todos/${id}/notes/${note.id}`,
+                      `${basePath}/notes/${note.id}`,
                       "DELETE",
                       undefined,
                       note.revision,
@@ -331,7 +333,7 @@ const TaskTimeline = forwardRef<
             </button>
           )}
         </div>
-        {history === cardKey && <RevisionHistory todoId={id} noteId={note.id} />}
+        {history === cardKey && <RevisionHistory basePath={basePath} noteId={note.id} />}
       </article>
     );
   }
@@ -358,7 +360,7 @@ const TaskTimeline = forwardRef<
                     ? new Date(occurred).toISOString()
                     : null;
               await writer(
-                editing ? `/api/todos/${id}/notes/${editing.id}` : `/api/todos/${id}/notes`,
+                editing ? `${basePath}/notes/${editing.id}` : `${basePath}/notes`,
                 editing ? "PATCH" : "POST",
                 {
                   body,

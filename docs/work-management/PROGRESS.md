@@ -4,8 +4,8 @@
 
 Updated: 2026-11-10 (America/Toronto).
 
-Phases 01–07 are implemented and verified in development. Production is untouched.
-Next assignment: Phase 08, which has not started. The architecture is not a production migration approval.
+Phases 01–08 are implemented and verified in development. Production is untouched.
+Next assignment: Phase 09, which has not started. The architecture is not a production migration approval.
 
 | Phase | Status | Evidence |
 | --- | --- | --- |
@@ -17,7 +17,7 @@ Next assignment: Phase 08, which has not started. The architecture is not a prod
 | 05 | Verified in development | See Phase 05 evidence below and OPERATIONS.md |
 | 06 | Verified in development | See Phase 06 evidence below and OPERATIONS.md |
 | 07 | Verified in development | See Phase 07 evidence below and OPERATIONS.md |
-| 08 | Not started | — |
+| 08 | Verified in development | See Phase 08 evidence below and OPERATIONS.md |
 | 09 | Not started | — |
 | 10 | Not started | — |
 
@@ -1195,3 +1195,168 @@ passed. The isolated Phase 07 browser app and database were stopped without
 removing their volumes/evidence; development app/database remain running. The
 existing user change to the development banner in AppShell.tsx was preserved.
 Phase 07 is complete in development; Phase 08 remains unstarted.
+
+## Phase 08 — Projects, stages and milestones (2026-11-10)
+
+Phase 08 is implemented and verified in development. No Phase 09 feature or production operation was started.
+
+### Implementation and decisions
+
+- Added `WorkProject` and `WorkProjectStage`, optional Todo.projectId/stageId and
+  `20261112120000_work_projects`. Projects have stable references, objective,
+  summary, context, planning dates, lifecycle/closure/archival and immutable
+  activity. Stages organize original tasks and never replace their statuses.
+- Compound foreign keys enforce task/project ownership and stage membership;
+  CHECKs enforce lifecycle/dates and stage-requires-project. Moves are one-task
+  commands, logged on the task and affected projects, preserving IDs/URLs, dates,
+  checklist, children, notes, dependencies, related links, events and rewards.
+  Children can have different membership; cross-project links remain valid.
+- Shared WorkNote, WorkAttachment and WorkKeyDate records gained exclusive
+  task/project parents. Their original fields/IDs/FKs survive. Project support
+  ownership has DB triggers as well as service checks. Notes, revisions, activity,
+  private validation/download/replace/remove/cleanup and parent-scoped drafts reuse
+  the earlier implementation. No new file root, volume or dependency was added.
+- `/projects` list/detail/navigation reuse ProtectedLayout and existing styles.
+  Project tasks use the same All Work query/list/board/panel/full-page controls,
+  including stage filters. Task details expose explicit membership, while All Work
+  and the existing Calendar expose searchable, paginated project filters. Standalone
+  tasks remain supported. Capture defaults visibly to the project's context.
+- Informational project milestones reuse key-date DATE/TIME/DST rules and explicit
+  reached state. Existing calendar Key dates projects stable milestone IDs/source
+  links; no duplicate Event or task date is created. Project and context filters
+  jointly match owned related tasks; standalone filtering includes unlinked events.
+- Progress is Done/nonarchived non-Cancelled direct members, with unfinished,
+  Cancelled and archived counts separately labelled. Child tasks count separately
+  only if explicitly assigned. No effort percentage or automatic project closure.
+- Fresh project closure review fingerprints project/member revisions and requires
+  explicit acknowledgement of unfinished work. Closure, reopen, archive and restore
+  preserve all tasks, follow-ups, milestones, appointments, sessions and rewards.
+  Prior closure data stays in automatic activity after current fields are reset.
+- New API handlers authenticate first, scope all reads/mutations/versions to the
+  owner, use no-store responses and share the existing advisory lock and UUID
+  receipts. Development logging excludes private project search URLs.
+
+### Preservation and development cutover
+
+Private artifacts: phase08-dev-before.dump/json, phase08-copy-before/after.json,
+phase08-dev-cutover-before.dump/json, phase08-dev-cutover-checked.json and
+phase08-dev-cutover-after.json under private/work-management/.
+
+The full development backup was restored into a confirmed-empty isolated database;
+its baseline matched every original row fingerprint. After the additive migration,
+comparison --phase 08 reported no original differences/issues. No project, stage,
+historical membership/date/note or activity was backfilled.
+
+Before actual cutover the development app was stopped and a fresh full dump and
+inventory captured. A new preservation guard initially mistook absent pre-migration
+columns for assigned membership; it was corrected and a unit regression added.
+The rechecked baseline matched the initial snapshot exactly. Development migration
+and post-cutover comparison then passed with no original differences/issues and
+no pending migrations. All original 17 tasks, six checklist rows, 26 events, two
+notes, 360 financial transactions, 90 vocabulary rows and all other original data,
+relationships, timestamps and balances survived. All tasks remain standalone;
+project/stage tables begin empty. No project examples or general seed were run.
+
+All 34 migrations are applied. Development was recreated with the no-seed override
+and refreshed generated client; named DB/work/finance volumes were preserved.
+Production was not operated on. The existing user development-banner change in
+AppShell.tsx was left intact.
+
+### Manual acceptance
+
+1. Create Work/School/Personal projects, edit objective/summary and planning dates,
+   then rename/reorder/deactivate a stage. Task statuses must stay independent.
+2. Create a project task and move an existing task into/out of a project/stage.
+   Check its original reference, dates, checklist, relationships and full URL.
+   Put a parent and child in different projects; neither should move the other.
+3. Filter the same tasks in project list/board, All Work and Calendar. Add/edit/
+   reach/remove a milestone and follow its calendar link back to the project.
+4. Add/edit/remove a project note, view revisions/All activity, upload/replace/
+   download/remove an image/PDF and try another parent's URL. Files remain private.
+5. Review closure with unfinished members, keep them explicitly open, then reopen,
+   archive/restore and find the project in history. Inspect retained task/session
+   records and progress exclusions.
+6. Edit the same membership/project in two windows. A stale save must retain the
+   draft and require deliberate reload rather than silently overwriting changes.
+
+Executed evidence and remaining limits follow. Next phase is 09; do not start it automatically.
+
+
+### Phase 08 executed verification and limits
+
+- Whole-development backup restored into an empty isolated database and exact
+  before/after migration inventories matched. Original row values/IDs, FKs,
+  timestamps, enum values, links and balances survived both rehearsal and actual
+  development cutover. Final live authorization inventory also matched exactly;
+  no original differences/issues or pending migrations.
+- Repeat isolated migrate deploy reported no pending migrations; before/after
+  row fingerprints matched. Read-only schema diff showed only the pre-existing
+  ActivityVocab.lastPracticed difference. No suggested DROP was executed.
+- `node --test tests/*.test.mjs`: **29 test files passed**, no failures/skips,
+  including a new preservation regression for absent pre-migration columns versus
+  guessed project/stage assignment or fabricated project rows.
+- Serial isolated project plus prior work/calendar DB suites: **83 TAP checks
+  passed**, no failures/skips. New project tests cover retry/concurrency, original
+  task identity/fields, checklist/children/cross-project dependency preservation,
+  foreign-owner/stage mismatch, DB constraints, standalone/new/moved membership,
+  inactive stages, Cancelled/archived progress exclusions, parent-specific notes/
+  revisions/files/cleanup, milestone DATE/TIME/DST/state/projection, joint and
+  standalone calendar filtering, versioned closure/history/reopen/archive, retained
+  sessions, explicit task deletion audit and late-audit rollback of membership,
+  versions, activity and receipts.
+- Closure warnings deliberately count **all unfinished members including archived
+  ones**, even though archived records are excluded from progress. The dedicated
+  regression proves a zero-denominator project still requires acknowledgement of
+  its archived unfinished task. No task/session is silently completed or removed.
+- All **eight work browser suites passed serially** against real isolated APIs
+  (except the explicitly mocked Phase 01 control suite) at **390×844, 844×390,
+  1440×900 and 2560×1440**. They cover existing All Work, lifecycle, notes/files,
+  graph, dates and calendar controls plus new project list/editor/stages, original
+  task panel/board, native dates, notes, original bytes and milestone source links.
+  Server UTC/browser Tokyo remained independent of app-zone dates. Runtime page
+  errors were absent. Inspected /tmp/work-phase08-desktop.png.
+- The final project browser suite was additionally rerun at all four sizes after
+  tightening archived-member closure and project task-list refresh. It explicitly
+  exercised the zero-denominator archived-work acknowledgement and refreshed list
+  after archive/unarchive; passed without runtime errors. Its fixture cleanup and
+  the calendar suite now always close Chromium if cleanup itself fails.
+- An earlier browser batch was interrupted by a development-server reload during
+  source editing and its cleanup hung; the completed eight-suite run used frozen
+  source. An earlier DB fixture cleanup split session-link/event deletion across
+  commits; making that fixture cleanup transactional fixed it. These failed runs
+  are not counted as passed evidence.
+- Live `RUN_AUTH_HTTP_TEST=1`: **149 protected API handlers**, page redirects,
+  anonymous/denied/forged identities and owner reads passed, including project
+  list/detail/support endpoints and the existing finance/Japanese preview checks.
+  Repeated on finished source; final data inventory was unchanged.
+- Final-source isolated `npm run build`, source TypeScript, targeted changed-path
+  ESLint and whitespace checks passed. Full repository lint is not claimed clean
+  (prior unrelated/generated/private-directory issues remain). No dependency or
+  Docker/volume/configuration subsystem was added.
+
+Commands and constraints are in OPERATIONS.md. Exact whole-DB fingerprints and
+backup artifacts remain private; /tmp logs/screenshots are local test artifacts.
+Combined backup code was inspected: work originals are selected independently of
+parent type, so project files remain covered. This phase restored the database and
+verified new private uploads/original reads, not a new physical NAS/whole-file
+recovery rehearsal. Existing Phase 04 file-restore evidence remains applicable.
+No original uploaded bytes were moved or permissions weakened.
+
+Limits: Chromium emulation is not physical phone/camera/Safari testing. This is a
+personal dashboard, not an enterprise-scale performance benchmark or an exhaustive
+finance/Japanese browser re-test. Production deployment/recovery remains untested
+and unauthorized. Project examples were not seeded into primary development.
+No Phase 09 focus/My Work, portfolio/resources, budget, time tracking, AI, external
+calendar, recurrence or notifications were implemented. Stop here; next assignment
+is Phase 09.
+
+### Phase 08 final state
+
+Final repeat-migration inventory: no differences/issues/pending migrations.
+Final development inventory after live auth: no differences/issues/pending
+migrations; project/stage tables remain empty and original task memberships remain
+null. Final unit suite passed all 29 files; final targeted lint, isolated build,
+TypeScript, documentation fences and whitespace checks passed. The isolated
+browser app and database were stopped without deleting volumes or evidence.
+Development app/database remain running. Phase 08 is complete in development;
+Phase 09 has not started.

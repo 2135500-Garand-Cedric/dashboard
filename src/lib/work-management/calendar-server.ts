@@ -192,6 +192,8 @@ export async function confirmConversion(id: number, value: unknown, command: Wor
           waitingOnContact: true,
           affectedPeople: { include: { contact: true } },
           context: true,
+          project: true,
+          stage: true,
           subtasks: true,
         },
       });
@@ -343,6 +345,8 @@ export async function calendarFeed(params: URLSearchParams) {
     layers = (params.get("layers") ?? validLayers.join(",")).split(",").filter(Boolean);
   if (layers.some((layer) => !validLayers.includes(layer)))
     throw new WorkValidationError("Choose valid calendar layers.");
+  const project = params.get("project") || "",
+    projectId = project && project !== "none" ? workId(project) : null;
   const context = params.get("context") || "",
     contextId = context && context !== "none" ? workId(context) : null,
     history = params.get("history") === "true",
@@ -354,20 +358,28 @@ export async function calendarFeed(params: URLSearchParams) {
   const taskContext: Prisma.TodoWhereInput = context
     ? { contextId: context === "none" ? null : contextId }
     : {};
-  const eventContext: Prisma.EventWhereInput = !context
-    ? {}
-    : context === "none"
+  const eventContext: Prisma.EventWhereInput =
+    context || project
       ? {
           OR: [
-            { taskLinks: { none: { todo: { userId: WORK_USER_ID } } } },
-            { taskLinks: { some: { todo: { userId: WORK_USER_ID, contextId: null } } } },
+            {
+              taskLinks: {
+                some: {
+                  todo: { userId: WORK_USER_ID, ...taskContext, ...(project ? { projectId } : {}) },
+                },
+              },
+            },
+            ...((!context || context === "none") && (!project || project === "none")
+              ? [{ taskLinks: { none: { todo: { userId: WORK_USER_ID } } } }]
+              : []),
           ],
         }
-      : { taskLinks: { some: { todo: { userId: WORK_USER_ID, contextId } } } };
+      : {};
   const taskWhere: Prisma.TodoWhereInput = {
     userId: WORK_USER_ID,
     archivedAt: null,
     ...taskContext,
+    ...(project ? { projectId, ...(projectId ? { project: { userId: WORK_USER_ID } } : {}) } : {}),
     ...(!history ? { status: { notIn: ["DONE", "CANCELLED"] } } : {}),
   };
   const eventBase: Prisma.EventWhereInput = {
@@ -508,7 +520,56 @@ export async function calendarFeed(params: URLSearchParams) {
         });
         if (rows.length > 1000)
           throw new WorkValidationError("Too many key dates. Narrow the range.", 422);
-        for (const row of rows) marker("keydate", row.id, row.todo, row, `◇ ${row.label}`);
+        for (const row of rows)
+          if (row.todo) marker("keydate", row.id, row.todo, row, `◇ ${row.label}`);
+        const projectDates =
+          project === "none"
+            ? []
+            : await db.workKeyDate.findMany({
+                where: {
+                  todoId: null,
+                  removedAt: null,
+                  project: {
+                    userId: WORK_USER_ID,
+                    archivedAt: null,
+                    ...(projectId ? { id: projectId } : {}),
+                    ...(context ? { contextId: context === "none" ? null : contextId } : {}),
+                    ...(!history ? { status: "ACTIVE" } : {}),
+                  },
+                  ...dateRange("date", "at"),
+                },
+                include: { project: true },
+                take: 1001,
+              });
+        if (projectDates.length > 1000)
+          throw new WorkValidationError("Too many project milestones. Narrow the range.", 422);
+        for (const row of projectDates)
+          if (row.project)
+            items.push({
+              id: `milestone:${row.id}`,
+              title: `◇ ${row.completedAt ? "Reached" : "Milestone"} · ${row.label} · ${row.project.name}`,
+              start: row.date ?? row.at!.toISOString(),
+              allDay: !!row.date,
+              display: "list-item",
+              editable: false,
+              classNames: [
+                "calendar-marker",
+                "calendar-keydate",
+                ...(row.completedAt || row.project.status !== "ACTIVE"
+                  ? ["calendar-historical"]
+                  : []),
+              ],
+              backgroundColor: "transparent",
+              borderColor: "#38bdf8",
+              extendedProps: {
+                layer: "keydates",
+                href: `/projects/${row.projectId}#project-milestones`,
+                projectId: row.projectId,
+                marker: true,
+                actionable: false,
+                busy: false,
+              },
+            });
       }
       const tbdWhere = { ...eventBase, date: null, allDayStart: null },
         tbdTotal = layers.includes("events") ? await db.event.count({ where: tbdWhere }) : 0,

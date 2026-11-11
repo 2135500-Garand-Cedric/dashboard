@@ -19,6 +19,7 @@ import {
   type WorkStatus,
 } from "@/lib/work-management/types";
 import { describeWorkDate } from "@/lib/work-management/date-format";
+import ProjectPicker from "@/components/projects/ProjectPicker";
 import TodoBoard from "@/components/todos/TodoBoard";
 import TaskClosureDialog from "@/components/todos/TaskClosureDialog";
 import WorkContextManager from "@/components/todos/WorkContextManager";
@@ -32,12 +33,31 @@ const buttonClass =
   "scroll-mt-24 rounded-lg border border-card-border px-3 py-2 text-sm disabled:opacity-50";
 
 const captureWriter = createWorkWriter();
-let captureDraft: { title: string; company: string; contextId: number | null } | null = null;
+type CaptureDraft = { title: string; company: string; contextId: number | null };
+const captureDrafts = new Map<string, CaptureDraft>();
 
-export default function AllWork() {
+export default function AllWork({
+  projectId,
+  projectContextId,
+  basePath = "/todos",
+  onTasksChanged,
+  projectStages,
+  allowCapture = true,
+  refreshSignal = 0,
+}: {
+  projectId?: number;
+  projectContextId?: number | null;
+  basePath?: string;
+  onTasksChanged?: () => void;
+  projectStages?: { id: number; name: string; active: boolean }[];
+  allowCapture?: boolean;
+  refreshSignal?: number;
+}) {
+  const captureDraft = captureDrafts.get(basePath) ?? null;
   const params = useSearchParams(),
     serialized = params.toString();
   const query = new URLSearchParams(serialized);
+  if (projectId) query.set("project", String(projectId));
   query.delete("mode");
   query.delete("task");
   const queryString = query.toString(),
@@ -71,14 +91,15 @@ export default function AllWork() {
       ? { title, company: captureCompany, contextId: captureContext }
       : null;
   const confirmLeave = useWorkDraftGuard(creating && (!!title || !!captureCompany), () => {
-    captureDraft = null;
+    captureDrafts.delete(basePath);
     captureRef.current = null;
   });
   useEffect(
     () => () => {
-      captureDraft = captureRef.current;
+      if (captureRef.current) captureDrafts.set(basePath, captureRef.current);
+      else captureDrafts.delete(basePath);
     },
-    [],
+    [basePath],
   );
   const contextValue = params.get("context") || "",
     personId = params.get("person") || "";
@@ -88,7 +109,7 @@ export default function AllWork() {
       if (value == null || value === "") next.delete(key);
       else next.set(key, value);
     }
-    const href = `/todos${next.size ? `?${next}` : ""}`;
+    const href = `${basePath}${next.size ? `?${next}` : ""}`;
     if (replace) window.history.replaceState(null, "", href);
     else window.history.pushState(null, "", href);
   }
@@ -97,7 +118,10 @@ export default function AllWork() {
       key === "status" && value && view !== "archived" && view !== "all"
         ? { view: isClosed(value) ? "history" : null }
         : {};
-    navigate({ ...viewChange, [key]: value, page: null }, true);
+    navigate(
+      { ...viewChange, ...(key === "project" ? { stage: null } : {}), [key]: value, page: null },
+      true,
+    );
   }
   useEffect(() => {
     let active = true;
@@ -116,7 +140,7 @@ export default function AllWork() {
       active = false;
       clearTimeout(timer);
     };
-  }, [queryString, refresh]);
+  }, [queryString, refresh, refreshSignal]);
   useEffect(() => {
     let active = true;
     void workRead<WorkContext[]>("/api/work-contexts")
@@ -182,6 +206,7 @@ export default function AllWork() {
     setNotice("");
     try {
       await action();
+      onTasksChanged?.();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Unable to save this change.");
     } finally {
@@ -211,14 +236,18 @@ export default function AllWork() {
     <div className="min-w-0 pb-6 pt-12 md:pt-0">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">All Work</h1>
+          {projectId ? (
+            <h2 className="text-2xl font-bold">Project tasks</h2>
+          ) : (
+            <h1 className="text-2xl font-bold">All Work</h1>
+          )}
           <p className="mt-1 text-sm text-gray-500">
             {data ? `${data.total} matching ${data.total === 1 ? "task" : "tasks"}` : "Tasks"}
           </p>
         </div>
         <button
           type="button"
-          disabled={!contexts || busy}
+          disabled={!contexts || busy || !allowCapture}
           className={`${buttonClass} bg-blue-600 text-white`}
           onClick={() => {
             if (creating) {
@@ -230,14 +259,16 @@ export default function AllWork() {
               return;
             }
             setCaptureContext(
-              contextValue === "none"
-                ? null
-                : contextValue
-                  ? (contexts?.find(
-                      (context) => context.id === Number(contextValue) && context.active,
-                    )?.id ?? null)
-                  : (contexts?.find((context) => context.key === "personal" && context.active)
-                      ?.id ?? null),
+              projectId
+                ? (projectContextId ?? null)
+                : contextValue === "none"
+                  ? null
+                  : contextValue
+                    ? (contexts?.find(
+                        (context) => context.id === Number(contextValue) && context.active,
+                      )?.id ?? null)
+                    : (contexts?.find((context) => context.key === "personal" && context.active)
+                        ?.id ?? null),
             );
             setCreating(true);
             setActionError("");
@@ -246,6 +277,34 @@ export default function AllWork() {
           + New task
         </button>
       </header>
+      {projectStages && (
+        <label className="mb-4 block max-w-xl text-sm">
+          Stage filter
+          <select
+            aria-label="Stage filter"
+            value={params.get("stage") || ""}
+            onChange={(event) => filter("stage", event.target.value)}
+            className={inputClass}
+          >
+            <option value="">All stages</option>
+            {projectStages.map((row) => (
+              <option key={row.id} value={row.id}>
+                {row.name}
+                {row.active ? "" : " (inactive)"}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {!projectId && (
+        <div className="mb-4 max-w-xl">
+          <ProjectPicker
+            value={params.get("project") || ""}
+            onChange={(value) => filter("project", value)}
+            label="Project filter"
+          />
+        </div>
+      )}
       {creating && (
         <form
           aria-label="Quick capture"
@@ -255,10 +314,11 @@ export default function AllWork() {
             void perform(async () => {
               const row = await write.current<WorkTodo>("/api/todos", "POST", {
                 title,
+                ...(projectId ? { projectId } : {}),
                 contextId: captureContext,
                 ...(captureCompany ? { company: captureCompany } : {}),
               });
-              captureDraft = null;
+              captureDrafts.delete(basePath);
               captureRef.current = null;
               setTitle("");
               setCaptureCompany("");
@@ -772,13 +832,16 @@ export default function AllWork() {
         <TaskQuickPanel
           key={selectedId}
           id={selectedId}
-          returnTo={`/todos${(() => {
+          returnTo={`${basePath}${(() => {
             const back = new URLSearchParams(serialized);
             back.delete("task");
             return back.size ? `?${back}` : "";
           })()}`}
           onClose={() => navigate({ task: null }, true)}
-          onChanged={() => setRefresh((value) => value + 1)}
+          onChanged={() => {
+            setRefresh((value) => value + 1);
+            onTasksChanged?.();
+          }}
         />
       )}
     </div>

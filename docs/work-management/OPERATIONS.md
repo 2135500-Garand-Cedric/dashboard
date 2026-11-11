@@ -885,3 +885,166 @@ passed. The existing CommonJS seed passes syntax validation but retains its
 pre-existing require-import lint errors; whole-repository lint is not clean.
 No dependency upgrade/security audit, production recovery, external calendar,
 notifications, recurrence, project or My Work implementation is claimed here.
+
+## Phase 08: projects, stages and informational milestones
+
+Projects are optional owner-managed groups, not tasks. `WorkProject` retains a
+stable ID/reference (`PROJECT-0001`), name, objective, current summary, optional
+context and planning start/target calendar dates. Its lifecycle is ACTIVE,
+COMPLETED or CANCELLED, with independent archival and versioned activity for
+closure/reopen/restore. These planning dates never change task deadlines or
+reserve calendar time. No project hard-delete API exists; archive preserves its
+supporting records and history.
+
+`WorkProjectStage` organizes project tasks with name, sort position and active
+state. Requirements, Implementation, Testing and Launch are initial stages of an
+explicitly created project only. Stages are not task statuses. Stages can be
+renamed, ordered or deactivated; inactive stages retain existing members and
+cannot receive new assignments. Up to 100 stages are supported; equal positions
+sort by immutable ID. No bulk move or hidden cascade is implemented.
+
+### Membership, counts and closure
+
+Todo.projectId and stageId are nullable; all original tasks migrate standalone.
+A single project column enforces at most one primary project. The compound
+(projectId,userId) FK enforces ownership, (stageId,projectId) enforces the correct
+stage, and a CHECK prohibits a stage without a project. One dedicated membership
+writer validates task revision, owner, active project/stage and explicit removal.
+It changes that task only, bumps affected project versions and records both task
+and project activity in the shared owner-lock transaction. Parent/child/project
+membership is independent; children, dependencies and symmetric related links
+can cross projects. Original IDs, references, URLs, checklist rows, dates, notes,
+rewards, relationships and event times remain untouched by a membership move.
+
+New tasks can explicitly name a project/stage in the normal creation command;
+creation and membership are atomic. Existing task PATCH callers must use the
+dedicated membership endpoint instead of writing those fields directly. Explicit
+legacy task deletion keeps project deletion history and advances its version;
+tasks with supporting/session/graph history retain earlier deletion safeguards.
+
+Counts consider directly assigned tasks, independently of parent hierarchy:
+
+- Denominator: nonarchived tasks whose status is not Cancelled.
+- Completed: Done tasks within that denominator.
+- Unfinished: denominator minus Done.
+- Cancelled and archived rows are shown separately, excluded from the denominator;
+  an archived Cancelled row is counted in archived only.
+
+These are completed/total task counts, not effort percentages. Milestone reached
+state is separately explicit and never marks tasks or the project complete.
+
+Complete, cancel and archive require a fresh read-only closure review. Its token
+includes project state plus all member task IDs/revisions/status/archive state.
+Unfinished work, including archived unfinished members outside the progress
+denominator, requires explicit acknowledgement to keep those tasks open. A
+member's status or other edit invalidates the review even if the project revision
+has not changed. Reopen and restore preserve all tasks and sessions. Closure never
+pays/reverses task rewards, completes children or deletes future sessions. Closed
+projects stay searchable; new assignments require an active unarchived project.
+Tasks already in a closed project remain independently editable/movable.
+
+### Reused notes, attachments, history and dates
+
+WorkNote, WorkAttachment and WorkKeyDate now have nullable task/project parents,
+with a database CHECK requiring exactly one. Their original task IDs/values and
+FKs are preserved. Shared support commands accept either the legacy numeric task
+ID or an explicit `{projectId}` parent. Every lookup checks the selected parent,
+owner and record together; a project ID cannot be substituted into a task URL.
+Project support ownership is also checked by database triggers. Note revisions,
+soft removal, server timestamps, occurrence dates, safe documentation links,
+private byte validation, original download headers, replacement and cleanup reuse
+the existing implementation. Drafts and upload retry keys include the parent API
+path, so matching numeric task/project IDs do not share a draft or upload intent.
+
+WorkActivity retains task references after a permitted task deletion. Project
+activity instead carries projectId and a null todoReference; its CHECK prevents
+mixing task/project identity. Automatic activity remains append-only through the
+application. Project timelines use the same Notes only / All activity and revision
+views. Original task/finance attachment namespaces and permissions are unchanged.
+No new storage environment variable, root, volume or dependency is required.
+
+Project milestones reuse WorkKeyDate with an exclusive project parent and optional
+completedAt reached state. Up to 100 nonremoved milestones are supported per
+project. DATE/TIME/DST validation is the same as task key dates. The existing
+calendar projects them as stable `milestone:<id>` informational markers within
+its Key dates layer. They open `/projects/:id#project-milestones`, are never busy
+or draggable, and create no Event. Closed-project milestones require historical
+view; archived-project markers are hidden. Reached markers are labelled/muted.
+Moving a milestone changes only its WorkKeyDate via the source editor.
+
+### UI, search and endpoints
+
+`/projects` and `/projects/:id` use ProtectedLayout and the existing navigation.
+List search is paginated (30) with context, active/history/archive/all filters.
+Project detail reuses AllWork's shared paginated queries, list/board, status
+controls, task panel/full-page links and filters; optional stage filtering stays
+organizational. Capture shows the project context default and creates one original
+Todo. Existing tasks are assigned using Project membership in task details.
+All Work and Calendar have searchable/paginated project pickers, including
+standalone work. Calendar filtering derives event membership from owned linked
+tasks, not copied Event project fields. Context and project predicates both apply.
+`/events?project=:id` provides a project-calendar entry point.
+
+All new API handlers authenticate first and return private no-store responses:
+
+- GET/POST /api/projects; GET/PATCH /api/projects/:id.
+- GET/POST /api/projects/:id/transition (read-only review then explicit action).
+- POST /api/projects/:id/stages (root project revision governs stage changes).
+- GET/POST /api/projects/:id/milestones.
+- PATCH /api/todos/:id/project (task revision governs membership).
+- Project-scoped timeline, note create/edit/remove/revisions, attachment list,
+  upload/replace/remove/cleanup/original routes mirror the existing task routes.
+
+Mutations use UUID request keys, If-Match as appropriate, owner-scoped transaction
+lock, server validation and atomic audit/receipt writes. Conflicts retain the
+user's draft and require deliberate reload/review. Completed creation forms remain
+locked while navigating to prevent a second submission. New project search URLs
+are excluded from development request logging alongside private work/finance URLs.
+
+### Migration and recovery
+
+Migration 20261112120000_work_projects is transactional and additive: empty
+project/stage tables, nullable Todo membership, exclusive shared-support parents
+and a nullable milestone reached timestamp. It relaxes the original support
+parent NOT NULL columns only to allow an explicitly exclusive project FK; old
+values and relationships are unchanged. No project, membership, historical date,
+note or activity is inferred. Use inventory --phase 08 for the exact comparison;
+it allows only these additions/nullability changes and rejects fabricated project
+rows or membership. Inventory also checks ownership, stage and support-parent
+consistency. Original calendar conversion/session rules remain in force.
+
+The pre-migration whole-development backup and inventories are private files under
+private/work-management/phase08-*. The migration was first applied to a full
+restored disposable copy, comparing original fingerprints, IDs, FKs, enum values,
+timestamps and balances. Repeat deployment must be a no-op. Read-only schema diff
+may still show the known unrelated ActivityVocab.lastPracticed drift; do not apply
+its proposed DROP. Existing combined DB/private-file backup rules cover projects
+without another storage root. No document bytes are migrated by this schema change.
+
+On failure, stop writes and retain the failed environment/receipts. Restore the
+whole backup into a fresh isolated database for diagnosis; do not reset a real
+database, blindly restore over later writes, auto-remove the new columns, or run
+an older writer against the changed model. Preserve private work/finance volumes
+and documents with the matching DB backup. Production cutover/recovery remains a
+separately authorized operation, not implied by development verification.
+
+### Verification commands
+
+Use a fresh restored disposable database. Never point writing tests at primary
+development or production, and never run DB rollback assertions concurrently with
+browser tests or other writers. Stop source edits/server reloads during browser
+runs. Browser cleanup closes Chromium even when fixture cleanup reports an error.
+
+```sh
+node --test tests/*.test.mjs
+docker compose -p dashboard-work-phase08 -f docker-compose.work-test.yml run --rm -e RUN_WORK_PROJECT_DB_TEST=1 -e RUN_EVENT_DB_TEST=1 runner node --test --test-concurrency=1 tests/work-projects.integration.mjs tests/work-calendar.integration.mjs tests/work-dates.integration.mjs tests/work-relationships.integration.mjs tests/work-support.integration.mjs tests/work-all.integration.mjs tests/work-foundation.integration.mjs tests/work-management.integration.mjs tests/event-completion.integration.mjs
+RUN_WORK_PROJECT_BROWSER_TEST=1 node tests/work-projects.browser.mjs
+docker compose -f docker-compose.dev.yml exec -T -e RUN_AUTH_HTTP_TEST=1 dashboard node tests/auth-security.integration.mjs
+```
+
+Browser checks use the disposable localhost:3002 app/secret and the existing
+temporary Playwright/Chromium libraries; they are not production credentials.
+Actual outcomes, viewport evidence and remaining limits are in PROGRESS.md.
+No project examples are seeded into real development records by this phase.
+No Phase 09 focus/My Work, resources, budget, time-tracking, recurrence, external
+integration or notification feature is introduced.

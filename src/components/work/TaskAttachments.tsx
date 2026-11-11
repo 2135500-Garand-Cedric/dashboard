@@ -10,13 +10,11 @@ import type {
 import PrivatePdfPreview from "@/components/documents/PrivatePdfPreview";
 const buttonClass =
   "scroll-mt-24 rounded-lg border border-card-border px-3 py-2 text-sm disabled:opacity-50";
-const drafts = new Map<number, { file: File; replacement: WorkAttachment | null }>(),
+const drafts = new Map<string, { file: File; replacement: WorkAttachment | null }>(),
   uploadKeys = new WeakMap<File, Map<string, string>>(),
   writer = createWorkWriter();
-async function upload(todoId: number, file: File, previous: WorkAttachment | null) {
-  const url = previous
-      ? `/api/todos/${todoId}/attachments/${previous.id}`
-      : `/api/todos/${todoId}/attachments`,
+async function upload(basePath: string, file: File, previous: WorkAttachment | null) {
+  const url = previous ? `${basePath}/attachments/${previous.id}` : `${basePath}/attachments`,
     identity = `${url}:${previous?.revision ?? "new"}`;
   let pending = uploadKeys.get(file);
   if (!pending) {
@@ -48,9 +46,17 @@ async function upload(todoId: number, file: File, previous: WorkAttachment | nul
 }
 const TaskAttachments = forwardRef<
   SupportEditorHandle,
-  { id: number; onStateChange: (state: SupportEditorState) => void; onRecordsChanged: () => void }
->(function TaskAttachments({ id, onStateChange, onRecordsChanged }, ref) {
-  const cached = drafts.get(id),
+  {
+    id: number;
+    basePath?: string;
+    onStateChange: (state: SupportEditorState) => void;
+    onRecordsChanged: () => void;
+  }
+>(function TaskAttachments(
+  { id, basePath = `/api/todos/${id}`, onStateChange, onRecordsChanged },
+  ref,
+) {
+  const cached = drafts.get(basePath),
     [file, setFile] = useState<File | null>(cached?.file ?? null),
     [replacement, setReplacement] = useState<WorkAttachment | null>(cached?.replacement ?? null);
   const [data, setData] = useState<{
@@ -74,12 +80,12 @@ const TaskAttachments = forwardRef<
     camera = useRef<HTMLInputElement>(null);
   liveDraft.current = file ? { file, replacement } : null;
   const discard = useCallback(() => {
-    drafts.delete(id);
+    drafts.delete(basePath);
     liveDraft.current = null;
     selectionTarget.current = null;
     setFile(null);
     setReplacement(null);
-  }, [id]);
+  }, [basePath]);
   useImperativeHandle(ref, () => ({ discard, isDirty: () => !!file, isBusy: () => lock.current }), [
     discard,
     file,
@@ -89,15 +95,15 @@ const TaskAttachments = forwardRef<
   }, [file, busy, onStateChange]);
   useEffect(
     () => () => {
-      if (liveDraft.current) drafts.set(id, liveDraft.current);
+      if (liveDraft.current) drafts.set(basePath, liveDraft.current);
     },
-    [id],
+    [basePath],
   );
   useEffect(() => {
     let active = true;
     setData(null);
     setLoadError("");
-    void workRead<NonNullable<typeof data>>(`/api/todos/${id}/attachments?page=${page}`)
+    void workRead<NonNullable<typeof data>>(`${basePath}/attachments?page=${page}`)
       .then((value) => {
         if (active) setData(value);
       })
@@ -108,7 +114,7 @@ const TaskAttachments = forwardRef<
     return () => {
       active = false;
     };
-  }, [id, page, refresh]);
+  }, [basePath, page, refresh]);
   function choose(selected?: File) {
     if (!selected) return;
     if (!selected.size || selected.size > 15 * 1024 * 1024) {
@@ -160,7 +166,12 @@ const TaskAttachments = forwardRef<
     }
   }
   return (
-    <section aria-label="Task attachments" className="space-y-4 border-t border-card-border pt-5">
+    <section
+      aria-label={
+        basePath.startsWith("/api/projects/") ? "Project attachments" : "Task attachments"
+      }
+      className="space-y-4 border-t border-card-border pt-5"
+    >
       <h2 className="font-semibold">Attachments</h2>
       <div className="flex flex-wrap gap-2">
         <button
@@ -228,7 +239,7 @@ const TaskAttachments = forwardRef<
               disabled={busy}
               onClick={() =>
                 void perform(async () => {
-                  const result = await upload(id, file, replacement);
+                  const result = await upload(basePath, file, replacement);
                   discard();
                   setPreview(null);
                   setPage(1);
@@ -307,7 +318,7 @@ const TaskAttachments = forwardRef<
                       </button>
                       <a
                         download
-                        href={`/api/todos/${id}/attachments/${item.id}/file?download=1`}
+                        href={`${basePath}/attachments/${item.id}/file?download=1`}
                         className={buttonClass}
                       >
                         Download original
@@ -336,7 +347,7 @@ const TaskAttachments = forwardRef<
                           )
                             void perform(async () => {
                               const result = await writer<WorkAttachment>(
-                                `/api/todos/${id}/attachments/${item.id}`,
+                                `${basePath}/attachments/${item.id}`,
                                 "DELETE",
                                 undefined,
                                 item.revision,
@@ -363,7 +374,7 @@ const TaskAttachments = forwardRef<
                       onClick={() =>
                         void perform(async () => {
                           const result = await writer<{ cleanupPending: boolean }>(
-                            `/api/todos/${id}/attachments/${item.id}/cleanup`,
+                            `${basePath}/attachments/${item.id}/cleanup`,
                             "POST",
                             undefined,
                             item.revision,
@@ -385,13 +396,13 @@ const TaskAttachments = forwardRef<
                   <div className="mt-3 min-w-0 rounded-lg border border-card-border p-2">
                     {item.mimeType === "application/pdf" ? (
                       <PrivatePdfPreview
-                        url={`/api/todos/${id}/attachments/${item.id}/file?v=${item.revision}`}
+                        url={`${basePath}/attachments/${item.id}/file?v=${item.revision}`}
                         label={item.originalName}
                       />
                     ) : (
                       <>
                         <img
-                          src={`/api/todos/${id}/attachments/${item.id}/file?v=${item.revision}`}
+                          src={`${basePath}/attachments/${item.id}/file?v=${item.revision}`}
                           alt={`Attachment preview: ${item.originalName}`}
                           onError={() => setImageError(true)}
                           className="max-h-[60dvh] w-full object-contain"

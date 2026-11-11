@@ -30,6 +30,8 @@ import { APP_TIME_ZONE } from "@/lib/app-time-zone";
 import { dateSortInstant, workDateState } from "./dates";
 import { retireFollowUps } from "./date-lifecycle";
 
+import { validateNewMembership, appendProjectActivity } from "./project-core";
+
 export const WORK_USER_ID = OWNER_DATABASE_USER_ID;
 type DB = Prisma.TransactionClient;
 const todoInclude = {
@@ -44,6 +46,8 @@ const todoInclude = {
   waitingOnContact: true,
   affectedPeople: { include: { contact: true }, orderBy: { contactId: "asc" as const } },
   context: true,
+  project: true,
+  stage: true,
   subtasks: { orderBy: { id: "asc" as const } },
 };
 import {
@@ -66,6 +70,11 @@ const todoDTO = (row: TodoRow) => {
   const single = prerequisites.length === 1 ? prerequisites[0].prerequisite : null;
   return {
     ...fields,
+    project: row.project?.userId === WORK_USER_ID ? row.project : null,
+    stage:
+      row.project?.userId === WORK_USER_ID && row.stage?.projectId === row.projectId
+        ? row.stage
+        : null,
     timeZone: APP_TIME_ZONE,
     deadlineState: workDateState(
       { date: row.deadlineDate, at: row.deadlineAt, timeZone: row.deadlineTimeZone },
@@ -369,6 +378,7 @@ export async function createTodo(value: unknown, command: WorkCommand) {
   return mutation("todo:create", body, command, async (db) => {
     const contextId = data.contextId === undefined ? await defaultContext(db) : data.contextId;
     await validateContext(db, contextId);
+    await validateNewMembership(db, data.projectId, data.stageId);
     await validatePeople(db, body);
     const { dependsOnId, parentId, ...columns } = data;
     const row = await db.todo.create({
@@ -397,12 +407,21 @@ export async function createTodo(value: unknown, command: WorkCommand) {
     await replaceAffected(db, row.id, body);
     const created = await todoRow(db, row.id);
     await recordTaskActivity(db, null, created);
+    if (created.projectId !== null) {
+      await db.workProject.update({
+        where: { id: created.projectId },
+        data: { revision: { increment: 1 } },
+      });
+      await appendProjectActivity(db, created.projectId, "TASK_ADDED", { taskId: created.id });
+    }
     return (await serializeTodos(db, [created]))[0];
   });
 }
 export async function patchTodo(id: number, value: unknown, command: WorkCommand) {
   const body = workBody(value, TASK_FIELDS),
     parsed = parseTaskFields(body);
+  if (body.projectId !== undefined || body.stageId !== undefined)
+    throw new WorkValidationError("Use Project membership to move this task.");
   if (body.parentId !== undefined || body.parentRevision !== undefined)
     throw new WorkValidationError("Use Relationships to change a task parent.");
   if (
@@ -540,6 +559,18 @@ export async function deleteTodo(id: number, command: WorkCommand) {
         409,
       );
     await detachTaskEvents(db, id);
+    if (row.projectId !== null) {
+      await db.workProject.update({
+        where: { id: row.projectId },
+        data: { revision: { increment: 1 } },
+      });
+      await appendProjectActivity(db, row.projectId, "TASK_DELETED", {
+        task: {
+          before: { id, reference: taskReference(id), title: row.title, stageId: row.stageId },
+          after: null,
+        },
+      });
+    }
     await appendTaskActivity(db, id, "DELETED", {
       task: {
         before: { title: row.title, status: row.status, reference: taskReference(id) },

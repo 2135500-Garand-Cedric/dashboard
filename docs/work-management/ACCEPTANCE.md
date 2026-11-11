@@ -215,3 +215,38 @@ is distinct from the lossless migration and never runs on application startup.
 No production, physical Safari/device, scheduling daemon, recurrence engine,
 external calendar or enterprise performance acceptance is implied. A23–A26 remain
 for their assigned project/My Work phases; Phase 08 was not started.
+
+
+## Phase 08 evidence (2026-11-10)
+
+A01–A07, A12–A14, A20, A23–A24, A27–A29 and A31 were checked for the project
+scope in development. PROGRESS.md records executed commands/artifacts/limits;
+OPERATIONS.md documents constraints, counting rules, parent routes and recovery.
+
+A whole-DB restore/migration rehearsal, actual development cutover and repeat
+migration comparisons preserved original records/IDs/URLs, fields, FKs, links,
+timestamps and balances. Existing tasks remain standalone and new project/stage
+tables start empty; no historical membership, closure or milestone was invented.
+The permanent owner and existing reward behavior were preserved.
+
+83 serial DB checks and 29 unit files passed. Compound ownership/stage constraints,
+exclusive note/file/milestone parents, cross-project graph/hierarchy, original task
+membership moves, retry/stale/conflict/rollback behavior, private files/revisions,
+project date markers and explicit closure/reopen/archive history were exercised.
+Progress excludes Cancelled/archived work and never claims effort percentage;
+closure review still warns about archived unfinished members. Sessions/tasks are
+kept without hidden cascades or reward changes.
+
+Eight work browser suites passed at four phone/desktop sizes, and the project
+suite was rerun after final closure/list-refresh safeguards, including the
+zero-denominator archived-work case. Original full task URLs and shared panels,
+list/board queries, context/project filters, calendar source links and protected
+original bytes worked in real browser/API checks. Live auth passed for 149
+protected handlers and relevant page/owner routes. Build, TypeScript, targeted
+lint and whitespace checks passed; whole-repository lint is not claimed clean.
+
+A14 reuses the already private work namespace and full-backup selection, now with
+exclusive project parent checks. New uploads/downloads/cleanup were verified;
+physical device/Safari and a new whole-files/NAS restore were not run. No production
+operation or exhaustive finance/Japanese browser/performance claim is implied.
+Phase 09 remains unstarted; no focus/My Work or other excluded feature was added.

@@ -72,6 +72,10 @@ export interface ChecklistItem {
   revision: number;
 }
 export interface WorkTodo {
+  projectId?: number | null;
+  stageId?: number | null;
+  project?: { id: number; name: string; status: string } | null;
+  stage?: { id: number; name: string; projectId: number } | null;
   deadlineDate?: string | null;
   deadlineAt?: string | null;
   deadlineTimeZone?: string | null;
@@ -139,13 +143,14 @@ export interface WorkActivityEntry {
   id: number;
   action: string;
   createdAt: string;
-  todoReference: string;
+  todoReference: string | null;
   changes: Record<string, { before: unknown; after: unknown }>;
 }
 
 export interface WorkNote {
   id: number;
-  todoId: number;
+  todoId: number | null;
+  projectId?: number | null;
   body: string;
   documentationUrls: string[];
   occurredAt: string | null;
@@ -167,7 +172,8 @@ export interface WorkNoteVersion {
 }
 export interface WorkAttachment {
   id: number;
-  todoId: number;
+  todoId: number | null;
+  projectId?: number | null;
   originalName: string;
   mimeType: string;
   byteSize: number;
@@ -257,4 +263,37 @@ export interface WorkDatesView {
   keyDates: WorkKeyDate[];
   keyTotal: number;
   keyPage: number;
+}
+
+export interface WorkProject {
+  id: number;
+  name: string;
+  reference: string;
+  objective: string | null;
+  summary: string | null;
+  contextId: number | null;
+  status: "ACTIVE" | "COMPLETED" | "CANCELLED";
+  startDate: string | null;
+  targetDate: string | null;
+  completionSummary: string | null;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  archivedAt: string | null;
+  revision: number;
+  timeZone: string;
+  counts: {
+    total: number;
+    completed: number;
+    unfinished: number;
+    cancelled: number;
+    archived: number;
+  };
+  stages: {
+    id: number;
+    projectId: number;
+    name: string;
+    position: number;
+    active: boolean;
+    revision: number;
+  }[];
 }
