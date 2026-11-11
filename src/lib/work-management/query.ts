@@ -5,6 +5,7 @@ import { WorkValidationError, workId } from "./validation";
 import { APP_TIME_ZONE } from "@/lib/app-time-zone";
 import { calendarDate, localToday, dayStart, nextCalendarDate } from "./dates";
 
+import { PLANNING_SECTIONS, planningWhere } from "./planning-rules";
 export const WORK_PAGE_SIZE = 30;
 export function parseWorkQuery(params: URLSearchParams) {
   const choice = (name: string, values: readonly string[], fallback: string) => {
@@ -23,6 +24,7 @@ export function parseWorkQuery(params: URLSearchParams) {
   };
   return {
     q: text("q", 500),
+    planning: choice("planning", ["", ...PLANNING_SECTIONS], ""),
     view: choice("view", ["active", "history", "archived", "all"], "active"),
     context: id("context", true),
     project: id("project", true),
@@ -58,6 +60,17 @@ export function workQueryWhere(
     { userId },
     { archivedAt: query.view === "archived" ? { not: null } : null },
   ];
+  if (query.planning)
+    AND.push(
+      { archivedAt: null, status: { notIn: ["DONE", "CANCELLED"] } },
+      planningWhere(
+        query.planning as import("./planning-rules").PlanningSection,
+        localToday(now, zone),
+        zone,
+        now,
+        userId,
+      ),
+    );
   if (query.view === "active") AND.push({ status: { notIn: ["DONE", "CANCELLED"] } });
   if (query.view === "history") AND.push({ status: { in: ["DONE", "CANCELLED"] } });
   if (query.project)

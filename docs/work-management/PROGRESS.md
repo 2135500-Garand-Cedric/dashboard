@@ -2,10 +2,11 @@
 
 ## Current position
 
-Updated: 2026-11-10 (America/Toronto).
+Updated: 2026-11-11 (America/Toronto).
 
-Phases 01–08 are implemented and verified in development. Production is untouched.
-Next assignment: Phase 09, which has not started. The architecture is not a production migration approval.
+Phases 01–09 are implemented and verified in development. Production is untouched.
+Next assignment: Phase 10, which has not started.
+The architecture is not a production migration approval.
 
 | Phase | Status | Evidence |
 | --- | --- | --- |
@@ -18,7 +19,7 @@ Next assignment: Phase 09, which has not started. The architecture is not a prod
 | 06 | Verified in development | See Phase 06 evidence below and OPERATIONS.md |
 | 07 | Verified in development | See Phase 07 evidence below and OPERATIONS.md |
 | 08 | Verified in development | See Phase 08 evidence below and OPERATIONS.md |
-| 09 | Not started | — |
+| 09 | Verified in development | See Phase 09 evidence below and OPERATIONS.md |
 | 10 | Not started | — |
 
 ## Discovery evidence from Prompt 0
@@ -1360,3 +1361,159 @@ TypeScript, documentation fences and whitespace checks passed. The isolated
 browser app and database were stopped without deleting volumes or evidence.
 Development app/database remain running. Phase 08 is complete in development;
 Phase 09 has not started.
+
+## Phase 09 — My Work and focus planning
+
+Date: 2026-11-11 (America/Toronto).
+
+### Implementation and rules
+
+Added protected `/my-work`, its sidebar entry, `/api/my-work`, and GET/POST
+`/api/todos/:id/focus`. Existing All Work, projects, task references, detail panels
+and calendar URLs remain canonical. My Work opens the shared task panel and links
+sessions to their original event and due follow-ups to the task's date controls.
+Context/company/course/project filters and section links reuse shared queries;
+`/todos?planning=...` uses the same predicates as the corresponding section.
+Quick capture displays its context, optional company/course and selected project;
+creation still defaults to New/Normal. No task copies or inferred context changes.
+
+The ten task sections show New, today's focus, overdue, upcoming, due follow-ups,
+Waiting, Blocked, Urgent, no deadline and Backlog. Each shows its total and at most
+six tasks, ordered by the existing priority ordering then updated time/ID. Counts
+can overlap; the header's active-task total counts unique filtered open tasks,
+not the sum of sections. Some active work may belong to no daily section.
+
+- All task sections exclude Done, Cancelled and archived tasks.
+- Overdue means a date-only deadline before today or an exact deadline before now.
+  Upcoming covers today and the next six local calendar dates; exact times start
+  at now and end at local midnight seven dates after today, exclusive.
+- Follow-ups require ACTIVE status and a date at/before today or time at/before
+  now. Waiting is an explicit task status. Blocked uses the existing unresolved
+  prerequisite/legacy-review rules; it is independent of Waiting.
+- Urgent uses the explicit priority, independently of deadline. No deadline means
+  neither date-only nor exact deadline. Backlog uses its explicit status.
+- Today's sessions are uncompleted WORK_SESSION events overlapping the local day,
+  with an owned SESSION_TARGET. They are paginated six at a time, counted as
+  events rather than tasks. Closed/archived targets stay labelled on these real
+  reservations. Informational events/key dates are not work sessions; time passing
+  or a session remaining visible never completes a task.
+
+`WorkFocus` is a small separate owner/task/local-date record. Its compound primary
+key prevents duplicate pins, its compound task/owner FK prevents cross-owner
+links, and its date CHECK rejects invalid dates. Removal retains an inactive row
+and audit history. Mutations use the existing owner lock, UUID request key,
+If-Match revision and atomic activity/receipt protocol. They change technical
+revision/updated timestamps and focus/audit records, not task status, priority,
+deadline, follow-ups, calendar times, XP or coins. Same-state writes are no-ops.
+
+Only today's configured planning date can be changed. The server checks the live
+day after obtaining the mutation lock, so a queued request cannot pin yesterday
+across midnight. Previous dates never automatically carry over or become overdue.
+Closing/archiving hides focus from unfinished work without deleting its history;
+same-day reopening/restoring shows an unchanged active pin again. Hard task deletion
+rejects retained focus history; archive instead. Reads never create focus rows.
+
+Snapshot queries share one request clock, including displayed deadline/follow-up
+states. Local dates use the configured application zone (Toronto by default),
+not the device/server zone. My Work and task focus controls refresh while visible
+and at the next local midnight; My Work also refreshes on returning to the tab.
+This is refresh, not notifications. Dashboard task/event tiles retain their unrelated behavior, add
+canonical navigation and clear loading/error states, and use authoritative date
+semantics. The existing events array response is preserved; an X-App-Time-Zone
+header lets the dashboard render even an empty calendar in the configured zone.
+
+### Preservation and development cutover
+
+Added transactional migration `20261113120000_work_focus`: an empty WorkFocus
+table, date constraint, supporting index and Todo `(id,userId)` unique index/FK.
+No historical focus is fabricated and no existing values are backfilled. There
+are 35 migrations after this phase. No dependency was added.
+
+Saved a whole-development database dump, restored it into an empty isolated
+Phase 09 database and compared original fingerprints before and after migration.
+The existing user-created project and four stages were preserved. Migration was
+then explicitly applied to development with the app stopped and another fresh
+whole-DB backup. Cutover inventories have no original differences, integrity
+issues or pending migrations; WorkFocus initially has zero rows. Original task,
+event, date, support, reward, finance and Japanese records remain unchanged.
+Artifacts are private `private/work-management/phase09-*.dump` and `.json` files;
+SQL/data contents are not published in this log. Production was not connected.
+
+The user's pre-existing development banner change in AppShell.tsx is preserved.
+No seed, example-data rewrite, production deployment or Phase 10 work is included.
+
+### Executed verification so far
+
+- `node --test tests/*.test.mjs`: **30 test files passed**, no failures/skips.
+  New planning tests exercise Toronto midnight, 23/25-hour DST days, year crossing,
+  UTC/Tokyo process zones and independent section predicates.
+- Serial isolated work/calendar database suites: **94 TAP checks passed**, no
+  failures/skips. Focus coverage includes retry/concurrency/stale revisions,
+  same-state no-ops, technical-only changes, audit failure rollback, date/owner
+  constraints, filtered overlap counts, consistent snapshot-clock labels, seven
+  sessions across pages, archived-target reservations, closure/reopen/archive,
+  no carryover and a request waiting across midnight for the owner lock.
+  Whole-database fingerprints also verify that My Work reads do not write.
+- The new real My Work browser suite passed at 390×844, 844×390, 1440×900 and
+  2560×1440, with a Tokyo browser and UTC server. It exercises context/company
+  capture, long titles, pin/unpin in the shared panel, closure/reopen, urgent
+  undated work, filtered All Work links and error/retry without page runtime
+  errors or horizontal overflow. Inspected `/tmp/work-phase09-desktop.png`.
+- TypeScript and targeted changed-path ESLint passed. Final production build,
+  nine-suite browser regression, live authorization, repeat-migration and final
+  inventory outcomes are recorded below when complete.
+
+Limits: Chromium emulation is not physical phone/Safari testing or a performance
+benchmark. No exhaustive finance/Japanese browser rerun, NAS restore, production
+cutover or Phase 10 acceptance is claimed. Existing private-file backup coverage
+continues unchanged: this phase introduces database records, not another file
+storage root. Focus history is retained in task activity/database records; a new
+historical planning report is outside scope.
+
+### Phase 09 final-source build and live access checks
+
+- Isolated final-source `npm run build` passed. Source TypeScript, targeted ESLint
+  across changed JS/TS paths (excluding the user's unchanged banner edit) and
+  `git diff --check` passed. No full-repository lint-clean claim is made because
+  pre-existing unrelated/generated/private-directory lint issues remain.
+- Live `RUN_AUTH_HTTP_TEST=1` passed: **152 protected API handlers**, protected page
+  redirects, anonymous/non-owner/forged identities and owner reads, including the
+  new My Work/focus paths and existing finance/Japanese preview checks. The final
+  development inventory after these reads has no differences/issues/pending
+  migrations. WorkFocus remains empty in primary development; browser/DB examples
+  ran exclusively in the isolated copy.
+- A separate read-only dashboard browser check passed at all four viewport sizes:
+  task/event loading, My Work and canonical All Work navigation, plus deliberate
+  browser-local 503 responses followed by successful retries against the real API.
+  No page runtime errors. This test does not create fixtures or claim financial/
+  Japanese dashboard totals were exhaustively revalidated.
+- Read-only schema comparison still shows only the known unrelated
+  ActivityVocab.lastPracticed difference; no generated SQL was executed. Both
+  saved whole-development dumps are nonempty mode 0600 files, and PostgreSQL
+  successfully listed the fresh cutover archive. The initial whole backup was
+  actually restored and compared in isolation before migration.
+
+### Phase 09 final state
+
+All **nine work browser suites passed serially**, no failures/skips, against frozen
+application source at 390×844, 844×390, 1440×900 and 2560×1440. Eight use the real
+isolated app/APIs; the existing Phase 01 control suite deliberately mocks its
+requests. The new dashboard test was subsequently added to the focus browser file
+and passed in a separate targeted invocation against real reads, with explicitly
+mocked 503 failure responses for retry checks. New My Work and dashboard tests
+reported no page runtime errors. No primary-development fixture writes occurred.
+
+After browser writers stopped, repeated isolated migration deployment reported
+no pending migrations and before/after inventories showed no record differences
+or integrity issues. Read-only drift output was left unapplied. Development's
+post-auth inventory likewise has no differences/issues/pending migrations.
+
+Final evidence: 30 unit-test files; 94 serial DB TAP checks; nine browser suites
+plus the separate dashboard test; 152 live protected-handler checks; TypeScript,
+final-source production build, targeted lint, whitespace and documentation fences
+all passed. Logs and screenshots under /tmp are local artifacts, not backup storage.
+Whole-DB backups and exact inventories remain private under private/work-management.
+
+The disposable browser app and database were stopped without deleting volumes or
+evidence. Primary development app/database remain running. Production is untouched.
+Phase 09 is complete in development. Stop here; Phase 10 has not started.

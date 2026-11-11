@@ -96,27 +96,30 @@ export function compareInventories(before, after, phase = "01") {
     graph = phase === "05",
     dates = phase === "06",
     calendar = phase === "07",
-    projects = phase === "08";
+    projects = phase === "08",
+    focus = phase === "09";
   if (
-    (foundation || contacts || notes || graph || dates || calendar || projects) &&
+    (foundation || contacts || notes || graph || dates || calendar || projects || focus) &&
     before.format !== 2
   )
     return ["Capture a fresh format-2 baseline before this migration."];
-  const allowedTables = projects
-    ? ["WorkProject", "WorkProjectStage"]
-    : calendar
-      ? ["EventTaskLink", "WorkEventConversion", "WorkEventActivity"]
-      : dates
-        ? ["WorkFollowUp", "WorkKeyDate"]
-        : graph
-          ? ["TodoDependency", "TodoRelation"]
-          : notes
-            ? ["WorkNote", "WorkNoteRevision", "WorkAttachment"]
-            : contacts
-              ? ["WorkContact", "TodoAffectedContact"]
-              : foundation
-                ? ["WorkMutationReceipt", "WorkContext", "WorkActivity"]
-                : ["WorkMutationReceipt"];
+  const allowedTables = focus
+    ? ["WorkFocus"]
+    : projects
+      ? ["WorkProject", "WorkProjectStage"]
+      : calendar
+        ? ["EventTaskLink", "WorkEventConversion", "WorkEventActivity"]
+        : dates
+          ? ["WorkFollowUp", "WorkKeyDate"]
+          : graph
+            ? ["TodoDependency", "TodoRelation"]
+            : notes
+              ? ["WorkNote", "WorkNoteRevision", "WorkAttachment"]
+              : contacts
+                ? ["WorkContact", "TodoAffectedContact"]
+                : foundation
+                  ? ["WorkMutationReceipt", "WorkContext", "WorkActivity"]
+                  : ["WorkMutationReceipt"];
   const allowedColumns = (table, column) =>
     technical[table]?.includes(column) ||
     (projects &&
@@ -288,6 +291,8 @@ export function compareInventories(before, after, phase = "01") {
     (after.tables.WorkProject?.count || after.tables.WorkProjectStage?.count)
   )
     differences.push("Unexpected project or stage backfill.");
+  if (focus && !before.tables.WorkFocus && after.tables.WorkFocus?.count)
+    differences.push("Unexpected focus backfill.");
   for (const column of before.columns) {
     const current = after.columns.find(
       (value) => value.table_name === column.table_name && value.column_name === column.column_name,
@@ -406,6 +411,13 @@ export async function captureInventory(prisma) {
       )
         issues.push("Missing/cross-owner task contacts require review.");
       const taskOwners = new Map(todos.map((task) => [task.id, task.userId]));
+      if (
+        (tables.WorkFocus?.rows ?? []).some((raw) => {
+          const row = JSON.parse(raw);
+          return taskOwners.get(row.todoId) !== row.userId;
+        })
+      )
+        issues.push("Missing/cross-owner focus task requires review.");
       if (
         (tables.TodoAffectedContact?.rows ?? []).some((raw) => {
           const link = JSON.parse(raw);
@@ -697,7 +709,7 @@ async function main() {
   }
   if (
     options["--phase"] &&
-    !["01", "02", "03", "04", "05", "06", "07", "08"].includes(options["--phase"])
+    !["01", "02", "03", "04", "05", "06", "07", "08", "09"].includes(options["--phase"])
   )
     throw new Error("Choose a supported phase.");
   if (!options["--output"]) throw new Error("A private output path is required.");

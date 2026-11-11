@@ -60,6 +60,7 @@ test(
     ]) {
       const headers = { cookie: await cookie(token) };
       assert.equal((await fetch(`${base}/api/events`, { headers })).status, 403);
+      assert.equal((await fetch(`${base}/api/my-work`, { headers })).status, 403);
       for (const suffix of [
         "",
         "/1",
@@ -80,6 +81,7 @@ test(
         "transition?status=DONE",
         "dates",
         "calendar",
+        "focus",
       ])
         assert.equal((await fetch(`${base}/api/todos/1/${suffix}`, { headers })).status, 403);
       const page = await fetch(base, { headers, redirect: "manual" });
@@ -124,6 +126,7 @@ test(
         "transition?status=DONE",
         "dates",
         "calendar",
+        "focus",
       ]) {
         const supporting = await fetch(`${base}/api/todos/${tasks[0].id}/${suffix}`, { headers });
         assert.equal(supporting.status, 200, `owner supporting-record read: ${suffix}`);
@@ -143,6 +146,12 @@ test(
         assert.match(response.headers.get("cache-control"), /no-store/);
       }
     }
+    const planningResponse = await fetch(`${base}/api/my-work`, { headers });
+    assert.equal(planningResponse.status, 200);
+    assert.match(planningResponse.headers.get("cache-control"), /no-store/);
+    const planning = await planningResponse.json();
+    assert.ok(planning.sections.focus);
+    assert.match(planning.date, /^\d{4}-\d\d-\d\d$/);
     const calendarRange = "start=2026-11-01T00:00:00Z&end=2026-12-01T00:00:00Z";
     const calendarResponse = await fetch(`${base}/api/work-calendar?${calendarRange}`, { headers });
     assert.equal(calendarResponse.status, 200);
@@ -217,6 +226,7 @@ test(
       "/japanese/practice/history/1",
       "/japanese/statistics",
       "/todos",
+      "/my-work",
       "/projects",
       "/projects/1",
       "/timemanager",

@@ -25,6 +25,9 @@ export function loadTaskFoundation(validation) {
     "./validation": validation,
     "./types": types,
     "./dates": dates,
+    "./planning-rules": load("../../src/lib/work-management/planning-rules.ts", {
+      "./dates": dates,
+    }),
     "@/lib/app-time-zone": zone,
   });
   const policy = { OWNER_DATABASE_USER_ID: 1, OWNER_GITHUB_ID: "89470930" };

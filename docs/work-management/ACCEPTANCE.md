@@ -250,3 +250,47 @@ exclusive project parent checks. New uploads/downloads/cleanup were verified;
 physical device/Safari and a new whole-files/NAS restore were not run. No production
 operation or exhaustive finance/Japanese browser/performance claim is implied.
 Phase 09 remains unstarted; no focus/My Work or other excluded feature was added.
+
+## Phase 09 evidence (2026-11-11)
+
+Read with the exact execution record in PROGRESS.md; these are development checks,
+not Phase 10 or production acceptance.
+
+- A04–A05: My Work/focus endpoints authenticate first and reuse the existing owner,
+  version, UUID receipt and transaction protocol. Isolated tests passed foreign
+  owner, date constraints, retry/concurrent writes, stale revisions and late-audit
+  rollback. Live HTTP/page authorization results are recorded in PROGRESS.md.
+- A06–A07: My Work reads original Todo/Event/follow-up records and opens canonical
+  panel/source URLs. No duplicate tasks or report copies; independent sessions
+  survive task closure/archive. Restored-copy and development migration inventories
+  show unchanged original IDs, values, relationships and reward balances.
+- A10, A25–A26: New/focus/due/follow-up/Waiting/Blocked/Urgent/undated/Backlog
+  membership, combined/individual organizational filters and overlapping counts
+  passed isolated tests. Focus does not change status, deadline, dates or rewards.
+  Same-day reopen restores presentation; old pins do not carry over. A queued
+  mutation crossing midnight is rejected after lock acquisition.
+- A18–A20, A22: Toronto midnight and 23/25-hour DST windows, another process/device
+  zone, shared snapshot-clock labels, paged real sessions and non-session dates
+  passed targeted tests. Date/follow-up and calendar browser regression outcomes
+  are recorded separately in PROGRESS.md. No time-based automatic task completion.
+- A27–A28: Real My Work UI passed 390×844, 844×390, 1440×900 and 2560×1440 with
+  canonical task panels, capture/context/company, long titles, focus and lifecycle
+  controls, filtered All Work links and error/retry. Existing suites cover shared
+  keyboard/touch controls; emulation does not prove physical phone/Safari behavior.
+- A29: All 30 unit-test files and 94 serial DB TAP checks passed, including prior
+  work/calendar behavior and unrelated module unit regressions. Private search
+  request logging excludes My Work. Full finance/Japanese browser acceptance and
+  production recovery are not claimed; see PROGRESS.md for final build/auth checks.
+- A31: No notifications, automatic scheduling, AI, new recurrence, time tracking,
+  external sync or Phase 10 features. Reads and date rollover do not create records.
+
+No original documents were moved. Whole database backup/restore and preservation
+checks are recorded for this migration; no new physical NAS/private-file recovery
+rehearsal is implied. Existing combined backup and private file rules still apply.
+
+Final Phase 09 results: all nine serial browser suites passed at four sizes, plus
+an additional read-only dashboard tile/retry check; live auth passed 152 protected
+handlers and page/identity checks. Build, TypeScript, targeted lint and whitespace
+passed. Repeated isolated migration had no pending changes and identical record
+fingerprints; final development inventory was unchanged after auth reads. Phase 09
+is verified in development. Phase 10 and production acceptance remain pending.

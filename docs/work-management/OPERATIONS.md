@@ -1048,3 +1048,80 @@ Actual outcomes, viewport evidence and remaining limits are in PROGRESS.md.
 No project examples are seeded into real development records by this phase.
 No Phase 09 focus/My Work, resources, budget, time-tracking, recurrence, external
 integration or notification feature is introduced.
+
+## Phase 09 — Daily planning and focus
+
+### Sources and write rules
+
+`/my-work` and GET `/api/my-work` are private owner-only projections of canonical
+Todo, follow-up and Event records. They accept context/company/course/project
+filters plus sessionPage. They do not store report copies or write while loading.
+Shared planning-rules.ts predicates also power All Work's `planning` URL filter.
+Section counts overlap; the unique active-task header is not their sum. Cards
+show up to six priority-ordered tasks, with filtered All Work links for the rest.
+Sessions use separate six-event pagination and retain closed/archived target labels.
+
+GET/POST `/api/todos/:id/focus` uses the same owner restriction. POST requires
+`{date: "YYYY-MM-DD", active: boolean}`, a UUID request key and the task revision
+via If-Match. Only today's application-zone date is writable, checked under the
+existing owner lock. A midnight conflict requires reload, not a guessed retry
+against yesterday. Retry receipts, focus, task revision and activity commit
+atomically. Focus changes never move deadlines, statuses or sessions or pay rewards.
+
+WorkFocus has a unique owner/task/date key, a same-owner compound FK, valid-date
+CHECK and active flag. Unpinning retains the row/history. Closing or archiving a
+task hides its pin from active sections; same-day reopen/restore exposes the active
+pin again. Prior-day pins remain history and never automatically carry over.
+Hard deletion refuses retained focus history; archive tasks instead. Reads, date
+rollover and reopening do not fabricate focus mutations.
+
+Daily boundaries use APP_TIME_ZONE and the existing calendar helpers. Upcoming is
+seven local calendar dates including today; DST days need not be 24 hours. My Work
+returns a snapshot clock and next local midnight. The events endpoint still returns
+its original array and now includes X-App-Time-Zone for dashboard date rendering.
+Do not replace these rules with browser-local YYYY-MM-DD slicing or UTC midnights.
+
+### Migration, backup and recovery
+
+Migration 20261113120000_work_focus is additive and transactional: empty focus
+table, indexes, compound owner/task FK and valid-date CHECK. Use inventory --phase
+09; it permits these additions but rejects fabricated focus backfill, original
+record changes or foreign-owner/orphan focus links. Original development had a
+user-created project and four stages when this phase began; do not assume earlier
+phases' empty project tables are still empty or erase later user records.
+
+Whole-database backups already include WorkFocus and its audit/retry receipts.
+There is no new document root or environment variable. Existing combined private
+file backup procedures remain required. Rehearsal and development cutover dumps
+and inventories are private phase09-* artifacts under private/work-management.
+Do not publish their contents or copy test credentials into production.
+
+Before any further cutover, stop writers, take a fresh whole backup and inventory,
+restore/check in isolation, migrate explicitly, compare fingerprints and verify
+repeat deployment is a no-op. On failure retain the failed state and diagnose a
+fresh isolated restore. Do not reset, auto-drop columns, seed real data, restore
+over newer writes or run an incompatible old writer. Production work requires its
+own assignment; this development migration does not authorize it. Known unrelated
+ActivityVocab.lastPracticed schema drift must not be repaired by applying a
+read-only diff's suggested DROP.
+
+### Verification
+
+Use the standalone disposable Compose project; writing suites never target
+primary development/production. Do not run browser writers concurrently with
+whole-database rollback/fingerprint assertions. Freeze app source while browsers
+run so server reloads cannot interrupt a save. Original auth reads can run against
+development after migration. Commands supplement prior phases' suites:
+
+```sh
+node --test tests/*.test.mjs
+docker compose -p dashboard-work-phase09 -f docker-compose.work-test.yml run --rm -e RUN_WORK_FOCUS_DB_TEST=1 -e RUN_WORK_PROJECT_DB_TEST=1 -e RUN_EVENT_DB_TEST=1 runner node --test --test-concurrency=1 tests/work-focus.integration.mjs tests/work-projects.integration.mjs tests/work-calendar.integration.mjs tests/work-dates.integration.mjs tests/work-relationships.integration.mjs tests/work-support.integration.mjs tests/work-all.integration.mjs tests/work-foundation.integration.mjs tests/work-management.integration.mjs tests/event-completion.integration.mjs
+RUN_WORK_FOCUS_BROWSER_TEST=1 node tests/work-focus.browser.mjs
+docker compose -f docker-compose.dev.yml exec -T -e RUN_AUTH_HTTP_TEST=1 dashboard node tests/auth-security.integration.mjs
+```
+
+Browser execution needs the existing temporary Playwright/Chromium setup and a
+running disposable localhost:3002 app. Full serial browser regression enables all
+nine RUN_WORK_*_BROWSER_TEST flags, not only the focus flag. Tests use UTC server
+and Tokyo browser independently of the configured Toronto planning zone. See
+PROGRESS.md for actual results and limits. Phase 10 is not started automatically.

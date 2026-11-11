@@ -34,7 +34,7 @@ import { validateNewMembership, appendProjectActivity } from "./project-core";
 
 export const WORK_USER_ID = OWNER_DATABASE_USER_ID;
 type DB = Prisma.TransactionClient;
-const todoInclude = {
+export const todoInclude = {
   followUps: { where: { status: "ACTIVE" }, take: 1 },
   prerequisites: {
     include: { prerequisite: { select: taskStubSelect } },
@@ -65,7 +65,7 @@ import {
   removeEventLinks,
 } from "./event-core";
 type TodoRow = Prisma.TodoGetPayload<{ include: typeof todoInclude }>;
-const todoDTO = (row: TodoRow) => {
+const todoDTO = (row: TodoRow, now = new Date()) => {
   const { prerequisites, parent, followUps, ...fields } = row;
   const single = prerequisites.length === 1 ? prerequisites[0].prerequisite : null;
   return {
@@ -79,7 +79,7 @@ const todoDTO = (row: TodoRow) => {
     deadlineState: workDateState(
       { date: row.deadlineDate, at: row.deadlineAt, timeZone: row.deadlineTimeZone },
       "deadline",
-      new Date(),
+      now,
       APP_TIME_ZONE,
       !isClosed(row.status) && !row.archivedAt,
     ),
@@ -89,7 +89,7 @@ const todoDTO = (row: TodoRow) => {
           state: workDateState(
             followUps[0],
             "followup",
-            new Date(),
+            now,
             APP_TIME_ZONE,
             !isClosed(row.status) && !row.archivedAt,
           ),
@@ -119,14 +119,14 @@ const todoDTO = (row: TodoRow) => {
     legacyDependencyWritable: prerequisites.length < 2,
   };
 };
-export async function serializeTodos(db: DB, rows: TodoRow[]) {
+export async function serializeTodos(db: DB, rows: TodoRow[], now = new Date()) {
   const stats = await graphStats(
     db,
     rows.map((row) => row.id),
   );
   return rows.map((row) => {
     const detail = stats.get(row.id)!;
-    return { ...todoDTO(row), ...detail, isBlocked: detail.blockingCount > 0 };
+    return { ...todoDTO(row, now), ...detail, isBlocked: detail.blockingCount > 0 };
   });
 }
 // Every task/event/checklist writer takes the same transaction-scoped owner lock.
@@ -558,6 +558,8 @@ export async function deleteTodo(id: number, command: WorkCommand) {
         "This task has an unexpected owner association. Review the inventory before deleting it.",
         409,
       );
+    if (await db.workFocus.count({ where: { todoId: id } }))
+      throw new WorkValidationError("Archive this task to preserve its focus history.", 409);
     await detachTaskEvents(db, id);
     if (row.projectId !== null) {
       await db.workProject.update({

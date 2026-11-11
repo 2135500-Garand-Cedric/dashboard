@@ -35,6 +35,7 @@ test(
             "./validation": validation,
           });
           const dependencies = {
+            "@/lib/app-time-zone": load("../src/lib/app-time-zone.ts"),
             "@/lib/require-owner": { requireOwner: async () => null },
             "@/lib/work-management/validation": validation,
             "@/lib/work-management/server": service,

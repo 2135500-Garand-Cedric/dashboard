@@ -22,6 +22,7 @@ import TaskFoundationFields, {
 } from "@/components/todos/TaskFoundationFields";
 import TaskClosureDialog from "@/components/todos/TaskClosureDialog";
 import TaskProject from "@/components/projects/TaskProject";
+import FocusControl from "./FocusControl";
 import TaskCalendar from "./TaskCalendar";
 import TaskDates from "./TaskDates";
 import TaskRelationships from "./TaskRelationships";
@@ -769,6 +770,31 @@ export default function TaskDetails({
               </button>
             </div>
           </section>
+          <FocusControl
+            id={todoId}
+            revision={todo.revision}
+            disabled={
+              busy ||
+              editing ||
+              supportingBusy ||
+              dirty ||
+              relationshipState.dirty ||
+              datesState.dirty ||
+              membershipState.dirty
+            }
+            onToggle={(date, active) =>
+              void perform(async () => {
+                const task = await write.current<WorkTodo>(
+                  `/api/todos/${todoId}/focus`,
+                  "POST",
+                  { date, active },
+                  todo.revision,
+                );
+                adopt(task);
+                onChanged?.();
+              })
+            }
+          />
           <TaskDates
             ref={dates}
             task={todo}

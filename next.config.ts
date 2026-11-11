@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   logging: {
     incomingRequests: {
       ignore: [
-        /^\/(?:api\/)?(?:finance|projects)(?:[/?]|$)/,
+        /^\/(?:api\/)?(?:finance|projects|my-work)(?:[/?]|$)/,
         /^\/(?:api\/)?todos(?:[/?]|$)/,
         /^\/api\/work-(?:items|contacts|contexts)(?:[/?]|$)/,
       ],
