@@ -1,3 +1,4 @@
+import type { IncomeSource } from "./income";
 import {
   CURRENCIES,
   FinanceValidationError,
@@ -44,11 +45,23 @@ export interface FinanceTransaction {
   counterparty: string | null;
   notes: string | null;
   source: "MANUAL" | "IMPORTED";
+  statementMatches?: {
+    id: number;
+    accountId: number;
+    name: string | null;
+    from: string | null;
+    to: string | null;
+  }[];
   updatedAt: string;
   editable: boolean;
   ledgerAmount: string;
   excludedAmount: string;
-  incomeRecords: { id: number; description: string; date: string }[];
+  incomeRecords: {
+    id: number;
+    description: string;
+    date: string;
+    source?: Pick<IncomeSource, "id" | "name" | "kind"> | null;
+  }[];
   receipts: { id: number; merchant: string | null; date: string }[];
   transfer: {
     id: string;
@@ -150,9 +163,10 @@ export function transactionInput(value: unknown, editing = false): TransactionIn
   if (!CURRENCIES.includes(currency))
     throw new FinanceValidationError("Choose a supported three-letter currency code.");
   const accountId = id(body.accountId, "account");
-  const categoryId = ["EXPENSE", "INCOME", "REFUND"].includes(type)
-    ? id(body.categoryId, "category")
-    : null;
+  const categoryId =
+    ["EXPENSE", "REFUND"].includes(type) || (type === "INCOME" && body.categoryId != null)
+      ? id(body.categoryId, "category")
+      : null;
   if (!categoryId && body.categoryId != null)
     throw new FinanceValidationError(
       "Transfers and adjustments do not use income or expense categories.",

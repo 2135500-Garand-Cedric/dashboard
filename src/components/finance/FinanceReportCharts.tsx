@@ -1,4 +1,5 @@
 "use client";
+import type { ReactNode } from "react";
 import {
   BarChart,
   Bar,
@@ -27,7 +28,11 @@ const label = (key: string) =>
           month: "short",
           year: "2-digit",
         })
-      : key.slice(5);
+      : new Date(`${key}T12:00:00Z`).toLocaleDateString("en-CA", {
+          timeZone: "UTC",
+          month: "short",
+          day: "numeric",
+        });
 function TimelineTooltip({
   active,
   payload,
@@ -55,11 +60,13 @@ export function FinanceTimeline({
   currency,
   title,
   lines = false,
+  actions,
 }: {
   rows: ReportBucket[];
   currency: string;
   title: string;
   lines?: boolean;
+  actions?: ReactNode;
 }) {
   // Only plotting coordinates use Number; all financial totals and tooltip values remain exact strings.
   const plot = rows.map((row) => ({
@@ -70,9 +77,12 @@ export function FinanceTimeline({
   }));
   return (
     <section className="card min-w-0 space-y-4">
-      <h3 className="text-lg font-semibold">{title}</h3>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-lg font-semibold">{title}</h3>
+        {actions}
+      </div>
       <div
-        className="h-72 min-w-0 sm:h-80"
+        className="h-80 min-w-0 sm:h-96"
         role="img"
         aria-label={`${title}, ${currency}. Exact values available below.`}
       >
@@ -94,6 +104,7 @@ export function FinanceTimeline({
               <Tooltip content={<TimelineTooltip currency={currency} />} />
               <Legend />
               <Line
+                isAnimationActive={false}
                 name="Income"
                 dataKey="incomePlot"
                 stroke="#10b981"
@@ -101,6 +112,7 @@ export function FinanceTimeline({
                 dot={false}
               />
               <Line
+                isAnimationActive={false}
                 name="Net expenses"
                 dataKey="expensesPlot"
                 stroke="#f43f5e"
@@ -108,6 +120,7 @@ export function FinanceTimeline({
                 dot={false}
               />
               <Line
+                isAnimationActive={false}
                 name="Net cash flow"
                 dataKey="netPlot"
                 stroke="#60a5fa"
@@ -131,8 +144,15 @@ export function FinanceTimeline({
               />
               <Tooltip content={<TimelineTooltip currency={currency} />} />
               <Legend />
-              <Bar name="Income" dataKey="incomePlot" fill="#10b981" radius={[3, 3, 0, 0]} />
               <Bar
+                isAnimationActive={false}
+                name="Income"
+                dataKey="incomePlot"
+                fill="#10b981"
+                radius={[3, 3, 0, 0]}
+              />
+              <Bar
+                isAnimationActive={false}
                 name="Net expenses"
                 dataKey="expensesPlot"
                 fill="#f43f5e"
@@ -244,6 +264,7 @@ export function FinanceBreakdown({
                 />
                 <Tooltip content={<BreakdownTooltip currency={currency} income={income} />} />
                 <Bar
+                  isAnimationActive={false}
                   dataKey="valuePlot"
                   name={income ? "Deposits" : "Net spending"}
                   radius={[0, 3, 3, 0]}

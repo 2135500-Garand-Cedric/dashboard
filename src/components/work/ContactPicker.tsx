@@ -1,6 +1,6 @@
 "use client";
+import { useInitialTaskLoad, useTaskRead } from "@/components/work/TaskInitialLoad";
 import { useEffect, useState } from "react";
-import { workRead } from "@/lib/work-management/client";
 import type { WorkContact } from "@/lib/work-management/types";
 const labelOf = (contact: WorkContact) =>
   `${contact.name}${contact.company ? ` · ${contact.company}` : ""}${!contact.active ? " (inactive)" : ""} · #${contact.id}`;
@@ -19,6 +19,7 @@ export default function ContactPicker({
   disabled?: boolean;
   allowInactive?: boolean;
 }) {
+  const read = useTaskRead();
   const [query, setQuery] = useState(""),
     [page, setPage] = useState(1),
     [retry, setRetry] = useState(0);
@@ -29,26 +30,31 @@ export default function ContactPicker({
       pageSize: number;
     } | null>(null),
     [error, setError] = useState("");
+  useInitialTaskLoad(!data && !error);
   useEffect(() => {
     let active = true;
     setData(null);
     setError("");
-    const timer = setTimeout(() => {
-      void workRead<{ items: WorkContact[]; total: number; page: number; pageSize: number }>(
-        `/api/work-contacts?q=${encodeURIComponent(query)}&page=${page}`,
-      )
-        .then((result) => {
-          if (active) setData(result);
-        })
-        .catch((error) => {
-          if (active) setError(error instanceof Error ? error.message : "Unable to load contacts.");
-        });
-    }, 200);
+    const timer = setTimeout(
+      () => {
+        void read<{ items: WorkContact[]; total: number; page: number; pageSize: number }>(
+          `/api/work-contacts?q=${encodeURIComponent(query)}&page=${page}`,
+        )
+          .then((result) => {
+            if (active) setData(result);
+          })
+          .catch((error) => {
+            if (active)
+              setError(error instanceof Error ? error.message : "Unable to load contacts.");
+          });
+      },
+      query ? 200 : 0,
+    );
     return () => {
       active = false;
       clearTimeout(timer);
     };
-  }, [query, page, retry]);
+  }, [query, page, retry, read]);
   const choices = [
     ...value,
     ...(data?.items ?? []).filter(

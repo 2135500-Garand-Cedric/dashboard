@@ -1,4 +1,6 @@
 "use client";
+import { useInitialTaskLoad, useTaskRead } from "@/components/work/TaskInitialLoad";
+import { DateTime, useDateTime } from "@/context/SettingsContext";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { createWorkWriter, workRead } from "@/lib/work-management/client";
 import type {
@@ -7,23 +9,14 @@ import type {
   WorkActivityEntry,
   WorkNote,
   WorkNoteVersion,
+  WorkFollowUp,
 } from "@/lib/work-management/types";
-import { valueLabel } from "@/components/todos/TaskActivityPreview";
+import { valueLabel as formatValueLabel } from "@/components/todos/TaskActivityPreview";
 const buttonClass =
   "scroll-mt-24 rounded-lg border border-card-border px-3 py-2 text-sm disabled:opacity-50";
 const inputClass =
   "scroll-mt-24 w-full min-w-0 rounded-lg border border-card-border bg-card-bg p-2 text-sm";
-const timestamp = (value: string) =>
-  new Date(value).toLocaleString("en-CA", {
-    timeZone: "America/Toronto",
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-function localTime(value: string | null) {
-  if (!value) return "";
-  const date = new Date(value);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}T${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-}
+const timestamp = (value: string) => <DateTime value={value} />;
 function safeLink(value: string) {
   try {
     const url = new URL(value);
@@ -142,7 +135,13 @@ function RevisionHistory({ basePath, noteId }: { basePath: string; noteId: numbe
     </div>
   );
 }
-type Draft = { editing: WorkNote | null; body: string; urls: string; occurred: string };
+type Draft = {
+  editing: WorkNote | null;
+  body: string;
+  urls: string;
+  occurred: string;
+  occurrence?: string;
+};
 const drafts = new Map<string, Draft>(),
   writer = createWorkWriter();
 const TaskTimeline = forwardRef<
@@ -158,11 +157,16 @@ const TaskTimeline = forwardRef<
   { id, basePath = `/api/todos/${id}`, revision, onStateChange, onRecordsChanged },
   ref,
 ) {
+  const { timeZone, toLocalInput, parseLocalInput, describeWorkDate } = useDateTime();
+  const localTime = (value: string | null) => (value ? toLocalInput(value) : "");
   const cached = drafts.get(basePath);
+  const [occurrence, setOccurrence] = useState(cached?.occurrence ?? "");
   const [filter, setFilter] = useState("notes"),
     [page, setPage] = useState(1),
     [refresh, setRefresh] = useState(0);
   const [data, setData] = useState<{
+      entries?: { kind: "note" | "followup"; id: number }[];
+      followUps?: WorkFollowUp[];
       notes: WorkNote[];
       activity: (WorkActivityEntry & { noteRevision: WorkNoteVersion | null })[];
       total: number;
@@ -185,8 +189,9 @@ const TaskTimeline = forwardRef<
     adding &&
     (body !== (editing?.body ?? "") ||
       urls !== (editing?.documentationUrls.join("\n") ?? "") ||
-      occurred !== localTime(editing?.occurredAt ?? null));
-  liveDraft.current = dirty ? { editing, body, urls, occurred } : null;
+      occurred !== localTime(editing?.occurredAt ?? null) ||
+      !!occurrence);
+  liveDraft.current = dirty ? { editing, body, urls, occurred, occurrence } : null;
   const discard = useCallback(() => {
     drafts.delete(basePath);
     liveDraft.current = null;
@@ -195,12 +200,15 @@ const TaskTimeline = forwardRef<
     setBody("");
     setUrls("");
     setOccurred("");
+    setOccurrence("");
     setError("");
   }, [basePath]);
   useImperativeHandle(ref, () => ({ discard, isDirty: () => dirty, isBusy: () => lock.current }), [
     discard,
     dirty,
   ]);
+  const read = useTaskRead();
+  useInitialTaskLoad(!data && !loadError);
   useEffect(() => {
     onStateChange({ dirty, busy });
   }, [dirty, busy, onStateChange]);
@@ -214,7 +222,7 @@ const TaskTimeline = forwardRef<
     let active = true;
     setData(null);
     setLoadError("");
-    void workRead<NonNullable<typeof data>>(`${basePath}/timeline?filter=${filter}&page=${page}`)
+    void read<NonNullable<typeof data>>(`${basePath}/timeline?filter=${filter}&page=${page}`)
       .then((value) => {
         if (active) setData(value);
       })
@@ -227,7 +235,7 @@ const TaskTimeline = forwardRef<
     return () => {
       active = false;
     };
-  }, [basePath, revision, filter, page, refresh]);
+  }, [basePath, revision, filter, page, refresh, read]);
   async function perform(action: () => Promise<void>) {
     if (lock.current) return;
     lock.current = true;
@@ -252,6 +260,7 @@ const TaskTimeline = forwardRef<
     setBody(note?.body ?? "");
     setUrls(note?.documentationUrls.join("\n") ?? "");
     setOccurred(localTime(note?.occurredAt ?? null));
+    setOccurrence("");
     setAdding(true);
     setError("");
   }
@@ -274,10 +283,11 @@ const TaskTimeline = forwardRef<
             <button
               type="button"
               disabled={busy}
+              aria-label={`Edit note ${note.id}`}
               onClick={() => start(note)}
               className={buttonClass}
             >
-              Edit note {note.id}
+              Edit
             </button>
           )}
         </div>
@@ -299,18 +309,20 @@ const TaskTimeline = forwardRef<
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
+            aria-label={`Revisions for note ${note.id}`}
             aria-expanded={history === cardKey}
             disabled={busy}
             onClick={() => setHistory(history === cardKey ? null : cardKey)}
             className={buttonClass}
           >
-            Revisions for note {note.id}
+            History
           </button>
           {latest && !note.removedAt && (
             <button
               type="button"
               disabled={busy}
-              className={`${buttonClass} text-rose-500`}
+              aria-label={`Remove note ${note.id}`}
+              className="rounded-lg px-3 py-2 text-sm text-rose-500 hover:bg-rose-500/10 disabled:opacity-50"
               onClick={() => {
                 if (
                   window.confirm(
@@ -329,7 +341,7 @@ const TaskTimeline = forwardRef<
                   });
               }}
             >
-              Remove note {note.id}
+              Remove
             </button>
           )}
         </div>
@@ -337,10 +349,53 @@ const TaskTimeline = forwardRef<
       </article>
     );
   }
+  function followUpCard(item: WorkFollowUp) {
+    const label =
+      item.status === "COMPLETED"
+        ? "Follow-up completed"
+        : item.status === "SNOOZED"
+          ? "Follow-up snoozed"
+          : item.outcome === "TASK_CLOSED"
+            ? "Follow-up retired"
+            : "Follow-up cancelled";
+    return (
+      <article
+        key={`followup-${item.id}`}
+        aria-label={`Follow-up ${item.id}`}
+        className="space-y-2 rounded-xl border border-amber-500/25 bg-amber-500/5 p-4"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-semibold text-amber-600 dark:text-amber-300">{label}</h3>
+          <span className="text-xs text-gray-500">
+            {timestamp(item.resolvedAt ?? item.createdAt)}
+          </span>
+        </div>
+        <p className="text-sm">
+          <span className="text-gray-500">Scheduled for: </span>
+          {describeWorkDate(item)}
+        </p>
+        {item.reason && <p className="whitespace-pre-wrap break-words text-sm">{item.reason}</p>}
+        {item.outcome &&
+          !["FOLLOW_UP_COMPLETED", "FOLLOW_UP_SNOOZED", "USER_CANCELLED", "TASK_CLOSED"].includes(
+            item.outcome,
+          ) && <p className="whitespace-pre-wrap break-words text-sm">{item.outcome}</p>}
+      </article>
+    );
+  }
+  const noteEntries =
+    data?.entries ?? data?.notes.map((note) => ({ kind: "note" as const, id: note.id })) ?? [];
+  const notesById = new Map(data?.notes.map((note) => [note.id, note]) ?? []);
+  const followUpsById = new Map(data?.followUps?.map((item) => [item.id, item]) ?? []);
   return (
-    <section aria-label="Notes and activity" className="space-y-4 border-t border-card-border pt-5">
+    <section
+      id={basePath.startsWith("/api/projects/") ? undefined : "task-notes"}
+      aria-label="Notes and activity"
+      className="task-notes space-y-4 rounded-xl border border-violet-500/25 bg-card-bg p-5"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-semibold">Notes and activity</h2>
+        <h2 className="text-lg font-semibold text-violet-600 dark:text-violet-300">
+          {basePath.startsWith("/api/projects/") ? "Notes & activity" : "Notes & follow-ups"}
+        </h2>
         <button type="button" disabled={busy} onClick={() => start(null)} className={buttonClass}>
           Add note
         </button>
@@ -354,10 +409,10 @@ const TaskTimeline = forwardRef<
             void perform(async () => {
               const originalOccurred = editing?.occurredAt ?? null;
               const occurredAt =
-                occurred === localTime(originalOccurred)
+                occurred === localTime(originalOccurred) && !occurrence
                   ? originalOccurred
                   : occurred
-                    ? new Date(occurred).toISOString()
+                    ? parseLocalInput(occurred, occurrence)
                     : null;
               await writer(
                 editing ? `${basePath}/notes/${editing.id}` : `${basePath}/notes`,
@@ -418,6 +473,19 @@ const TaskTimeline = forwardRef<
                   onChange={(event) => setOccurred(event.target.value)}
                   className={`${inputClass} mt-1`}
                 />
+              </label>
+              <label className="block text-sm">
+                Repeated time
+                <select
+                  aria-label="Note time occurrence"
+                  value={occurrence}
+                  onChange={(event) => setOccurrence(event.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">Choose if required</option>
+                  <option value="earlier">Earlier occurrence</option>
+                  <option value="later">Later occurrence</option>
+                </select>
               </label>
             </div>
           </details>
@@ -500,7 +568,14 @@ const TaskTimeline = forwardRef<
       ) : (
         <>
           {filter === "notes"
-            ? data.notes.map((note) => card(note))
+            ? noteEntries.map((entry) => {
+                if (entry.kind === "followup") {
+                  const item = followUpsById.get(entry.id);
+                  return item ? followUpCard(item) : null;
+                }
+                const note = notesById.get(entry.id);
+                return note ? card(note) : null;
+              })
             : data.activity.map((entry) =>
                 entry.noteRevision?.note ? (
                   <div key={entry.id} className="space-y-2">
@@ -518,47 +593,58 @@ const TaskTimeline = forwardRef<
                       {timestamp(entry.createdAt)}
                     </time>
                     <dl className="mt-3 space-y-2 text-sm">
-                      {Object.entries(entry.changes).map(([field, change]) => (
-                        <div key={field} className="break-words [overflow-wrap:anywhere]">
-                          <dt className="font-medium">{field.replace(/([A-Z])/g, " $1")}</dt>
-                          <dd className="whitespace-pre-wrap text-gray-500">
-                            {valueLabel(change.before)} → {valueLabel(change.after)}
-                          </dd>
-                        </div>
-                      ))}
+                      {Object.entries(entry.changes)
+                        .filter(
+                          ([field]) =>
+                            !field.startsWith("reward") &&
+                            !["tags", "waitingOnContact", "company", "course"].includes(field),
+                        )
+                        .map(([field, change]) => (
+                          <div key={field} className="break-words [overflow-wrap:anywhere]">
+                            <dt className="font-medium">{field.replace(/([A-Z])/g, " $1")}</dt>
+                            <dd className="whitespace-pre-wrap text-gray-500">
+                              {formatValueLabel(change.before, timeZone)} →{" "}
+                              {formatValueLabel(change.after, timeZone)}
+                            </dd>
+                          </div>
+                        ))}
                     </dl>
                   </article>
                 ),
               )}
           {!data.total && (
             <p className="text-sm text-gray-500">
-              {filter === "notes" ? "No notes yet." : "No recorded activity yet."}
+              {filter === "notes"
+                ? "No notes or completed follow-ups yet."
+                : "No recorded activity yet."}
             </p>
           )}
-          <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-            <span>
-              {data.total} {filter === "notes" ? "notes" : "entries"} · Page {data.page}/
-              {Math.max(1, Math.ceil(data.total / data.pageSize))}
-            </span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={data.page <= 1}
-                onClick={() => setPage(data.page - 1)}
-                className={buttonClass}
-              >
-                Previous history
-              </button>
-              <button
-                type="button"
-                disabled={data.page * data.pageSize >= data.total}
-                onClick={() => setPage(data.page + 1)}
-                className={buttonClass}
-              >
-                Next history
-              </button>
+          {data.total > data.pageSize && (
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span>
+                {data.total} {filter === "notes" ? "items" : "entries"} · Page {data.page}/
+                {Math.max(1, Math.ceil(data.total / data.pageSize))}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={data.page <= 1}
+                  onClick={() => setPage(data.page - 1)}
+                  className={buttonClass}
+                >
+                  Previous history
+                </button>
+                <button
+                  type="button"
+                  disabled={data.page * data.pageSize >= data.total}
+                  onClick={() => setPage(data.page + 1)}
+                  className={buttonClass}
+                >
+                  Next history
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </>
       )}
     </section>

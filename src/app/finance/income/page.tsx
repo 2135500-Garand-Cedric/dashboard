@@ -1,4 +1,4 @@
-import IncomeHistory from "@/components/finance/IncomeHistory";
-export default function IncomePage() {
-  return <IncomeHistory />;
+import TransactionHistory from "@/components/finance/TransactionHistory";
+export default function ActivityPage() {
+  return <TransactionHistory view="income" />;
 }

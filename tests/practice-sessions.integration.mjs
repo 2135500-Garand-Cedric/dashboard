@@ -1,3 +1,4 @@
+import { timeZoneTestDependency } from "./helpers/time-zone.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
@@ -13,7 +14,7 @@ function load(file, dependencies = {}) {
   const exports = {};
   new Function("exports", "require", compiled)(
     exports,
-    (name) => dependencies[name] ?? require(name),
+    (name) => dependencies[name] ?? timeZoneTestDependency(name) ?? require(name),
   );
   return exports;
 }
@@ -216,6 +217,158 @@ test(
       );
     } finally {
       await prisma.$disconnect();
+    }
+  },
+);
+
+test(
+  "practice rewards are atomic for concurrent retries and roll back with a failed save",
+  {
+    skip: process.env.RUN_PRACTICE_REWARD_DB_TEST !== "1",
+  },
+  async () => {
+    assert.equal(process.env.WORK_MANAGEMENT_DISPOSABLE, "1");
+    assert.equal(process.env.NODE_ENV, "test");
+    const url = new URL(process.env.DATABASE_URL);
+    assert.equal(url.hostname, "work-db");
+    assert.equal(url.pathname, "/work_test");
+    const { PrismaClient } = await import("../src/generated/prisma/index.js");
+    const db = new PrismaClient({ log: [] });
+    const user = await db.user.findUniqueOrThrow({
+      where: { id: 1 },
+      select: { totalXp: true, coins: true, updatedAt: true },
+    });
+    const snapshots = await db.japaneseProgressSnapshot.findMany({ where: { userId: 1 } });
+    const kanji = load("../src/lib/japanese/kanji-writing.ts"),
+      utils = load("../src/lib/japanese/utils.ts");
+    const progress = load("../src/lib/japanese/vocabulary-progress.ts", {
+      "./kanji-writing": kanji,
+      "./utils": utils,
+    });
+    const history = load("../src/lib/japanese/progress-history.ts", {
+      "./dates": load("../src/lib/japanese/dates.ts"),
+      "./vocabulary-progress": progress,
+    });
+    const dependencies = {
+      "@/lib/prisma": { prisma: db },
+      "./vocabulary-progress": progress,
+      "./progress-history": history,
+    };
+    const service = load("../src/lib/japanese/practice-sessions.ts", dependencies);
+    const wordIds = [],
+      keys = [];
+    let category;
+    try {
+      const last = await db.category.aggregate({ _max: { id: true } });
+      category = await db.category.create({
+        data: { id: (last._max.id ?? 0) + 1, name: `__reward_${randomUUID()}` },
+      });
+      const updates = [];
+      for (let index = 0; index < 10; index++) {
+        const word = await db.vocabulary.create({
+          data: {
+            userId: 1,
+            english: `__reward_word_${randomUUID()}`,
+            japanese: "学校",
+            hiragana: "がっこう",
+            categoryId: category.id,
+          },
+        });
+        wordIds.push(word.id);
+        const link = await db.activityVocab.create({ data: { vocabId: word.id, activityId: 1 } });
+        updates.push({
+          activityVocabId: link.id,
+          status: index < 4 ? "GOOD" : index < 7 ? "PERFECT" : "WEAK",
+        });
+      }
+      const input = {
+        sessionKey: randomUUID(),
+        activity: 1,
+        startedAt: "2026-11-13T15:00:00Z",
+        completedAt: "2026-11-13T15:01:00Z",
+        categories: [category.id],
+        starredOnly: false,
+        updates,
+      };
+      keys.push(input.sessionKey);
+      const balances = async () => {
+        const row = await db.user.findUniqueOrThrow({
+          where: { id: 1 },
+          select: { totalXp: true, coins: true },
+        });
+        return row;
+      };
+      const preview = await service.buildPracticeReview(db, input);
+      assert.equal(preview.xpEarned, 10);
+      assert.equal(preview.goldEarned, 2);
+      assert.deepEqual(await balances(), { totalXp: user.totalXp, coins: user.coins });
+      const [first, second] = await Promise.all([
+        service.savePracticeSession(input),
+        service.savePracticeSession(input),
+      ]);
+      assert.equal(first.id, second.id);
+      assert.equal(await db.practice.count({ where: { sessionKey: input.sessionKey } }), 1);
+      assert.deepEqual(await balances(), { totalXp: user.totalXp + 10, coins: user.coins + 2 });
+      assert.equal(first.xpEarned, 10);
+      assert.equal(first.goldEarned, 2);
+      await assert.rejects(
+        service.savePracticeSession({
+          ...input,
+          updates: updates.map((row) => ({ ...row, status: "WEAK" })),
+        }),
+        /already been used/,
+      );
+      const separate = [randomUUID(), randomUUID()];
+      keys.push(...separate);
+      await Promise.all(
+        separate.map((sessionKey) => service.savePracticeSession({ ...input, sessionKey })),
+      );
+      assert.deepEqual(await balances(), { totalXp: user.totalXp + 30, coins: user.coins + 6 });
+      const beforeLinks = await db.activityVocab.findMany({
+        where: { vocabId: { in: wordIds } },
+        orderBy: { id: "asc" },
+      });
+      const broken = load("../src/lib/japanese/practice-sessions.ts", {
+        ...dependencies,
+        "./progress-history": {
+          recordJapaneseProgress: async () => {
+            throw new Error("injected snapshot failure");
+          },
+        },
+      });
+      const failedKey = randomUUID();
+      keys.push(failedKey);
+      await assert.rejects(
+        broken.savePracticeSession({
+          ...input,
+          sessionKey: failedKey,
+          updates: updates.map((row) => ({ ...row, status: "PERFECT" })),
+        }),
+        /injected snapshot failure/,
+      );
+      assert.equal(await db.practice.count({ where: { sessionKey: failedKey } }), 0);
+      assert.deepEqual(
+        await db.activityVocab.findMany({
+          where: { vocabId: { in: wordIds } },
+          orderBy: { id: "asc" },
+        }),
+        beforeLinks,
+      );
+      assert.deepEqual(await balances(), { totalXp: user.totalXp + 30, coins: user.coins + 6 });
+    } finally {
+      try {
+        await db.practice.deleteMany({ where: { sessionKey: { in: keys } } });
+        await db.vocabulary.deleteMany({ where: { id: { in: wordIds } } });
+        if (category) await db.category.delete({ where: { id: category.id } });
+        await db.japaneseProgressSnapshot.deleteMany({
+          where: { userId: 1, id: { notIn: snapshots.map((row) => row.id) } },
+        });
+        for (const { id, ...data } of snapshots)
+          await db.japaneseProgressSnapshot.update({ where: { id }, data });
+        await db.user.update({ where: { id: 1 }, data: user });
+      } finally {
+        await db.$disconnect();
+      }
     }
   },
 );

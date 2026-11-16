@@ -1,3 +1,4 @@
+import { timeZoneTestDependency } from "./helpers/time-zone.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
@@ -10,7 +11,7 @@ function load(file, dependencies = {}) {
   const exports = {};
   new Function("exports", "require", compiled)(exports, (name) => {
     assert.ok(name in dependencies, `Missing ${name}`);
-    return dependencies[name];
+    return dependencies[name] ?? timeZoneTestDependency(name);
   });
   return exports;
 }
@@ -168,4 +169,27 @@ test("old practice summaries remain readable without inventing missing details",
   assert.equal(review.words, null);
   assert.equal(review.averageBefore, null);
   assert.equal(review.wordCount, 2);
+});
+
+test("practice XP reflects ratings and gold follows completed word count", async () => {
+  for (const [words, gold] of [
+    [10, 2],
+    [25, 5],
+    [50, 10],
+    [100, 20],
+  ]) {
+    assert.deepEqual(sessions.practiceRewards(words, words, 0), {
+      xpEarned: words,
+      goldEarned: gold,
+    });
+    assert.deepEqual(sessions.practiceRewards(words, 0, words), {
+      xpEarned: 2 * words,
+      goldEarned: gold,
+    });
+    assert.deepEqual(sessions.practiceRewards(words, 0, 0), { xpEarned: 0, goldEarned: gold });
+  }
+  const { db } = fixture();
+  const review = await buildPracticeReview(db, input());
+  assert.equal(review.xpEarned, 2);
+  assert.equal(review.goldEarned, 0);
 });

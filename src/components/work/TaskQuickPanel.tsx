@@ -22,6 +22,18 @@ export default function TaskQuickPanel({
     <dialog
       ref={ref}
       aria-label="Task details"
+      onClick={(event) => {
+        if (event.target !== event.currentTarget) return;
+        const box = event.currentTarget.getBoundingClientRect();
+        if (
+          event.clientX >= box.left &&
+          event.clientX <= box.right &&
+          event.clientY >= box.top &&
+          event.clientY <= box.bottom
+        )
+          return;
+        ref.current?.querySelector<HTMLButtonElement>("[data-close-task]")?.click();
+      }}
       onCancel={(event) => {
         event.preventDefault();
         ref.current?.querySelector<HTMLButtonElement>("[data-close-task]")?.click();

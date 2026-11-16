@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { AsyncLocalStorage } from "node:async_hooks";
 import * as crypto from "node:crypto";
 import ts from "typescript";
 export function loadTaskFoundation(validation) {
@@ -29,6 +30,7 @@ export function loadTaskFoundation(validation) {
       "./dates": dates,
     }),
     "@/lib/app-time-zone": zone,
+    "@/lib/time-zone-context": { getAppTimeZone: () => zone.APP_TIME_ZONE },
   });
   const policy = { OWNER_DATABASE_USER_ID: 1, OWNER_GITHUB_ID: "89470930" };
   const activity = load("../../src/lib/work-management/activity-server.ts", {
@@ -49,6 +51,7 @@ export function loadTaskFoundation(validation) {
   const core = load("../../src/lib/work-management/event-core.ts", {
     "@/lib/owner-policy": { OWNER_DATABASE_USER_ID: 1, OWNER_GITHUB_ID: "89470930" },
     "@/lib/app-time-zone": zone,
+    "@/lib/time-zone-context": { getAppTimeZone: () => zone.APP_TIME_ZONE },
     "./activity-server": activity,
     "./graph": graph,
     "./dates": dates,
@@ -60,10 +63,14 @@ export function loadTaskFoundation(validation) {
     "./validation": validation,
   });
   return {
+    "./read-snapshot": load("../../src/lib/work-management/read-snapshot.ts", {
+      "node:async_hooks": { AsyncLocalStorage },
+    }),
     "./project-core": projectCore,
     "./event-core": core,
     "./dates": dates,
     "@/lib/app-time-zone": zone,
+    "@/lib/time-zone-context": { getAppTimeZone: () => zone.APP_TIME_ZONE },
     "./date-lifecycle": lifecycle,
     "./types": types,
     "./task-foundation": fields,

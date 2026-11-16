@@ -32,6 +32,9 @@ export function loadWorkServices(db) {
     return unit.exports;
   }
   return {
+    settings: load("src/lib/user-settings.ts"),
+    timeZone: load("src/lib/time-zone-context.ts"),
+    japaneseDates: load("src/lib/japanese/dates.ts"),
     format: load("src/lib/work-management/date-format.ts"),
     config: load("src/lib/app-time-zone.ts"),
     server: load("src/lib/work-management/server.ts"),
@@ -41,5 +44,6 @@ export function loadWorkServices(db) {
     dates: load("src/lib/work-management/date-server.ts"),
     relationships: load("src/lib/work-management/relationships.ts"),
     supporting: load("src/lib/work-management/supporting.ts"),
+    taskDetails: load("src/lib/work-management/task-details.ts"),
   };
 }

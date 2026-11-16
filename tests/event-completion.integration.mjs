@@ -1,3 +1,4 @@
+import { timeZoneTestDependency } from "./helpers/time-zone.mjs";
 import { loadTaskFoundation } from "./helpers/task-foundation.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -12,7 +13,10 @@ function load(file, dependencies = {}) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2017 },
   }).outputText;
   const exports = {};
-  new Function("exports", "require", code)(exports, (name) => dependencies[name] ?? require(name));
+  new Function("exports", "require", code)(
+    exports,
+    (name) => dependencies[name] ?? timeZoneTestDependency(name) ?? require(name),
+  );
   return exports;
 }
 

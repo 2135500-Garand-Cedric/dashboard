@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 // Only applied filters enter the URL; browser back/forward restores the history view.
 export function useHistoryFilters<T extends Record<string, string>>(defaults: T) {
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [draft, setDraft] = useState(defaults),
     [filters, updateFilters] = useState(defaults),
     [page, updatePage] = useState(1);
@@ -40,5 +41,5 @@ export function useHistoryFilters<T extends Record<string, string>>(defaults: T)
     updatePage(value);
     write(filters, value);
   }
-  return { draft, setDraft, filters, setFilters, page, setPage };
+  return { draft, setDraft, filters, setFilters, page, setPage, filtersOpen, setFiltersOpen };
 }

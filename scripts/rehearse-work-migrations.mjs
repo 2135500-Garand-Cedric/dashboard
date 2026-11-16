@@ -156,7 +156,13 @@ export async function rehearseMigrations(db, output) {
         `Phase ${phase}: original fields, IDs, relationships and balances preserved; repeat unchanged.`,
       );
     }
-    assert.deepEqual(previous.pendingMigrations, []);
+    // This rehearsal deliberately stops at the final work-management migration.
+    // Later, separately tested app migrations must remain pending on this copy.
+    const laterAppMigrations = [
+      "20261114120000_user_display_time_zone",
+      "20261115120000_japanese_practice_rewards",
+    ];
+    assert.deepEqual(previous.pendingMigrations, laterAppMigrations);
     save("report.json", {
       baseline: "restored pre-redesign database",
       stages: report,
@@ -164,6 +170,7 @@ export async function rehearseMigrations(db, output) {
       originalTasks: before.tables.Todo.count,
       originalEvents: before.tables.Event.count,
       originalChecklists: before.tables.Subtask.count,
+      pendingAppMigrations: previous.pendingMigrations,
       productionVerified: false,
     });
     return previous;

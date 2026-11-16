@@ -1,3 +1,4 @@
+import { timeZoneTestDependency } from "./time-zone.mjs";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import ts from "typescript";
@@ -18,7 +19,7 @@ export function loadWorkModule(file, deps = {}) {
       },
     ).outputText;
   new Function("exports", "require", code)(exports, (name) =>
-    Object.hasOwn(deps, name) ? deps[name] : require(name),
+    Object.hasOwn(deps, name) ? deps[name] : (timeZoneTestDependency(name) ?? require(name)),
   );
   return exports;
 }

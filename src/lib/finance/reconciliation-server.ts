@@ -348,6 +348,11 @@ export async function getReconciliation(kind: MatchKind, id: number, params: URL
 async function synchronize(db: DB, data: State, source: MatchRecord) {
   const active = sourceLinks(data, source.kind, source.id).filter((link) => confirmed(link.status));
   if (source.kind === "RECEIPT" || source.kind === "INCOME") {
+    if (source.kind === "INCOME" && !active.length)
+      throw new FinanceValidationError(
+        "Income must stay linked to a deposit. Delete the income record before removing its last deposit match.",
+        409,
+      );
     const transactionId =
       active.length === 1 && active[0].amount.equals(source.amount)
         ? active[0].transactionId
@@ -481,6 +486,22 @@ export async function decideMatch(command: MatchCommand) {
               throw new FinanceValidationError(
                 "Confirm the different account for this payment, deposit or refund.",
               );
+            if (command.kind === "STATEMENT") {
+              const entry = data.entries.find((item) => item.id === source.id);
+              if (
+                entry?.import.matchingOnly &&
+                data.entries.some(
+                  (item) =>
+                    item.id !== entry.id &&
+                    item.importId === entry.importId &&
+                    item.transactionId === target.id,
+                )
+              )
+                throw new FinanceValidationError(
+                  "Another row of this statement already matches this financial record.",
+                  409,
+                );
+            }
             const amount = new Prisma.Decimal(command.amount),
               sourceUsed = allocated(data, command.kind, source.id, false, current?.id),
               targetUsed =

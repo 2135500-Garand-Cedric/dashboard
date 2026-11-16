@@ -1,8 +1,8 @@
-export const JAPANESE_TIME_ZONE = "America/Toronto";
+import { getAppTimeZone } from "@/lib/time-zone-context";
 
 export function torontoDateKey(date: Date): string {
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone: JAPANESE_TIME_ZONE,
+    timeZone: getAppTimeZone(),
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -19,7 +19,7 @@ export function torontoMidnight(key: string): Date {
   const target = new Date(`${key}T00:00:00Z`).getTime();
   let instant = target;
   const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: JAPANESE_TIME_ZONE,
+    timeZone: getAppTimeZone(),
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

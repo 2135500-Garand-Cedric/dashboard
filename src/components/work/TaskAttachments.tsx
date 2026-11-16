@@ -1,7 +1,9 @@
 "use client";
+import { useInitialTaskLoad, useTaskRead } from "@/components/work/TaskInitialLoad";
+import { DateTime } from "@/context/SettingsContext";
 /* eslint-disable @next/next/no-img-element */
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { createWorkWriter, workRead } from "@/lib/work-management/client";
+import { createWorkWriter } from "@/lib/work-management/client";
 import type {
   SupportEditorHandle,
   SupportEditorState,
@@ -90,6 +92,8 @@ const TaskAttachments = forwardRef<
     discard,
     file,
   ]);
+  const read = useTaskRead();
+  useInitialTaskLoad(!data && !loadError);
   useEffect(() => {
     onStateChange({ dirty: !!file, busy });
   }, [file, busy, onStateChange]);
@@ -103,7 +107,7 @@ const TaskAttachments = forwardRef<
     let active = true;
     setData(null);
     setLoadError("");
-    void workRead<NonNullable<typeof data>>(`${basePath}/attachments?page=${page}`)
+    void read<NonNullable<typeof data>>(`${basePath}/attachments?page=${page}`)
       .then((value) => {
         if (active) setData(value);
       })
@@ -114,7 +118,7 @@ const TaskAttachments = forwardRef<
     return () => {
       active = false;
     };
-  }, [basePath, page, refresh]);
+  }, [basePath, page, refresh, read]);
   function choose(selected?: File) {
     if (!selected) return;
     if (!selected.size || selected.size > 15 * 1024 * 1024) {
@@ -167,12 +171,13 @@ const TaskAttachments = forwardRef<
   }
   return (
     <section
+      id={basePath.startsWith("/api/projects/") ? undefined : "task-files"}
       aria-label={
         basePath.startsWith("/api/projects/") ? "Project attachments" : "Task attachments"
       }
-      className="space-y-4 border-t border-card-border pt-5"
+      className="task-files space-y-4 rounded-xl border border-sky-500/25 bg-card-bg p-5"
     >
-      <h2 className="font-semibold">Attachments</h2>
+      <h2 className="text-lg font-semibold text-sky-600 dark:text-sky-300">Files</h2>
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
@@ -297,9 +302,7 @@ const TaskAttachments = forwardRef<
                 </p>
                 <p className="text-xs text-gray-500">
                   {(item.byteSize / 1024 / 1024).toFixed(2)} MB · Added{" "}
-                  {new Date(item.createdAt).toLocaleString("en-CA", {
-                    timeZone: "America/Toronto",
-                  })}
+                  <DateTime value={item.createdAt} />
                   {item.revision > 1 ? ` · Version ${item.revision}` : ""}
                 </p>
                 <div className="flex flex-wrap gap-2">
@@ -425,30 +428,32 @@ const TaskAttachments = forwardRef<
               No attachments. Notes can be saved without a file.
             </p>
           )}
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-            <span>
-              {data.total} attachment records · Page {data.page}/
-              {Math.max(1, Math.ceil(data.total / data.pageSize))}
-            </span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={data.page <= 1}
-                onClick={() => setPage(data.page - 1)}
-                className={buttonClass}
-              >
-                Previous attachments
-              </button>
-              <button
-                type="button"
-                disabled={data.page * data.pageSize >= data.total}
-                onClick={() => setPage(data.page + 1)}
-                className={buttonClass}
-              >
-                Next attachments
-              </button>
+          {data.total > data.pageSize && (
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span>
+                {data.total} attachment records · Page {data.page}/
+                {Math.max(1, Math.ceil(data.total / data.pageSize))}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={data.page <= 1}
+                  onClick={() => setPage(data.page - 1)}
+                  className={buttonClass}
+                >
+                  Previous attachments
+                </button>
+                <button
+                  type="button"
+                  disabled={data.page * data.pageSize >= data.total}
+                  onClick={() => setPage(data.page + 1)}
+                  className={buttonClass}
+                >
+                  Next attachments
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </>
       )}
     </section>

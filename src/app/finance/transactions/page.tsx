@@ -1,4 +1,4 @@
-import TransactionHistory from "@/components/finance/TransactionHistory";
-export default function TransactionsPage() {
-  return <TransactionHistory />;
+import { redirect } from "next/navigation";
+export default function LegacyPage() {
+  redirect("/finance/transfers");
 }

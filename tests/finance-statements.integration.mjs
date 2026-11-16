@@ -1,3 +1,4 @@
+import { timeZoneTestDependency } from "./helpers/time-zone.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
@@ -18,7 +19,10 @@ function load(file, deps = {}) {
     },
   }).outputText;
   const exports = {};
-  new Function("exports", "require", compiled)(exports, (name) => deps[name] ?? require(name));
+  new Function("exports", "require", compiled)(
+    exports,
+    (name) => deps[name] ?? timeZoneTestDependency(name) ?? require(name),
+  );
   return exports;
 }
 test(
@@ -50,6 +54,11 @@ test(
       "./validation": validation,
       "./transactions": transactionValidation,
       "./statement-csv": csv,
+    });
+    const fixed = load("../src/lib/finance/fixed-statement.ts", {
+      "./validation": validation,
+      "./transactions": transactionValidation,
+      "./statement-imports": imports,
     });
     const statementFiles = load("../src/lib/finance/statement-files.ts", {
       "./validation": validation,
@@ -111,6 +120,7 @@ test(
               "./receipt-files": files,
               "./statement-csv": csv,
               "./statement-imports": imports,
+              "./fixed-statement": fixed,
             });
             const deps = {
               "@/lib/require-owner": { requireOwner: async () => null },
@@ -120,6 +130,7 @@ test(
               "@/lib/finance/transaction-server": transactions,
               "@/lib/finance/statement-files": statementFiles,
               "@/lib/finance/statement-server": statements,
+              "@/lib/finance/fixed-statement": fixed,
               "@/lib/finance/receipt-files": files,
             };
             const uploadRoute = load("../src/app/api/finance/imports/route.ts", deps),
@@ -204,15 +215,23 @@ test(
                 }),
               );
               form.append("file", new File([text], name, { type: "text/csv" }));
-              return response(
-                await uploadRoute.POST(
+              // Exercise historical general-format imports at the service boundary.
+              // The public four-column matching workflow has separate integration coverage.
+              try {
+                const { input, parsed, file } = await statementFiles.statementUpload(
                   new Request("http://localhost/api/finance/imports", {
                     method: "POST",
                     body: form,
                   }),
-                ),
-                status,
-              );
+                );
+                const result = await statements.createStatement(input.accountId, parsed, file);
+                assert.equal(result.reused ? 200 : 201, status);
+                return result;
+              } catch (error) {
+                if (status < 400) throw error;
+                assert.equal(error.status ?? 400, status);
+                return { error: error.message };
+              }
             }
             async function map(batch, overrides = {}) {
               return (

@@ -17,12 +17,16 @@ export default function EventForm({
   initialTask,
   onSaved,
   onCancel,
+  onBusyChange,
+  embedded = false,
 }: {
   event?: CalendarEvent;
   timeZone: string;
   initialTask?: WorkTodo | null;
   onSaved: (event: CalendarEvent) => void;
   onCancel: () => void;
+  onBusyChange?: (busy: boolean) => void;
+  embedded?: boolean;
 }) {
   const [title, setTitle] = useState(
       event?.title ?? (initialTask ? `Work on ${initialTask.title}` : ""),
@@ -36,13 +40,9 @@ export default function EventForm({
   const [timing, setTiming] = useState(
       event?.allDayStart ? "ALL_DAY" : event?.date || initialTask ? "TIMED" : "TBD",
     ),
-    [zone, setZone] = useState(event?.timeZone ?? timeZone);
-  const [start, setStart] = useState(
-      event?.date ? localParts(event.date, event.timeZone ?? timeZone) : "",
-    ),
-    [end, setEnd] = useState(
-      event?.endDate ? localParts(event.endDate, event.timeZone ?? timeZone) : "",
-    );
+    [zone] = useState(timeZone);
+  const [start, setStart] = useState(event?.date ? localParts(event.date, timeZone) : ""),
+    [end, setEnd] = useState(event?.endDate ? localParts(event.endDate, timeZone) : "");
   const [first, setFirst] = useState(event?.allDayStart ?? ""),
     [last, setLast] = useState(event?.allDayEnd ? shift(event.allDayEnd, -1) : "");
   const [startOccurrence, setStartOccurrence] = useState(""),
@@ -210,6 +210,9 @@ export default function EventForm({
       setSaving(false);
     }
   }
+  useEffect(() => {
+    onBusyChange?.(saving);
+  }, [saving, onBusyChange]);
   return (
     <form
       aria-label="Event editor"
@@ -217,11 +220,17 @@ export default function EventForm({
         event.preventDefault();
         void submit();
       }}
-      className="min-w-0 space-y-4 rounded-xl border border-card-border bg-card-bg p-4"
+      className={
+        embedded
+          ? "min-w-0 space-y-4"
+          : "min-w-0 space-y-4 rounded-xl border border-card-border bg-card-bg p-4"
+      }
     >
-      <h2 className="text-lg font-semibold">
-        {event ? "Edit event" : "New event or work session"}
-      </h2>
+      {!embedded && (
+        <h2 className="text-lg font-semibold">
+          {event ? "Edit event" : "New event or work session"}
+        </h2>
+      )}
       {error && (
         <p role="alert" className="break-words text-sm text-rose-500">
           {error}
@@ -356,22 +365,6 @@ export default function EventForm({
       )}
       {timing === "TIMED" && (
         <>
-          <label className="block text-sm">
-            Time zone
-            <input
-              aria-label="Event time zone"
-              required
-              maxLength={100}
-              value={zone}
-              disabled={saving}
-              onChange={(e) => {
-                setZone(e.target.value);
-                setStartOccurrence("");
-                setEndOccurrence("");
-              }}
-              className={input}
-            />
-          </label>
           <div className="grid min-w-0 gap-3 sm:grid-cols-2">
             {[
               ["Start", start, setStart, startOccurrence, setStartOccurrence],
@@ -506,6 +499,7 @@ export default function EventForm({
         </button>
         <button
           type="button"
+          data-event-cancel
           disabled={saving}
           onClick={() => {
             if (confirmLeave()) onCancel();

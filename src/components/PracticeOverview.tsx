@@ -1,4 +1,5 @@
 "use client";
+import { DateTime } from "@/context/SettingsContext";
 
 import { vocabularyReadings } from "@/lib/japanese/readings";
 import { useEffect, useRef, type ReactNode } from "react";
@@ -35,12 +36,7 @@ const statuses: {
   },
 ];
 const signed = (value: number) => `${value > 0 ? "+" : ""}${value.toFixed(2)}`;
-const timestamp = (date: string) =>
-  new Date(date).toLocaleString("en-CA", {
-    timeZone: "America/Toronto",
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+const timestamp = (value: string) => <DateTime value={value} />;
 
 export default function PracticeOverview({
   review,
@@ -130,6 +126,16 @@ export default function PracticeOverview({
             </p>
           </div>
         </div>
+        {review.xpEarned !== null && review.xpEarned !== undefined && (
+          <div className="flex flex-wrap gap-3" aria-label="Practice rewards">
+            <span className="rounded-lg bg-emerald-500/10 px-4 py-2 font-semibold text-emerald-500">
+              +{review.xpEarned} XP
+            </span>
+            <span className="rounded-lg bg-amber-500/10 px-4 py-2 font-semibold text-amber-500">
+              +{review.goldEarned ?? 0} gold
+            </span>
+          </div>
+        )}
         <div className="flex flex-wrap gap-x-6 gap-y-2 border-t border-slate-700 pt-3 text-sm">
           <p>
             <span className="text-slate-400">Started: </span>

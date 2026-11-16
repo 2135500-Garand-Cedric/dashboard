@@ -1,8 +1,10 @@
+import { readSnapshot } from "./read-snapshot";
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import { APP_TIME_ZONE } from "@/lib/app-time-zone";
+import { getAppTimeZone } from "@/lib/time-zone-context";
 import { mutation, version, todoRow, WORK_USER_ID } from "./server";
 import {
+  type CalendarEventRow,
   eventRow,
   eventDTO,
   eventInclude,
@@ -65,11 +67,22 @@ async function conversionState(db: DB, id: number, body: Record<string, unknown>
     !(await db.workContext.count({ where: { id: contextId, userId: WORK_USER_ID, active: true } }))
   )
     throw new WorkValidationError("Choose an active context belonging to the owner.");
+  const activityTypeId = task
+    ? task.activityTypeId
+    : body.activityTypeId == null
+      ? null
+      : workId(body.activityTypeId);
+  if (
+    !task &&
+    activityTypeId != null &&
+    !(await db.activityType.count({ where: { id: activityTypeId, active: true } }))
+  )
+    throw new WorkValidationError("Choose an active calendar activity type.");
   const title = task?.title ?? workText(body.title, "new task title", 500)!;
   if (body.changeDeadline === false && body.deadline !== undefined && body.deadline !== null)
     throw new WorkValidationError("Enable the deadline change before entering a new deadline.");
   const before = task ? deadlineOf(task) : { date: null, at: null, timeZone: null };
-  const after = body.changeDeadline ? parseWorkDate(body.deadline, APP_TIME_ZONE, true) : before;
+  const after = body.changeDeadline ? parseWorkDate(body.deadline, getAppTimeZone(), true) : before;
   if (body.mode === "PLACEHOLDER" && !after.date && !after.at)
     throw new WorkValidationError(
       "A superseded deadline placeholder requires an explicit task deadline.",
@@ -80,18 +93,20 @@ async function conversionState(db: DB, id: number, body: Record<string, unknown>
     taskId: task?.id ?? null,
     title,
     contextId: task?.contextId ?? contextId,
+    activityTypeId,
     mode: body.mode,
     changeDeadline: body.changeDeadline,
     before: json(before),
     after: json(after),
   });
-  return { event, task, title, contextId, before, after, token };
+  return { event, task, title, contextId, activityTypeId, before, after, token };
 }
 const conversionFields = [
   "mode",
   "taskId",
   "title",
   "contextId",
+  "activityTypeId",
   "changeDeadline",
   "deadline",
   "previewToken",
@@ -114,6 +129,7 @@ export async function previewConversion(id: number, value: unknown) {
           : null,
         title: state.title,
         contextId: state.task?.contextId ?? state.contextId,
+        activityTypeId: state.activityTypeId,
         beforeDeadline: state.before,
         afterDeadline: state.after,
         mode: body.mode,
@@ -158,7 +174,12 @@ export async function confirmConversion(id: number, value: unknown, command: Wor
     let task = state.task;
     if (!task) {
       task = await db.todo.create({
-        data: { title: state.title, userId: WORK_USER_ID, contextId: state.contextId },
+        data: {
+          title: state.title,
+          userId: WORK_USER_ID,
+          contextId: state.contextId,
+          activityTypeId: state.activityTypeId,
+        },
         include: {
           followUps: { where: { status: "ACTIVE" }, take: 1 },
           prerequisites: {
@@ -192,6 +213,7 @@ export async function confirmConversion(id: number, value: unknown, command: Wor
           waitingOnContact: true,
           affectedPeople: { include: { contact: true } },
           context: true,
+          activityType: true,
           project: true,
           stage: true,
           subtasks: true,
@@ -303,29 +325,26 @@ export async function undoConversion(id: number, value: unknown, command: WorkCo
 export async function taskCalendar(id: number, params: URLSearchParams) {
   const requested = params.has("page") ? workId(params.get("page")) : 1,
     pageSize = 20;
-  return prisma.$transaction(
-    async (db) => {
-      await todoRow(db, id);
-      const where = { taskLinks: { some: { todoId: id } }, userId: WORK_USER_ID },
-        total = await db.event.count({ where }),
-        page = Math.min(requested, Math.max(1, Math.ceil(total / pageSize)));
-      return {
-        items: (
-          await db.event.findMany({
-            where,
-            include: eventInclude,
-            orderBy: [{ date: { sort: "desc", nulls: "last" } }, { id: "desc" }],
-            skip: (page - 1) * pageSize,
-            take: pageSize,
-          })
-        ).map(eventDTO),
-        total,
-        page,
-        pageSize,
-      };
-    },
-    { isolationLevel: "RepeatableRead" },
-  );
+  return readSnapshot(prisma, async (db) => {
+    await todoRow(db, id);
+    const where = { taskLinks: { some: { todoId: id } }, userId: WORK_USER_ID },
+      total = await db.event.count({ where }),
+      page = Math.min(requested, Math.max(1, Math.ceil(total / pageSize)));
+    return {
+      items: (
+        await db.event.findMany({
+          where,
+          include: eventInclude,
+          orderBy: [{ date: { sort: "desc", nulls: "last" } }, { id: "desc" }],
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        })
+      ).map(eventDTO),
+      total,
+      page,
+      pageSize,
+    };
+  });
 }
 export async function calendarFeed(params: URLSearchParams) {
   const parseInstant = (key: string) => {
@@ -341,8 +360,10 @@ export async function calendarFeed(params: URLSearchParams) {
     end = parseInstant("end");
   if (end <= start || end.getTime() - start.getTime() > 370 * 86400000)
     throw new WorkValidationError("Calendar ranges must be positive and at most one year.");
-  const validLayers = ["events", "sessions", "deadlines", "followups", "keydates"],
-    layers = (params.get("layers") ?? validLayers.join(",")).split(",").filter(Boolean);
+  const validLayers = ["events", "sessions", "deadlines", "followups", "milestones"],
+    layers = (params.get("layers") ?? validLayers.join(","))
+      .split(",")
+      .filter((layer) => !!layer && layer !== "keydates");
   if (layers.some((layer) => !validLayers.includes(layer)))
     throw new WorkValidationError("Choose valid calendar layers.");
   const project = params.get("project") || "",
@@ -350,11 +371,13 @@ export async function calendarFeed(params: URLSearchParams) {
   const context = params.get("context") || "",
     contextId = context && context !== "none" ? workId(context) : null,
     history = params.get("history") === "true",
-    from = localToday(start, APP_TIME_ZONE),
+    from = localToday(start, getAppTimeZone()),
     through =
-      end.getTime() === dayStart(localToday(end, APP_TIME_ZONE), APP_TIME_ZONE).getTime()
-        ? localToday(end, APP_TIME_ZONE)
-        : nextCalendarDate(localToday(end, APP_TIME_ZONE));
+      end.getTime() === dayStart(localToday(end, getAppTimeZone()), getAppTimeZone()).getTime()
+        ? localToday(end, getAppTimeZone())
+        : nextCalendarDate(localToday(end, getAppTimeZone()));
+  const activity = params.get("activityType") || "",
+    activityId = activity && activity !== "none" ? workId(activity) : null;
   const taskContext: Prisma.TodoWhereInput = context
     ? { contextId: context === "none" ? null : contextId }
     : {};
@@ -377,8 +400,16 @@ export async function calendarFeed(params: URLSearchParams) {
       : {};
   const taskWhere: Prisma.TodoWhereInput = {
     userId: WORK_USER_ID,
-    archivedAt: null,
+    ...(history
+      ? {
+          OR: [
+            { archivedAt: null },
+            { status: { in: ["DONE", "CANCELLED"] as ("DONE" | "CANCELLED")[] } },
+          ],
+        }
+      : { archivedAt: null }),
     ...taskContext,
+    ...(activity ? { activityTypeId: activityId } : {}),
     ...(project ? { projectId, ...(projectId ? { project: { userId: WORK_USER_ID } } : {}) } : {}),
     ...(!history ? { status: { notIn: ["DONE", "CANCELLED"] } } : {}),
   };
@@ -391,8 +422,21 @@ export async function calendarFeed(params: URLSearchParams) {
     async (db) => {
       const items: Record<string, unknown>[] = [],
         types = await db.activityType.findMany(),
-        color = (type: string | null) =>
-          types.find((row) => row.name.toLowerCase() === type?.toLowerCase())?.color ?? "#64748b";
+        color = (type: string | null, fallback: string) =>
+          types.find((row) => row.name.toLowerCase() === type?.toLowerCase())?.color ?? fallback;
+      const linkedActivity = (row: CalendarEventRow) => {
+        const links = row.taskLinks.filter(
+          (link) => link.todo.userId === WORK_USER_ID && link.todo.activityType,
+        );
+        return (links.find((link) => link.role === "SESSION_TARGET") ?? links[0])?.todo
+          .activityType;
+      };
+      const matchesActivity = (row: CalendarEventRow) => {
+        const effective =
+          linkedActivity(row) ??
+          types.find((type) => type.name.toLowerCase() === row.type?.toLowerCase());
+        return !activity || (effective?.id ?? null) === activityId;
+      };
       if (layers.some((layer) => layer === "events" || layer === "sessions")) {
         const rows = await db.event.findMany({
           where: {
@@ -427,9 +471,12 @@ export async function calendarFeed(params: URLSearchParams) {
             422,
           );
         for (const row of rows) {
+          if (!matchesActivity(row)) continue;
           const dto = eventDTO(row),
             session = row.kind === "WORK_SESSION",
-            target = dto.taskLinks.find((link) => link.role === "SESSION_TARGET");
+            target = dto.taskLinks.find((link) => link.role === "SESSION_TARGET"),
+            taskType = linkedActivity(row),
+            itemColor = taskType?.color ?? color(row.type, session ? "#8b5cf6" : "#3b82f6");
           items.push({
             id: `event:${row.id}`,
             title: `${session ? "▣ Session" : row.kind === "INFORMATIONAL" ? "ⓘ Info" : "○ Event"} · ${row.title}${target?.task.status && isClosed(target.task.status) ? " · Task closed" : ""}`,
@@ -439,11 +486,13 @@ export async function calendarFeed(params: URLSearchParams) {
               : {}),
             allDay: !!row.allDayStart,
             editable: session,
-            backgroundColor: color(row.type),
-            borderColor: color(row.type),
+            backgroundColor: itemColor,
+            borderColor: itemColor,
             classNames: row.completed ? ["event-completed"] : [],
             extendedProps: {
               layer: session ? "sessions" : "events",
+              plainTitle: `${row.title}${target?.task.status && isClosed(target.task.status) ? " · Task closed" : ""}`,
+              activityType: taskType?.name ?? row.type,
               href: `/events/${row.id}`,
               eventId: row.id,
               revision: row.revision,
@@ -461,7 +510,12 @@ export async function calendarFeed(params: URLSearchParams) {
       const marker = (
         layer: string,
         id: number,
-        task: { id: number; title: string; status: string },
+        task: {
+          id: number;
+          title: string;
+          status: string;
+          activityType?: { name: string; color: string } | null;
+        },
         value: { date: string | null; at: Date | null },
         label: string,
       ) => {
@@ -479,14 +533,14 @@ export async function calendarFeed(params: URLSearchParams) {
             ...(closed ? ["calendar-historical"] : []),
           ],
           backgroundColor: "transparent",
-          borderColor:
-            layer === "deadline" ? "#f43f5e" : layer === "followup" ? "#f59e0b" : "#38bdf8",
+          borderColor: task.activityType?.color ?? (layer === "deadline" ? "#f43f5e" : "#f59e0b"),
           extendedProps: {
-            layer:
-              layer === "deadline" ? "deadlines" : layer === "followup" ? "followups" : "keydates",
+            layer: layer === "deadline" ? "deadlines" : "followups",
+            plainTitle: task.title,
+            activityType: task.activityType?.name ?? null,
             href: `/todos/${task.id}#task-dates`,
             taskId: task.id,
-            actionable: !closed && layer !== "keydate",
+            actionable: !closed,
             busy: false,
             marker: true,
           },
@@ -495,6 +549,7 @@ export async function calendarFeed(params: URLSearchParams) {
       if (layers.includes("deadlines")) {
         const rows = await db.todo.findMany({
           where: { AND: [taskWhere, dateRange("deadlineDate", "deadlineAt")] },
+          include: { activityType: true },
           take: 1001,
         });
         if (rows.length > 1000)
@@ -505,23 +560,14 @@ export async function calendarFeed(params: URLSearchParams) {
       if (layers.includes("followups")) {
         const rows = await db.workFollowUp.findMany({
           where: { status: "ACTIVE", todo: taskWhere, ...dateRange("date", "at") },
-          include: { todo: true },
+          include: { todo: { include: { activityType: true } } },
           take: 1001,
         });
         if (rows.length > 1000)
           throw new WorkValidationError("Too many follow-ups. Narrow the range.", 422);
         for (const row of rows) marker("followup", row.id, row.todo, row, "↻ Follow up");
       }
-      if (layers.includes("keydates")) {
-        const rows = await db.workKeyDate.findMany({
-          where: { removedAt: null, todo: taskWhere, ...dateRange("date", "at") },
-          include: { todo: true },
-          take: 1001,
-        });
-        if (rows.length > 1000)
-          throw new WorkValidationError("Too many key dates. Narrow the range.", 422);
-        for (const row of rows)
-          if (row.todo) marker("keydate", row.id, row.todo, row, `◇ ${row.label}`);
+      if (layers.includes("milestones")) {
         const projectDates =
           project === "none"
             ? []
@@ -533,12 +579,13 @@ export async function calendarFeed(params: URLSearchParams) {
                     userId: WORK_USER_ID,
                     archivedAt: null,
                     ...(projectId ? { id: projectId } : {}),
+                    ...(activity ? { activityTypeId: activityId } : {}),
                     ...(context ? { contextId: context === "none" ? null : contextId } : {}),
                     ...(!history ? { status: "ACTIVE" } : {}),
                   },
                   ...dateRange("date", "at"),
                 },
-                include: { project: true },
+                include: { project: { include: { activityType: true } } },
                 take: 1001,
               });
         if (projectDates.length > 1000)
@@ -554,15 +601,17 @@ export async function calendarFeed(params: URLSearchParams) {
               editable: false,
               classNames: [
                 "calendar-marker",
-                "calendar-keydate",
+                "calendar-milestone",
                 ...(row.completedAt || row.project.status !== "ACTIVE"
                   ? ["calendar-historical"]
                   : []),
               ],
               backgroundColor: "transparent",
-              borderColor: "#38bdf8",
+              borderColor: row.project.activityType?.color ?? "#38bdf8",
               extendedProps: {
-                layer: "keydates",
+                layer: "milestones",
+                activityType: row.project.activityType?.name ?? null,
+                plainTitle: `${row.label} · ${row.project.name}`,
                 href: `/projects/${row.projectId}#project-milestones`,
                 projectId: row.projectId,
                 marker: true,
@@ -571,22 +620,50 @@ export async function calendarFeed(params: URLSearchParams) {
               },
             });
       }
-      const tbdWhere = { ...eventBase, date: null, allDayStart: null },
-        tbdTotal = layers.includes("events") ? await db.event.count({ where: tbdWhere }) : 0,
+      const tbdWhere = { ...eventBase, date: null, allDayStart: null };
+      // With an activity filter, resolve the same winning linked task as the
+      // calendar before paginating, so counts and pages match the visible color.
+      const filteredTbd =
+        activity && layers.includes("events")
+          ? await db.event.findMany({
+              where: tbdWhere,
+              include: eventInclude,
+              orderBy: { id: "asc" },
+              take: 2501,
+            })
+          : null;
+      if (filteredTbd && filteredTbd.length > 2500)
+        throw new WorkValidationError(
+          "Too many unscheduled events. Narrow the project filter.",
+          422,
+        );
+      const matchingTbd = filteredTbd?.filter(matchesActivity),
+        tbdTotal = layers.includes("events")
+          ? (matchingTbd?.length ?? (await db.event.count({ where: tbdWhere })))
+          : 0,
         tbdPage = Math.min(
           params.has("tbdPage") ? workId(params.get("tbdPage")) : 1,
           Math.max(1, Math.ceil(tbdTotal / 30)),
         );
       const tbd = layers.includes("events")
-        ? (
-            await db.event.findMany({
-              where: tbdWhere,
-              include: eventInclude,
-              take: 30,
-              skip: (tbdPage - 1) * 30,
-              orderBy: { id: "asc" },
-            })
-          ).map(eventDTO)
+        ? (matchingTbd
+            ? matchingTbd.slice((tbdPage - 1) * 30, tbdPage * 30)
+            : await db.event.findMany({
+                where: tbdWhere,
+                include: eventInclude,
+                take: 30,
+                skip: (tbdPage - 1) * 30,
+                orderBy: { id: "asc" },
+              })
+          ).map((row) => {
+            const activityType = linkedActivity(row);
+            const activityLabel = activityType?.name ?? row.type;
+            return {
+              ...eventDTO(row),
+              activityLabel,
+              activityColor: activityType?.color ?? color(activityLabel, "#3b82f6"),
+            };
+          })
         : [];
       if (items.length > 2500)
         throw new WorkValidationError(
@@ -595,7 +672,7 @@ export async function calendarFeed(params: URLSearchParams) {
         );
       return {
         items,
-        timeZone: APP_TIME_ZONE,
+        timeZone: getAppTimeZone(),
         tbd,
         tbdTotal,
         tbdPage,

@@ -1,13 +1,22 @@
 "use client";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
+import ActivityNotes from "./ActivityNotes";
+import type { StatementPrefill } from "@/lib/finance/statement-prefill";
+import { localToday } from "@/lib/work-management/date-format";
+import { useSettings } from "@/context/SettingsContext";
 import FinanceDocumentPanel from "./FinanceDocumentPanel";
 import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
 import { useSnackbar } from "@/context/SnackbarContext";
 import { receiptDifference, receiptMoney, type FinanceReceipt } from "@/lib/finance/receipts";
 import type { FinanceAccount, FinanceCategory } from "@/lib/finance/validation";
-import { displayAmount, type TransactionPage } from "@/lib/finance/transactions";
+import {
+  displayAmount,
+  type TransactionPage,
+  type FinanceTransaction,
+} from "@/lib/finance/transactions";
 import {
   fieldClass,
   financeRequest,
@@ -18,32 +27,100 @@ import {
   useFinanceData,
 } from "./shared";
 
+// Keep the server-provided currency list identical during hydration.
+export function NewReceiptEditor({ currencies }: { currencies: string[] }) {
+  const { timeZone } = useSettings();
+  return <ReceiptEditor initialDate={localToday(new Date(), timeZone)} currencies={currencies} />;
+}
+
 export default function ReceiptEditor({
   id,
   initialDate,
   currencies,
+  expenseMode = false,
+  onSaved,
+  readOnly,
+  headerMeta,
+  headerActions,
+  notesTransaction,
+  initialTransaction,
+  prefill,
 }: {
+  expenseMode?: boolean;
+  initialTransaction?: FinanceTransaction;
+  prefill?: StatementPrefill;
+  onSaved?: () => void;
+  readOnly?: boolean;
+  headerMeta?: ReactNode;
+  headerActions?: ReactNode;
+  notesTransaction?: FinanceTransaction;
   id?: string;
   initialDate?: string;
   currencies: string[];
 }) {
   return id ? (
-    <ExistingReceipt id={id} currencies={currencies} />
+    <ExistingReceipt
+      id={id}
+      currencies={currencies}
+      expenseMode={expenseMode}
+      onSaved={onSaved}
+      readOnly={readOnly}
+      headerMeta={headerMeta}
+      headerActions={headerActions}
+      notesTransaction={notesTransaction}
+    />
   ) : (
-    <ReceiptForm initialDate={initialDate!} currencies={currencies} />
+    <ReceiptForm
+      readOnly={readOnly}
+      headerMeta={headerMeta}
+      headerActions={headerActions}
+      notesTransaction={notesTransaction}
+      initialDate={initialDate!}
+      currencies={currencies}
+      expenseMode={expenseMode}
+      initialTransaction={initialTransaction}
+      prefill={prefill}
+      refresh={onSaved}
+    />
   );
 }
-function ExistingReceipt({ id, currencies }: { id: string; currencies: string[] }) {
+function ExistingReceipt({
+  id,
+  currencies,
+  expenseMode,
+  onSaved,
+  readOnly,
+  headerMeta,
+  headerActions,
+  notesTransaction,
+}: {
+  onSaved?: () => void;
+  readOnly?: boolean;
+  headerMeta?: ReactNode;
+  headerActions?: ReactNode;
+  notesTransaction?: FinanceTransaction;
+  id: string;
+  currencies: string[];
+  expenseMode: boolean;
+}) {
   const result = useFinanceData<{ receipt: FinanceReceipt }>(`/api/finance/receipts/${id}`);
   if (result.error) return <FinanceLoadError error={result.error} retry={result.retry} />;
   if (result.loading || !result.data) return <p role="status">Loading receipt…</p>;
   return (
     <ReceiptForm
       key={result.data.receipt.updatedAt}
+      readOnly={readOnly}
+      headerMeta={headerMeta}
+      headerActions={headerActions}
+      notesTransaction={notesTransaction}
       existing={result.data.receipt}
+      expenseMode={expenseMode}
       initialDate={result.data.receipt.date}
       currencies={currencies}
-      refresh={result.retry}
+      refresh={() => {
+        result.retry();
+        onSaved?.();
+      }}
     />
   );
 }
@@ -52,32 +129,63 @@ function ReceiptForm({
   initialDate,
   currencies,
   refresh,
+  readOnly,
+  headerMeta,
+  headerActions,
+  notesTransaction,
+  expenseMode,
+  initialTransaction,
+  prefill,
 }: {
+  expenseMode: boolean;
+  initialTransaction?: FinanceTransaction;
+  prefill?: StatementPrefill;
   existing?: FinanceReceipt;
   initialDate: string;
   currencies: string[];
   refresh?: () => void;
+  readOnly?: boolean;
+  headerMeta?: ReactNode;
+  headerActions?: ReactNode;
+  notesTransaction?: FinanceTransaction;
 }) {
   const accounts = useFinanceData<{ accounts: FinanceAccount[] }>("/api/finance/accounts");
   const categories = useFinanceData<{ categories: FinanceCategory[] }>("/api/finance/categories");
   const [draft, setDraft] = useState(() => ({
-    merchant: existing?.merchant ?? "",
-    date: initialDate,
-    accountId: String(existing?.account?.id ?? ""),
-    categoryId: String(existing?.category?.id ?? ""),
-    currency: existing?.currency ?? "CAD",
-    subtotal: existing?.subtotal ?? "",
+    merchant:
+      existing?.merchant ??
+      initialTransaction?.counterparty ??
+      initialTransaction?.description ??
+      prefill?.description ??
+      "",
+    date: initialTransaction?.date ?? prefill?.date ?? initialDate,
+    accountId: String(
+      existing?.account?.id ?? initialTransaction?.account.id ?? prefill?.accountId ?? "",
+    ),
+    categoryId: String(existing?.category?.id ?? initialTransaction?.category?.id ?? ""),
+    currency: existing?.currency ?? initialTransaction?.currency ?? prefill?.currency ?? "CAD",
+    subtotal:
+      existing?.subtotal ?? initialTransaction?.amount.replace(/^-/, "") ?? prefill?.amount ?? "",
     tax: existing?.tax ?? "0",
     tip: existing?.tip ?? "0",
-    total: existing?.total ?? "",
-    notes: existing?.notes ?? "",
-    transactionAction: existing?.transaction ? "LINK" : "UNMATCHED",
-    transactionId: String(existing?.transaction?.id ?? ""),
+    total: existing?.total ?? initialTransaction?.amount.replace(/^-/, "") ?? prefill?.amount ?? "",
+    notes: existing?.notes ?? initialTransaction?.notes ?? "",
+    transactionAction:
+      existing?.transaction || initialTransaction ? "LINK" : expenseMode ? "CREATE" : "UNMATCHED",
+    transactionId: String(existing?.transaction?.id ?? initialTransaction?.id ?? ""),
   }));
+  const [breakdown, setBreakdown] = useState(
+    !expenseMode ||
+      (!!existing &&
+        (existing.tax !== "0.0000" ||
+          existing.tip !== "0.0000" ||
+          existing.subtotal !== existing.total)),
+  );
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<FinanceRequestError | null>(null);
   const [acknowledge, setAcknowledge] = useState(false);
+  const [allowDuplicate, setAllowDuplicate] = useState(false);
   const [confirmation, setConfirmation] = useState<"receipt" | "document" | null>(null);
   const [transactionSearch, setTransactionSearch] = useState("");
   const [transactionDate, setTransactionDate] = useState("");
@@ -88,6 +196,7 @@ function ReceiptForm({
   const patch = (key: keyof typeof draft, value: string) => {
     setDraft((previous) => ({ ...previous, [key]: value }));
     setAcknowledge(false);
+    setAllowDuplicate(false);
   };
   let difference: string | null = null;
   try {
@@ -147,6 +256,8 @@ function ReceiptForm({
         tip: draft.tip || "0",
         transactionId: draft.transactionAction === "LINK" ? Number(draft.transactionId) : null,
         acknowledgeMismatch: acknowledge,
+        syncMovement: expenseMode,
+        allowDuplicate,
         ...(existing
           ? { expectedUpdatedAt: existing.updatedAt }
           : { requestKey: requestKey.current }),
@@ -155,12 +266,17 @@ function ReceiptForm({
       body.append("details", JSON.stringify(details));
       if (file) body.append("file", file);
       const result = await financeRequest<{ receipt: FinanceReceipt }>(
-        existing ? `/api/finance/receipts/${existing.id}` : "/api/finance/receipts",
+        existing
+          ? `/api/finance/${expenseMode ? "expenses" : "receipts"}/${existing.id}`
+          : `/api/finance/${expenseMode ? "expenses" : "receipts"}`,
         { method: existing ? "PATCH" : "POST", body },
       );
-      showMessage("Receipt saved successfully.");
-      if (existing) refresh?.();
-      else router.push(`/finance/receipts/${result.receipt.id}`);
+      showMessage(expenseMode ? "Expense saved successfully." : "Receipt saved successfully.");
+      refresh?.();
+      if (expenseMode && result.receipt.transaction)
+        router.push(`/finance/expenses/${result.receipt.transaction.id}`);
+      else if (existing) refresh?.();
+      else router.push(`/finance/expenses/documents/${result.receipt.id}`);
     } catch (error) {
       const failure =
         error instanceof FinanceRequestError
@@ -205,15 +321,9 @@ function ReceiptForm({
     }
   }
   return (
-    <div className="space-y-5">
-      {existing && (
+    <div className="min-w-0 space-y-5">
+      {existing && !expenseMode && (
         <section className="card space-y-3">
-          <Link
-            href={`/finance/reconciliation?kind=RECEIPT&source=${existing.id}`}
-            className={secondaryButton}
-          >
-            Reconcile receipt payments
-          </Link>
           {!!existing.allocations?.length && (
             <div className="flex flex-wrap gap-3">
               {existing.allocations.map((allocation) => (
@@ -234,14 +344,42 @@ function ReceiptForm({
         </section>
       )}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-2xl font-semibold">{existing ? "Receipt details" : "New receipt"}</h2>
-        <Link href="/finance/receipts" className={secondaryButton}>
-          ← Receipt history
-        </Link>
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <h2 className="text-2xl font-semibold">
+            {expenseMode
+              ? existing || initialTransaction
+                ? "Expense details"
+                : "New expense"
+              : existing
+                ? "Receipt details"
+                : "New receipt"}
+          </h2>
+          {headerMeta}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {headerActions}
+          <Link href="/finance/expenses" className={secondaryButton}>
+            ← Expenses
+          </Link>
+        </div>
       </div>
       {failure && (
         <div className="card space-y-3" role="alert">
           <p className="text-rose-500">{failure.message}</p>
+          {expenseMode &&
+            ["EXISTING_EXPENSE", "DUPLICATE_TRANSACTION"].includes(failure.code ?? "") && (
+              <button
+                type="button"
+                className={secondaryButton}
+                onClick={() => {
+                  setAllowDuplicate(true);
+                  setFailure(null);
+                  showMessage("Separate purchase confirmed. Save the expense to continue.");
+                }}
+              >
+                Record a separate purchase
+              </button>
+            )}
           {failure.existingId && (
             <div className="flex flex-wrap gap-2">
               <Link
@@ -317,276 +455,317 @@ function ReceiptForm({
       <form aria-busy={busy} onSubmit={save}>
         <fieldset
           disabled={
-            busy || accounts.loading || categories.loading || !!accounts.error || !!categories.error
+            !readOnly &&
+            (busy ||
+              accounts.loading ||
+              categories.loading ||
+              !!accounts.error ||
+              !!categories.error)
           }
           className="grid min-w-0 items-start gap-5 xl:grid-cols-2"
         >
           <section className="card min-w-0 space-y-4">
             <h3 className="text-lg font-semibold">Receipt information</h3>
-            <label className="block space-y-1">
-              Merchant / store
-              <input
-                aria-label="Merchant / store"
-                required
-                maxLength={200}
-                className={fieldClass}
-                value={draft.merchant}
-                onChange={(event) => patch("merchant", event.target.value)}
-              />
-            </label>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <fieldset disabled={readOnly} className="min-w-0 space-y-4">
               <label className="block space-y-1">
-                Purchase date
+                Description / merchant
                 <input
-                  aria-label="Purchase date"
-                  type="date"
+                  aria-label="Description / merchant"
                   required
+                  maxLength={200}
                   className={fieldClass}
-                  value={draft.date}
-                  onChange={(event) => patch("date", event.target.value)}
+                  value={draft.merchant}
+                  onChange={(event) => patch("merchant", event.target.value)}
                 />
               </label>
-              <label className="block space-y-1">
-                Payment account
-                <select
-                  aria-label="Payment account"
-                  required
-                  className={fieldClass}
-                  value={draft.accountId}
-                  onChange={(event) => patch("accountId", event.target.value)}
-                >
-                  <option value="">Choose an account</option>
-                  {accountOptions.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.name} · {account.currency}
-                      {account.active ? "" : " (inactive)"}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block space-y-1">
-                Currency
-                <select
-                  aria-label="Receipt currency"
-                  className={fieldClass}
-                  value={draft.currency}
-                  onChange={(event) => patch("currency", event.target.value)}
-                >
-                  {currencies.map((currency) => (
-                    <option key={currency}>{currency}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="block space-y-1">
-                Expense category
-                <select
-                  aria-label="Expense category"
-                  required
-                  className={fieldClass}
-                  value={draft.categoryId}
-                  onChange={(event) => patch("categoryId", event.target.value)}
-                >
-                  <option value="">Choose a category</option>
-                  {categoryOptions.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                      {category.active ? "" : " (inactive)"}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            {!accounts.loading && !accountOptions.length && (
-              <Link href="/finance/accounts" className={secondaryButton}>
-                Create a payment account
-              </Link>
-            )}
-            {!categories.loading && !categoryOptions.length && (
-              <Link href="/finance/categories" className={secondaryButton}>
-                Create an expense category
-              </Link>
-            )}
-            <div className="grid gap-4 sm:grid-cols-2">
-              {(
-                [
-                  ["subtotal", "Subtotal"],
-                  ["tax", "Tax"],
-                  ["tip", "Tip (optional)"],
-                  ["total", "Total"],
-                ] as const
-              ).map(([key, label]) => (
-                <label key={key} className="block space-y-1">
-                  {label}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block space-y-1">
+                  Purchase date
                   <input
-                    aria-label={label}
-                    inputMode="decimal"
-                    autoComplete="off"
-                    required={key !== "tip"}
-                    maxLength={20}
+                    aria-label="Purchase date"
+                    type="date"
+                    required
                     className={fieldClass}
-                    value={draft[key]}
-                    onChange={(event) => patch(key, event.target.value)}
+                    value={draft.date}
+                    onChange={(event) => patch("date", event.target.value)}
                   />
                 </label>
-              ))}
-            </div>
-            {mismatch && (
-              <div
-                role="alert"
-                className="space-y-2 rounded-lg bg-amber-500/10 p-3 text-sm text-amber-500"
-              >
-                <p>
-                  Subtotal + tax + tip does not equal total. Difference: {difference}{" "}
-                  {draft.currency}.
-                </p>
-                <label className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    checked={acknowledge}
-                    onChange={(event) => setAcknowledge(event.target.checked)}
+                <label className="block space-y-1">
+                  Payment account
+                  <select
+                    aria-label="Payment account"
                     required
-                  />
-                  Keep these amounts despite the difference
+                    className={fieldClass}
+                    value={draft.accountId}
+                    onChange={(event) => patch("accountId", event.target.value)}
+                  >
+                    <option value="">Choose an account</option>
+                    {accountOptions.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name} · {account.currency}
+                        {account.active ? "" : " (inactive)"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block space-y-1">
+                  Currency
+                  <select
+                    aria-label="Receipt currency"
+                    className={fieldClass}
+                    value={draft.currency}
+                    onChange={(event) => patch("currency", event.target.value)}
+                  >
+                    {currencies.map((currency) => (
+                      <option key={currency}>{currency}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block space-y-1">
+                  Expense category
+                  <select
+                    aria-label="Expense category"
+                    required
+                    className={fieldClass}
+                    value={draft.categoryId}
+                    onChange={(event) => patch("categoryId", event.target.value)}
+                  >
+                    <option value="">Choose a category</option>
+                    {categoryOptions.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                        {category.active ? "" : " (inactive)"}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
-            )}
-            <label className="block space-y-1">
-              Notes (optional)
-              <textarea
-                aria-label="Receipt notes"
-                maxLength={2000}
-                rows={3}
-                className={fieldClass}
-                value={draft.notes}
-                onChange={(event) => patch("notes", event.target.value)}
-              />
-            </label>
-            <section className="space-y-3 border-t border-card-border pt-4">
-              <h3 className="font-semibold">Associated transaction</h3>
-              <select
-                aria-label="Associated transaction"
-                className={fieldClass}
-                value={draft.transactionAction}
-                onChange={(event) => patch("transactionAction", event.target.value)}
-              >
-                <option value="UNMATCHED">Keep unmatched — no expense created</option>
-                <option value="LINK">Link an existing expense</option>
-                <option value="CREATE" disabled={!!existing?.transaction}>
-                  Create an expense with this receipt
-                </option>
-              </select>
-              {draft.transactionAction === "CREATE" && (
-                <p className="text-sm text-gray-400">
-                  Creates one expense for the receipt total in the selected account. Existing
-                  expenses are checked before saving. The account must use the receipt currency.
-                </p>
+              {!accounts.loading && !accountOptions.length && (
+                <Link href="/finance/settings/accounts" className={secondaryButton}>
+                  Create a payment account
+                </Link>
               )}
-              {draft.transactionAction === "LINK" && (
-                <>
-                  <label className="block space-y-1 text-sm">
-                    Find an expense
-                    <input
-                      aria-label="Find an expense"
-                      className={fieldClass}
-                      maxLength={200}
-                      placeholder="Search transaction descriptions or merchants"
-                      value={transactionSearch}
-                      onChange={(event) => setTransactionSearch(event.target.value)}
-                    />
-                  </label>
-                  <label className="block space-y-1 text-sm">
-                    Transaction date (optional)
-                    <input
-                      aria-label="Find expense date"
-                      type="date"
-                      className={fieldClass}
-                      value={transactionDate}
-                      onChange={(event) => setTransactionDate(event.target.value)}
-                    />
-                  </label>
-                  {transactions.error && (
-                    <FinanceLoadError error={transactions.error} retry={transactions.retry} />
-                  )}
-                  <label className="block space-y-1 text-sm">
-                    Existing expense
-                    <select
-                      aria-label="Existing expense"
-                      required
-                      className={fieldClass}
-                      value={draft.transactionId}
-                      onChange={(event) => patch("transactionId", event.target.value)}
-                    >
-                      <option value="">
-                        Choose an expense with the same account, currency and total
-                      </option>
-                      {draft.transactionId && !selectedTransaction && (
-                        <option value={draft.transactionId}>
-                          {existing?.transaction?.id === Number(draft.transactionId)
-                            ? `${existing.transaction.date} · ${existing.transaction.description}`
-                            : `Selected expense #${draft.transactionId}`}
-                        </option>
-                      )}
-                      {eligible.map((transaction) => (
-                        <option key={transaction.id} value={transaction.id}>
-                          {transaction.date} · {transaction.description} ·{" "}
-                          {displayAmount(transaction.amount, transaction.currency)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {transactions.loading ? (
-                    <p role="status" className="text-sm">
-                      Finding expenses…
-                    </p>
-                  ) : (
-                    <p className="text-sm text-gray-400">
-                      Matching amounts among the most recent 25 search results. Search or filter by
-                      date to find older expenses. Linking adds no financial movement.
-                    </p>
-                  )}
-                  {existing?.transaction && (
-                    <Link
-                      href={`/finance/transactions/${existing.transaction.id}`}
-                      className={secondaryButton}
-                    >
-                      View linked transaction
-                    </Link>
-                  )}
-                </>
+              {!categories.loading && !categoryOptions.length && (
+                <Link href="/finance/settings/categories" className={secondaryButton}>
+                  Create an expense category
+                </Link>
               )}
-            </section>
-            <div className="flex flex-col gap-2 pt-3 sm:flex-row sm:flex-wrap">
-              <button className={primaryButton} type="submit">
-                {busy ? "Saving…" : "Save receipt"}
-              </button>
-              <Link href="/finance/receipts" className={secondaryButton}>
-                Cancel
-              </Link>
-              {existing && (
-                <button
-                  type="button"
-                  className={`${secondaryButton} text-rose-500`}
-                  onClick={() => {
-                    setConfirmation("receipt");
-                    window.scrollTo({ top: 0, behavior: "smooth" });
-                  }}
+              <div className="grid gap-4 sm:grid-cols-2">
+                {(
+                  [
+                    ["subtotal", "Subtotal"],
+                    ["tax", "Tax"],
+                    ["tip", "Tip (optional)"],
+                    ["total", "Total"],
+                  ] as const
+                )
+                  .filter(([key]) => breakdown || key === "total")
+                  .map(([key, label]) => (
+                    <label key={key} className="block space-y-1">
+                      {label}
+                      <input
+                        aria-label={label}
+                        inputMode="decimal"
+                        autoComplete="off"
+                        required={key !== "tip"}
+                        maxLength={20}
+                        className={fieldClass}
+                        value={draft[key]}
+                        onChange={(event) => {
+                          patch(key, event.target.value);
+                          if (key === "total" && !breakdown) patch("subtotal", event.target.value);
+                        }}
+                      />
+                    </label>
+                  ))}
+              </div>
+              {expenseMode && (
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={breakdown}
+                    onChange={(event) => {
+                      setBreakdown(event.target.checked);
+                      if (!event.target.checked)
+                        setDraft((previous) => ({
+                          ...previous,
+                          subtotal: previous.total,
+                          tax: "0",
+                          tip: "0",
+                        }));
+                    }}
+                  />
+                  Add tax / tip breakdown
+                </label>
+              )}
+              {mismatch && (
+                <div
+                  role="alert"
+                  className="space-y-2 rounded-lg bg-amber-500/10 p-3 text-sm text-amber-500"
                 >
-                  Delete receipt
-                </button>
+                  <p>
+                    Subtotal + tax + tip does not equal total. Difference: {difference}{" "}
+                    {draft.currency}.
+                  </p>
+                  <label className="flex items-start gap-2">
+                    <input
+                      type="checkbox"
+                      checked={acknowledge}
+                      onChange={(event) => setAcknowledge(event.target.checked)}
+                      required
+                    />
+                    Keep these amounts despite the difference
+                  </label>
+                </div>
               )}
-            </div>
+            </fieldset>
+            {readOnly && notesTransaction ? (
+              <ActivityNotes inline transaction={notesTransaction} onSaved={() => refresh?.()} />
+            ) : (
+              <label className="block space-y-1">
+                Notes (optional)
+                <textarea
+                  aria-label="Expense notes"
+                  maxLength={2000}
+                  rows={3}
+                  className={fieldClass}
+                  value={draft.notes}
+                  onChange={(event) => patch("notes", event.target.value)}
+                />
+              </label>
+            )}
+            <fieldset disabled={readOnly} className="min-w-0 space-y-4">
+              {!expenseMode && (
+                <section className="space-y-3 border-t border-card-border pt-4">
+                  <h3 className="font-semibold">Associated transaction</h3>
+                  <select
+                    aria-label="Associated transaction"
+                    className={fieldClass}
+                    value={draft.transactionAction}
+                    onChange={(event) => patch("transactionAction", event.target.value)}
+                  >
+                    <option value="UNMATCHED">Keep unmatched — no expense created</option>
+                    <option value="LINK">Link an existing expense</option>
+                    <option value="CREATE" disabled={!!existing?.transaction}>
+                      Create an expense with this receipt
+                    </option>
+                  </select>
+                  {draft.transactionAction === "CREATE" && (
+                    <p className="text-sm text-gray-400">
+                      Creates one expense for the receipt total in the selected account. Existing
+                      expenses are checked before saving. The account must use the receipt currency.
+                    </p>
+                  )}
+                  {draft.transactionAction === "LINK" && (
+                    <>
+                      <label className="block space-y-1 text-sm">
+                        Find an expense
+                        <input
+                          aria-label="Find an expense"
+                          className={fieldClass}
+                          maxLength={200}
+                          placeholder="Search transaction descriptions or merchants"
+                          value={transactionSearch}
+                          onChange={(event) => setTransactionSearch(event.target.value)}
+                        />
+                      </label>
+                      <label className="block space-y-1 text-sm">
+                        Transaction date (optional)
+                        <input
+                          aria-label="Find expense date"
+                          type="date"
+                          className={fieldClass}
+                          value={transactionDate}
+                          onChange={(event) => setTransactionDate(event.target.value)}
+                        />
+                      </label>
+                      {transactions.error && (
+                        <FinanceLoadError error={transactions.error} retry={transactions.retry} />
+                      )}
+                      <label className="block space-y-1 text-sm">
+                        Existing expense
+                        <select
+                          aria-label="Existing expense"
+                          required
+                          className={fieldClass}
+                          value={draft.transactionId}
+                          onChange={(event) => patch("transactionId", event.target.value)}
+                        >
+                          <option value="">
+                            Choose an expense with the same account, currency and total
+                          </option>
+                          {draft.transactionId && !selectedTransaction && (
+                            <option value={draft.transactionId}>
+                              {existing?.transaction?.id === Number(draft.transactionId)
+                                ? `${existing.transaction.date} · ${existing.transaction.description}`
+                                : `Selected expense #${draft.transactionId}`}
+                            </option>
+                          )}
+                          {eligible.map((transaction) => (
+                            <option key={transaction.id} value={transaction.id}>
+                              {transaction.date} · {transaction.description} ·{" "}
+                              {displayAmount(transaction.amount, transaction.currency)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {transactions.loading ? (
+                        <p role="status" className="text-sm">
+                          Finding expenses…
+                        </p>
+                      ) : (
+                        <p className="text-sm text-gray-400">
+                          Matching amounts among the most recent 25 search results. Search or filter
+                          by date to find older expenses. Linking adds no financial movement.
+                        </p>
+                      )}
+                      {existing?.transaction && (
+                        <Link
+                          href={`/finance/transactions/${existing.transaction.id}`}
+                          className={secondaryButton}
+                        >
+                          View linked transaction
+                        </Link>
+                      )}
+                    </>
+                  )}
+                </section>
+              )}
+              <div className="flex flex-col gap-2 pt-3 sm:flex-row sm:flex-wrap">
+                <button className={primaryButton} type="submit" hidden={readOnly}>
+                  {busy ? "Saving…" : expenseMode ? "Save expense" : "Save receipt"}
+                </button>
+                <Link href="/finance/expenses" className={secondaryButton}>
+                  Cancel
+                </Link>
+                {existing && !expenseMode && (
+                  <button
+                    type="button"
+                    className={`${secondaryButton} text-rose-500`}
+                    onClick={() => {
+                      setConfirmation("receipt");
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                  >
+                    Delete receipt
+                  </button>
+                )}
+              </div>
+            </fieldset>
           </section>
-          <FinanceDocumentPanel
-            document={existing?.document ?? null}
-            baseUrl={`/api/finance/receipts/${existing?.id}/document`}
-            title="Receipt"
-            file={file}
-            onFile={setFile}
-            onDelete={() => {
-              setConfirmation("document");
-              window.scrollTo({ top: 0, behavior: "smooth" });
-            }}
-          />
+          <fieldset disabled={readOnly} className="min-w-0">
+            <FinanceDocumentPanel
+              document={existing?.document ?? null}
+              baseUrl={`/api/finance/receipts/${existing?.id}/document`}
+              title="Receipt"
+              file={file}
+              onFile={setFile}
+              onDelete={() => {
+                setConfirmation("document");
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+            />
+          </fieldset>
         </fieldset>
       </form>
     </div>

@@ -1,4 +1,13 @@
 "use client";
+import {
+  CalendarDaysIcon,
+  ArrowPathIcon,
+  PencilSquareIcon,
+  CheckCircleIcon,
+  XCircleIcon,
+  ArchiveBoxIcon,
+  ArrowUturnLeftIcon,
+} from "@heroicons/react/24/outline";
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { createWorkWriter, workRead } from "@/lib/work-management/client";
@@ -11,10 +20,30 @@ import AllWork from "@/components/work/AllWork";
 import TaskTimeline from "@/components/work/TaskTimeline";
 import TaskAttachments from "@/components/work/TaskAttachments";
 import { useWorkDraftGuard } from "@/components/work/useWorkDraftGuard";
+import ProjectSchedule from "./ProjectSchedule";
 import ProjectEditor from "./ProjectEditor";
 import ProjectStages from "./ProjectStages";
 import ProjectMilestones from "./ProjectMilestones";
-const button = "rounded-lg border border-card-border px-3 py-2 text-sm disabled:opacity-50";
+const button =
+  "inline-flex items-center justify-center gap-2 rounded-lg border border-card-border px-3 py-2 text-sm disabled:opacity-50";
+const actionStyle: Record<string, string> = {
+  complete: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  cancel: "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400",
+  archive: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  reopen: "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  restore: "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+};
+function ActionIcon({ action }: { action: string }) {
+  const Icon =
+    action === "complete"
+      ? CheckCircleIcon
+      : action === "cancel"
+        ? XCircleIcon
+        : action === "archive"
+          ? ArchiveBoxIcon
+          : ArrowUturnLeftIcon;
+  return <Icon className="h-4 w-4" />;
+}
 type Review = {
   project: WorkProject;
   counts: WorkProject["counts"];
@@ -117,14 +146,6 @@ export default function ProjectWorkspace({ id }: { id: number }) {
   return (
     <div className="min-w-0 space-y-5 pb-8 pt-12 md:pt-2">
       <header className="space-y-3">
-        <div className="flex flex-wrap gap-2">
-          <Link href={`/events?project=${id}`} className={button}>
-            Project calendar
-          </Link>
-          <Link href="/todos" className={button}>
-            Find tasks to assign
-          </Link>
-        </div>
         <Link href="/projects" className={button}>
           ← Projects
         </Link>
@@ -136,7 +157,14 @@ export default function ProjectWorkspace({ id }: { id: number }) {
             </p>
             <h1 className="break-words text-2xl font-bold">{project.name}</h1>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="ml-auto flex max-w-full flex-wrap justify-end gap-2">
+            <Link
+              href={`/events?project=${id}`}
+              className={`${button} border-violet-500/30 bg-violet-500/10 text-violet-600 dark:text-violet-400`}
+            >
+              <CalendarDaysIcon className="h-4 w-4" />
+              Project calendar
+            </Link>
             <button
               type="button"
               disabled={busy || supportBusy || editing}
@@ -146,8 +174,9 @@ export default function ProjectWorkspace({ id }: { id: number }) {
                   void load();
                 }
               }}
-              className={button}
+              className={`${button} bg-slate-500/10`}
             >
+              <ArrowPathIcon className="h-4 w-4" />
               Reload project
             </button>
             {!project.archivedAt && (
@@ -155,8 +184,9 @@ export default function ProjectWorkspace({ id }: { id: number }) {
                 type="button"
                 disabled={busy || supportBusy || editing}
                 onClick={() => setEditing(true)}
-                className={button}
+                className={`${button} border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400`}
               >
+                <PencilSquareIcon className="h-4 w-4" />
                 Edit project
               </button>
             )}
@@ -196,8 +226,9 @@ export default function ProjectWorkspace({ id }: { id: number }) {
                     }
                   })
                 }
-                className={button}
+                className={`${button} ${actionStyle[action]}`}
               >
+                <ActionIcon action={action} />
                 {action === "complete"
                   ? "Complete project"
                   : action === "cancel"
@@ -231,6 +262,7 @@ export default function ProjectWorkspace({ id }: { id: number }) {
           aria-label="Project summary"
           className="space-y-4 rounded-xl border border-card-border bg-card-bg p-5"
         >
+          <ProjectSchedule project={project} />
           <div className="grid gap-5 lg:grid-cols-2">
             <div>
               <h2 className="font-semibold">Objective</h2>
@@ -245,9 +277,7 @@ export default function ProjectWorkspace({ id }: { id: number }) {
               </p>
             </div>
           </div>
-          <p className="text-sm text-gray-400">
-            Start: {project.startDate || "Not set"} · Target: {project.targetDate || "Not set"}
-          </p>
+
           <div className="flex flex-wrap gap-x-6 gap-y-2">
             <strong>
               {project.counts.completed}/{project.counts.total} tasks completed
@@ -256,11 +286,7 @@ export default function ProjectWorkspace({ id }: { id: number }) {
             <span>{project.counts.cancelled} cancelled</span>
             <span>{project.counts.archived} archived</span>
           </div>
-          <p className="text-xs text-gray-500">
-            Counts include direct project tasks that are not archived or Cancelled. Done counts as
-            completed. Child tasks count separately only when explicitly assigned to this project.
-            This is a task count, not effort progress.
-          </p>
+
           {project.completionSummary && (
             <p className="whitespace-pre-wrap break-words text-sm">
               Closure summary: {project.completionSummary}
@@ -300,8 +326,8 @@ export default function ProjectWorkspace({ id }: { id: number }) {
           <AllWork
             projectId={id}
             refreshSignal={taskRefresh}
-            projectContextId={project.contextId}
             projectStages={project.stages}
+            projectActivityType={project.activityType}
             basePath={`/projects/${id}`}
             onTasksChanged={() => {
               void load();
@@ -325,7 +351,7 @@ export default function ProjectWorkspace({ id }: { id: number }) {
           </h2>
           <p>{review.openTaskCount} unfinished tasks, including archived work, will stay open.</p>
           <p className="text-sm text-gray-400">
-            No task, child task, reward, calendar event or work session will be changed.
+            No task, child task, calendar event or work session will be changed.
           </p>
           <Link
             href={`/todos?project=${id}&view=active`}

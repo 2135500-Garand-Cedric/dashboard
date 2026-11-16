@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSettings } from "@/context/SettingsContext";
+import { localToday } from "@/lib/work-management/date-format";
+import { useCallback, useEffect, useState } from "react";
 import { CheckCircleIcon, ClockIcon, FireIcon, StarIcon } from "@heroicons/react/24/solid";
 
 type Quest = {
@@ -20,44 +22,37 @@ export default function QuestTile({
   setUserXp: (xp: number) => void;
   setUserCoins: (coins: number) => void;
 }) {
+  const { timeZone } = useSettings();
   const [quests, setQuests] = useState<Quest[]>([]);
   const [showWeekly, setShowWeekly] = useState(false);
 
+  const resetQuestsIfNeeded = useCallback(
+    (quests: Quest[]) => {
+      const today = localToday(new Date(), timeZone);
+      const sunday = new Date(`${today}T12:00:00Z`);
+      sunday.setUTCDate(sunday.getUTCDate() - sunday.getUTCDay());
+      const weekStart = sunday.toISOString().slice(0, 10);
+      return quests.map((quest) =>
+        quest.lastCompleted &&
+        localToday(new Date(quest.lastCompleted), timeZone) <
+          (quest.type === "daily" ? today : weekStart)
+          ? { ...quest, completed: false }
+          : quest,
+      );
+    },
+    [timeZone],
+  );
   useEffect(() => {
-    const fetchQuests = async () => {
-      const res = await fetch("/api/users/quests");
-      const data: Quest[] = await res.json();
-      setQuests(resetQuestsIfNeeded(data));
+    let active = true;
+    void fetch("/api/users/quests")
+      .then((response) => response.json())
+      .then((data: Quest[]) => {
+        if (active) setQuests(resetQuestsIfNeeded(data));
+      });
+    return () => {
+      active = false;
     };
-    fetchQuests();
-  }, []);
-
-  const resetQuestsIfNeeded = (quests: Quest[]) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const lastSunday = new Date();
-    lastSunday.setDate(today.getDate() - today.getDay());
-    lastSunday.setHours(0, 0, 0, 0);
-
-    return quests.map((q) => {
-      if (
-        q.type === "daily" &&
-        q.lastCompleted &&
-        new Date(q.lastCompleted).getTime() < today.getTime()
-      ) {
-        return { ...q, completed: false };
-      }
-      if (
-        q.type === "weekly" &&
-        q.lastCompleted &&
-        new Date(q.lastCompleted).getTime() < lastSunday.getTime()
-      ) {
-        return { ...q, completed: false };
-      }
-      return q;
-    });
-  };
+  }, [resetQuestsIfNeeded]);
 
   const toggleQuest = async (quest: Quest) => {
     const updatedCompleted = !quest.completed;
@@ -100,12 +95,14 @@ export default function QuestTile({
 
   // 🔹 Compute next weekly reset date (next Sunday)
   const nextSunday = (() => {
-    const d = new Date();
-    const day = d.getDay();
-    const diff = 7 - day; // days until Sunday
-    d.setDate(d.getDate() + diff);
-    d.setHours(0, 0, 0, 0);
-    return d.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+    const d = new Date(`${localToday(new Date(), timeZone)}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + 7 - d.getUTCDay());
+    return d.toLocaleDateString(undefined, {
+      timeZone: "UTC",
+      weekday: "long",
+      month: "short",
+      day: "numeric",
+    });
   })();
 
   return (

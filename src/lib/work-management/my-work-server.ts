@@ -1,5 +1,6 @@
+import { readSnapshot } from "./read-snapshot";
 import { prisma } from "@/lib/prisma";
-import { APP_TIME_ZONE } from "@/lib/app-time-zone";
+import { getAppTimeZone } from "@/lib/time-zone-context";
 import { parseWorkQuery, workQueryWhere, workQueryOrder } from "./query";
 import { PLANNING_SECTIONS, planningWhere, planningWindow } from "./planning-rules";
 import { localToday, calendarDate } from "./dates";
@@ -16,24 +17,21 @@ import { appendTaskActivity } from "./activity-server";
 import { isClosed } from "./types";
 import { workBody, workId, WorkValidationError, type WorkCommand } from "./validation";
 export async function readFocus(id: number, now = new Date()) {
-  const date = localToday(now, APP_TIME_ZONE);
-  return prisma.$transaction(
-    async (db) => {
-      const task = await todoRow(db, id),
-        pin = await db.workFocus.findUnique({
-          where: { userId_todoId_date: { userId: WORK_USER_ID, todoId: id, date } },
-        });
-      return {
-        date,
-        nextDayAt: planningWindow(date, APP_TIME_ZONE).end.toISOString(),
-        timeZone: APP_TIME_ZONE,
-        active: pin?.active ?? false,
-        actionable: !task.archivedAt && !isClosed(task.status),
-        taskRevision: task.revision,
-      };
-    },
-    { isolationLevel: "RepeatableRead" },
-  );
+  const date = localToday(now, getAppTimeZone());
+  return readSnapshot(prisma, async (db) => {
+    const task = await todoRow(db, id),
+      pin = await db.workFocus.findUnique({
+        where: { userId_todoId_date: { userId: WORK_USER_ID, todoId: id, date } },
+      });
+    return {
+      date,
+      nextDayAt: planningWindow(date, getAppTimeZone()).end.toISOString(),
+      timeZone: getAppTimeZone(),
+      active: pin?.active ?? false,
+      actionable: !task.archivedAt && !isClosed(task.status),
+      taskRevision: task.revision,
+    };
+  });
 }
 export async function setFocus(
   id: number,
@@ -49,7 +47,7 @@ export async function setFocus(
   return mutation(`todo:${id}:focus`, body, command, async (db) => {
     const task = await todoRow(db, id);
     version(task, command);
-    if (date !== localToday(typeof now === "function" ? now() : now, APP_TIME_ZONE))
+    if (date !== localToday(typeof now === "function" ? now() : now, getAppTimeZone()))
       throw new WorkValidationError(
         "The planning day changed. Reload before changing today's focus.",
         409,
@@ -80,12 +78,12 @@ export async function setFocus(
 export async function myWork(params: URLSearchParams, now = new Date()) {
   // Only organizational filters are accepted; callers cannot change section semantics.
   for (const key of params.keys())
-    if (!["context", "company", "course", "project", "sessionPage"].includes(key))
+    if (!["activityType", "context", "project", "sessionPage"].includes(key))
       throw new WorkValidationError("Choose valid My Work filters.");
   const query = parseWorkQuery(params),
     base = workQueryWhere(query, WORK_USER_ID, now),
-    date = localToday(now, APP_TIME_ZONE),
-    window = planningWindow(date, APP_TIME_ZONE),
+    date = localToday(now, getAppTimeZone()),
+    window = planningWindow(date, getAppTimeZone()),
     pageSize = 6;
   return prisma.$transaction(
     async (db) => {
@@ -97,7 +95,9 @@ export async function myWork(params: URLSearchParams, now = new Date()) {
         }
       > = {};
       for (const name of PLANNING_SECTIONS) {
-        const where = { AND: [base, planningWhere(name, date, APP_TIME_ZONE, now, WORK_USER_ID)] };
+        const where = {
+          AND: [base, planningWhere(name, date, getAppTimeZone(), now, WORK_USER_ID)],
+        };
         const total = await db.todo.count({ where });
         const rows = await serializeTodos(
           db,
@@ -162,7 +162,7 @@ export async function myWork(params: URLSearchParams, now = new Date()) {
       });
       return {
         date,
-        timeZone: APP_TIME_ZONE,
+        timeZone: getAppTimeZone(),
         generatedAt: now.toISOString(),
         nextDayAt: window.end.toISOString(),
         totalActive: await db.todo.count({ where: base }),

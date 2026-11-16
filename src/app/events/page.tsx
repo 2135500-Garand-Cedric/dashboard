@@ -1,4 +1,8 @@
 "use client";
+import { useDateTime } from "@/context/SettingsContext";
+import FilterPanel from "@/components/shared/FilterPanel";
+import { useViewState } from "@/context/ViewStateContext";
+import { useSettings } from "@/context/SettingsContext";
 import Link from "next/link";
 import ProjectPicker from "@/components/projects/ProjectPicker";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -10,11 +14,14 @@ import luxonPlugin from "@fullcalendar/luxon3";
 import type { DatesSetArg, EventDropArg } from "@fullcalendar/core";
 import type { EventResizeDoneArg } from "@fullcalendar/interaction";
 import { createWorkWriter, workRead } from "@/lib/work-management/client";
-import { describeWorkDate, localParts, localToday } from "@/lib/work-management/date-format";
+import { localParts, localToday } from "@/lib/work-management/date-format";
 import { eventTiming, type CalendarFeed } from "@/lib/work-management/calendar-types";
-import type { WorkContext, WorkTodo } from "@/lib/work-management/types";
+import type { WorkActivityType, WorkTodo } from "@/lib/work-management/types";
 import { useMemory } from "@/context/MemoryContext";
+import TaskModal from "@/components/shared/TaskModal";
 import EventForm from "@/components/calendar/EventForm";
+import CalendarAgenda from "@/components/calendar/CalendarAgenda";
+import { calendarAppearance, calendarItemTiming } from "@/lib/work-management/calendar-display";
 import ActivityTypeSettings from "@/components/calendar/ActivityTypeSettings";
 const button =
   "scroll-mt-24 rounded-lg border border-card-border px-3 py-2 text-sm disabled:opacity-50";
@@ -23,14 +30,18 @@ const allLayers = [
   ["sessions", "▣ Work sessions"],
   ["deadlines", "⚑ Deadlines"],
   ["followups", "↻ Follow-ups"],
-  ["keydates", "◇ Key dates"],
+  ["milestones", "◇ Project milestones"],
 ];
+const defaultLayers = allLayers.map(([key]) => key);
 type Move = { id: number; revision: number; title: string; date: string; endDate: string };
 export default function EventsPage() {
+  const { describeWorkDate } = useDateTime();
+  const { timeZone } = useSettings();
   const { pageRouter, get, set } = useMemory(),
     calendar = useRef<FullCalendar>(null),
     writer = useRef(createWorkWriter()),
-    dialog = useRef<HTMLDialogElement>(null);
+    dialog = useRef<HTMLDialogElement>(null),
+    eventEditor = useRef<HTMLDivElement>(null);
   const [range, setRange] = useState(() => {
     const now = new Date(),
       start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) - 7 * 86400000),
@@ -38,27 +49,29 @@ export default function EventsPage() {
     return { start: start.toISOString(), end: end.toISOString() };
   });
   const [data, setData] = useState<CalendarFeed | null>(null),
-    [contexts, setContexts] = useState<WorkContext[]>([]),
-    [layers, setLayers] = useState(allLayers.map(([key]) => key)),
-    [context, setContext] = useState(""),
-    [project, setProject] = useState(""),
-    [history, setHistory] = useState(false),
+    [activityTypes, setActivityTypes] = useState<WorkActivityType[]>([]),
+    [layers, setLayers] = useViewState<string[]>("calendar:layers", defaultLayers),
+    [activityType, setActivityType] = useViewState("calendar:activityType", ""),
+    [project, setProject] = useViewState("calendar:project", ""),
+    [history, setHistory] = useViewState("calendar:history", false),
     [page, setPage] = useState(1),
     [refresh, setRefresh] = useState(0),
     [error, setError] = useState("");
-  const [view, setView] = useState("dayGridMonth"),
+  const [view, setView] = useViewState("calendar:view", "dayGridMonth"),
     [title, setTitle] = useState("Calendar"),
     [creating, setCreating] = useState(false),
+    [eventSaving, setEventSaving] = useState(false),
     [initialTask, setInitialTask] = useState<WorkTodo | null>(null),
     [settings, setSettings] = useState(false),
     [move, setMove] = useState<Move | null>(null),
     [moveError, setMoveError] = useState(""),
     [saving, setSaving] = useState(false);
-  const feedZone = useRef("America/Toronto");
+  const [savedDate, setSavedDate] = useViewState("calendar:date", "");
+  const feedZone = useRef(timeZone);
   if (data) feedZone.current = data.timeZone;
   useEffect(() => {
-    void workRead<WorkContext[]>("/api/work-contexts")
-      .then(setContexts)
+    void workRead<WorkActivityType[]>("/api/activity-types")
+      .then(setActivityTypes)
       .catch((e) => setError(e.message));
     const query = new URLSearchParams(window.location.search);
     if (query.has("project")) setProject(query.get("project") || "");
@@ -70,14 +83,14 @@ export default function EventsPage() {
         })
         .catch((e) => setError(e.message));
     }
-  }, []);
+  }, [setProject]);
   useEffect(() => {
     let active = true;
     setError("");
     const query = new URLSearchParams({
       ...range,
       layers: layers.join(","),
-      context,
+      activityType,
       project,
       history: String(history),
       tbdPage: String(page),
@@ -92,7 +105,7 @@ export default function EventsPage() {
     return () => {
       active = false;
     };
-  }, [range, layers, context, project, history, page, refresh]);
+  }, [range, layers, activityType, project, history, page, refresh, timeZone]);
   const datesSet = useCallback(
     (info: DatesSetArg) => {
       setRange((previous) =>
@@ -103,10 +116,11 @@ export default function EventsPage() {
       setTitle(info.view.title);
       setView(info.view.type);
       const local = localParts(info.view.currentStart, feedZone.current);
+      setSavedDate(local.slice(0, 10));
       set("calendar_currentMonth", Number(local.slice(5, 7)));
       set("calendar_currentYear", Number(local.slice(0, 4)));
     },
-    [set],
+    [set, setSavedDate, setView],
   );
   function proposeMove(info: EventDropArg | EventResizeDoneArg) {
     const props = info.event.extendedProps;
@@ -128,16 +142,13 @@ export default function EventsPage() {
   useEffect(() => {
     if (move) dialog.current?.showModal();
   }, [move]);
-  const today = data
-      ? localToday(new Date(), data.timeZone)
-      : new Date().toISOString().slice(0, 10),
+  const today = data ? localToday(new Date(), data.timeZone) : localToday(new Date(), timeZone),
     initialDate = `${get("calendar_currentYear", Number(today.slice(0, 4)))}-${String(get("calendar_currentMonth", Number(today.slice(5, 7)))).padStart(2, "0")}-01`;
   return (
     <div className="calendar-page min-w-0 space-y-5 pb-8 pt-12 md:pt-2">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Calendar</h1>
-          <p className="text-sm text-gray-500">{data?.timeZone ?? "Loading timezone…"}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => setSettings(true)} className={button}>
@@ -157,72 +168,96 @@ export default function EventsPage() {
           )}
         </div>
       </header>
-      <section
-        aria-label="Calendar layers and context"
-        className="space-y-4 rounded-xl border border-card-border bg-card-bg p-4"
+      <FilterPanel
+        name="calendar"
+        actions={
+          <button
+            type="button"
+            className={button}
+            onClick={() => {
+              setLayers(defaultLayers);
+              setActivityType("");
+              setProject("");
+              setHistory(false);
+              setPage(1);
+              window.history.replaceState(null, "", "/events");
+            }}
+          >
+            Clear filters
+          </button>
+        }
       >
-        <div className="flex flex-wrap gap-x-5 gap-y-3">
-          {allLayers.map(([key, label]) => (
-            <label key={key} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                aria-label={label}
-                checked={layers.includes(key)}
-                onChange={(e) => {
-                  setLayers(
-                    e.target.checked ? [...layers, key] : layers.filter((item) => item !== key),
-                  );
+        <section
+          aria-label="Calendar layers and activity type"
+          className="space-y-4 rounded-xl border border-card-border bg-card-bg p-4"
+        >
+          <div className="flex flex-wrap gap-x-5 gap-y-3">
+            {allLayers.map(([key, label]) => (
+              <label key={key} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  aria-label={label}
+                  checked={layers.includes(key)}
+                  onChange={(e) => {
+                    setLayers(
+                      e.target.checked ? [...layers, key] : layers.filter((item) => item !== key),
+                    );
+                    setPage(1);
+                  }}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="w-full max-w-sm">
+              <ProjectPicker
+                label="Calendar project"
+                value={project}
+                onChange={(value) => {
+                  setProject(value);
                   setPage(1);
                 }}
               />
-              {label}
+            </div>
+            <label className="text-sm">
+              Activity type
+              <select
+                aria-label="Calendar activity type"
+                value={activityType}
+                onChange={(e) => {
+                  setActivityType(e.target.value);
+                  setPage(1);
+                }}
+                className="ml-2 max-w-full rounded border border-card-border bg-card-bg p-2"
+              >
+                <option value="">All activity types</option>
+                <option value="none">No activity type</option>
+                {activityTypes.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
             </label>
-          ))}
-        </div>
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="w-full max-w-sm">
-            <ProjectPicker
-              label="Calendar project"
-              value={project}
-              onChange={(value) => {
-                setProject(value);
-                setPage(1);
-              }}
-            />
-          </div>
-          <label className="text-sm">
-            Context
-            <select
-              aria-label="Calendar context"
-              value={context}
-              onChange={(e) => {
-                setContext(e.target.value);
-                setPage(1);
-              }}
-              className="ml-2 max-w-full rounded border border-card-border bg-card-bg p-2"
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={history}
+                onChange={(e) => setHistory(e.target.checked)}
+              />
+              Show closed task/project date history
+            </label>
+            <button
+              type="button"
+              onClick={() => setRefresh((value) => value + 1)}
+              className={button}
             >
-              <option value="">All contexts</option>
-              <option value="none">Unclassified / unlinked</option>
-              {contexts.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={history}
-              onChange={(e) => setHistory(e.target.checked)}
-            />
-            Show closed task/project date history
-          </label>
-          <button type="button" onClick={() => setRefresh((value) => value + 1)} className={button}>
-            Refresh calendar
-          </button>
-        </div>
-      </section>
+              Refresh calendar
+            </button>
+          </div>
+        </section>
+      </FilterPanel>
       {error && (
         <p role="alert" className="rounded-lg border border-rose-500/30 p-3 text-rose-500">
           {error}
@@ -282,8 +317,8 @@ export default function EventsPage() {
               <FullCalendar
                 ref={calendar}
                 plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, luxonPlugin]}
-                initialDate={initialDate}
-                initialView="dayGridMonth"
+                initialDate={savedDate || initialDate}
+                initialView={view}
                 timeZone={data.timeZone}
                 headerToolbar={false}
                 events={data.items}
@@ -306,102 +341,68 @@ export default function EventsPage() {
                   if (typeof href === "string" && /^\/(todos|events|projects)\//.test(href))
                     pageRouter("/events", href);
                 }}
-                eventContent={(info) => (
-                  <span
-                    className="block min-w-0 max-w-full truncate text-xs"
-                    title={info.event.title}
-                  >
-                    {info.event.extendedProps.completed ? "✓ " : ""}
-                    {view !== "dayGridMonth" && info.timeText ? `${info.timeText} · ` : ""}
-                    {info.event.title}
-                  </span>
-                )}
+                eventContent={(info) => {
+                  const style = calendarAppearance(info.event);
+                  return (
+                    <span
+                      className="block min-w-0 max-w-full truncate text-xs"
+                      ref={(node) => {
+                        // FullCalendar list markers put their border color on
+                        // the inner dot. Keep the outer accent in sync on edits.
+                        node
+                          ?.closest<HTMLElement>(".fc-event")
+                          ?.style.setProperty("border-left-color", style.color, "important");
+                      }}
+                    >
+                      {info.event.extendedProps.completed ? "✓ " : ""}
+                      {style.historical ? "History · " : ""}
+                      {style.symbol}{" "}
+                      {view !== "dayGridMonth" && info.timeText ? `${info.timeText} · ` : ""}
+                      {style.title}
+                    </span>
+                  );
+                }}
                 eventDidMount={(info) => {
-                  info.el.title = info.event.title;
-                  info.el.setAttribute("aria-label", info.event.title);
+                  const item = data.items.find((item) => item.id === info.event.id);
+                  const style = calendarAppearance(info.event);
+                  const label = `${style.label} · ${style.title}${item ? ` · ${calendarItemTiming(item, data.timeZone)}` : ""}`;
+                  info.el.style.setProperty("border-left-color", style.color, "important");
+                  info.el.title = label;
+                  info.el.setAttribute("aria-label", label);
                 }}
               />
             </div>
           )}
-        </div>
-        <aside className="min-w-0 space-y-5">
-          {creating && data ? (
-            <EventForm
-              key={initialTask?.id ?? "new"}
-              timeZone={data.timeZone}
-              initialTask={initialTask}
-              onSaved={() => {
-                setCreating(false);
-                setInitialTask(null);
-                setRefresh((value) => value + 1);
-              }}
-              onCancel={() => setCreating(false)}
-            />
-          ) : null}
-          <section className="space-y-3 rounded-xl border border-card-border bg-card-bg p-4">
-            <h2 className="font-medium">In this calendar range</h2>
-            <ul className="max-h-[500px] space-y-3 overflow-y-auto">
-              {data?.items.slice(0, 40).map((item) => (
-                <li key={item.id} className="min-w-0 rounded-lg border border-card-border p-3">
-                  <Link
-                    href={item.extendedProps.href}
-                    className="block break-words text-sm text-blue-400"
-                  >
-                    {item.title}
-                  </Link>
-                  <p className="mt-1 break-words text-xs text-gray-500">
-                    {item.allDay
-                      ? `${item.start} · calendar date`
-                      : describeWorkDate({ date: null, at: item.start, timeZone: data.timeZone })}
-                  </p>
-                  {item.extendedProps.eventId && (
-                    <button
-                      type="button"
-                      disabled={saving}
-                      onClick={async () => {
-                        setSaving(true);
-                        try {
-                          await writer.current(
-                            `/api/events/${item.extendedProps.eventId}`,
-                            "PATCH",
-                            { completed: !item.extendedProps.completed },
-                            item.extendedProps.revision,
-                          );
-                          setRefresh((value) => value + 1);
-                        } catch (e) {
-                          setError(e instanceof Error ? e.message : "Unable to save completion.");
-                        } finally {
-                          setSaving(false);
-                        }
-                      }}
-                      className={`${button} mt-2`}
-                    >
-                      {item.extendedProps.completed ? "Mark incomplete" : "Mark completed"}
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-            {data?.items.length === 0 && (
-              <p className="text-sm text-gray-500">
-                No items match these layers, context, project and range.
-              </p>
-            )}
-            {!!data && data.items.length > 40 && (
-              <p className="text-xs text-gray-500">
-                First 40 listed; all matching items appear on the calendar.
-              </p>
-            )}
-          </section>
-          <section className="space-y-3 rounded-xl border border-card-border bg-card-bg p-4">
-            <h2 className="font-medium">TBD events ({data?.tbdTotal ?? 0})</h2>
+          <details className="space-y-3 rounded-xl border border-card-border bg-card-bg p-4">
+            <summary className="cursor-pointer font-medium">
+              Unscheduled events ({data?.tbdTotal ?? 0})
+            </summary>
             <ul className="space-y-3">
               {data?.tbd.map((event) => (
                 <li key={event.id}>
-                  <Link href={`/events/${event.id}`} className="break-words text-sm text-blue-400">
-                    ○ {event.title}
+                  <Link
+                    href={`/events/${event.id}`}
+                    className="block space-y-1 rounded-lg border border-card-border border-l-4 p-3 transition-colors hover:bg-white/5"
+                    style={{ borderLeftColor: event.activityColor ?? "#3b82f6" }}
+                  >
+                    <span
+                      className="flex items-center gap-2 text-xs"
+                      style={{ color: event.activityColor ?? "#3b82f6" }}
+                    >
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full bg-current"
+                        aria-hidden="true"
+                      />
+                      {event.activityLabel || event.type || "Event"}
+                    </span>
+                    <span
+                      className={`block break-words text-sm font-medium ${event.completed ? "line-through opacity-60" : ""}`}
+                    >
+                      {event.completed ? "✓ " : ""}
+                      {event.title}
+                    </span>
+                    <span className="block text-xs text-gray-500">{eventTiming(event)}</span>
                   </Link>
-                  <p className="text-xs text-gray-500">{eventTiming(event)}</p>
                 </li>
               ))}
             </ul>
@@ -423,9 +424,58 @@ export default function EventsPage() {
                 Next TBD
               </button>
             </div>
-          </section>
+          </details>
+        </div>
+        <aside className="min-w-0 space-y-5">
+          <CalendarAgenda
+            items={data?.items ?? null}
+            timeZone={data?.timeZone || timeZone}
+            saving={saving}
+            onToggleCompleted={async (item) => {
+              setSaving(true);
+              try {
+                await writer.current(
+                  `/api/events/${item.extendedProps.eventId}`,
+                  "PATCH",
+                  { completed: !item.extendedProps.completed },
+                  item.extendedProps.revision,
+                );
+                setRefresh((value) => value + 1);
+              } catch (error) {
+                setError(error instanceof Error ? error.message : "Unable to save completion.");
+              } finally {
+                setSaving(false);
+              }
+            }}
+          />
         </aside>
       </div>
+      <TaskModal
+        open={creating && !!data}
+        title="New event or work session"
+        busy={eventSaving}
+        onClose={() =>
+          eventEditor.current?.querySelector<HTMLButtonElement>("[data-event-cancel]")?.click()
+        }
+      >
+        <div ref={eventEditor}>
+          {creating && data ? (
+            <EventForm
+              key={initialTask?.id ?? "new"}
+              embedded
+              onBusyChange={setEventSaving}
+              timeZone={data.timeZone}
+              initialTask={initialTask}
+              onSaved={() => {
+                setCreating(false);
+                setInitialTask(null);
+                setRefresh((value) => value + 1);
+              }}
+              onCancel={() => setCreating(false)}
+            />
+          ) : null}
+        </div>
+      </TaskModal>
       {settings && (
         <ActivityTypeSettings
           onClose={() => setSettings(false)}

@@ -38,18 +38,19 @@ export interface IncomeInput {
   date: string;
   periodStart: string | null;
   periodEnd: string | null;
-  accountId: number | null;
-  categoryId: number;
+  accountId: number;
+  categoryId: null;
   currency: string;
   grossAmount: string | null;
   netAmount: string;
   deductions: { typeId: number; amount: string }[];
   notes: string | null;
-  transactionAction: "UNMATCHED" | "LINK" | "CREATE";
+  transactionAction: "LINK" | "CREATE";
   transactionId: number | null;
   requestKey: string | null;
   expectedUpdatedAt: string | null;
   acknowledgeMismatch: boolean;
+  syncMovement?: boolean;
 }
 export interface FinanceIncome {
   id: number;
@@ -150,7 +151,6 @@ export function incomeInput(value: unknown, editing = false): IncomeInput {
     "periodStart",
     "periodEnd",
     "accountId",
-    "categoryId",
     "currency",
     "grossAmount",
     "netAmount",
@@ -159,6 +159,7 @@ export function incomeInput(value: unknown, editing = false): IncomeInput {
     "transactionAction",
     "transactionId",
     "acknowledgeMismatch",
+    "syncMovement",
     editing ? "expectedUpdatedAt" : "requestKey",
   ]);
   if (typeof body.currency !== "string" || !CURRENCIES.includes(body.currency))
@@ -185,18 +186,16 @@ export function incomeInput(value: unknown, editing = false): IncomeInput {
     throw new FinanceValidationError(
       "Each deduction type can appear only once. Add another type for a separate deduction.",
     );
-  if (
-    typeof body.transactionAction !== "string" ||
-    !["UNMATCHED", "LINK", "CREATE"].includes(body.transactionAction)
-  )
-    throw new FinanceValidationError("Choose how to handle the deposit.");
-  if (body.transactionAction !== "LINK" && body.transactionId != null)
+  const transactionAction = body.transactionAction ?? "CREATE";
+  if (transactionAction !== "LINK" && transactionAction !== "CREATE")
+    throw new FinanceValidationError("Income must be linked to a deposit for its net amount.");
+  if (transactionAction !== "LINK" && body.transactionId != null)
     throw new FinanceValidationError("Only linking uses an existing deposit ID.");
-  const accountId = body.accountId == null ? null : id(body.accountId);
-  if (body.transactionAction !== "UNMATCHED" && accountId === null)
-    throw new FinanceValidationError(
-      "Choose a deposit account before linking or creating a deposit.",
-    );
+  if (body.accountId == null) throw new FinanceValidationError("Choose a deposit account.");
+  const accountId = id(body.accountId);
+  const netAmount = nonnegativeAmount(body.netAmount);
+  if (netAmount === "0.0000")
+    throw new FinanceValidationError("Net income must be greater than zero to create a deposit.");
   if (
     editing
       ? typeof body.expectedUpdatedAt !== "string" ||
@@ -206,6 +205,8 @@ export function incomeInput(value: unknown, editing = false): IncomeInput {
     throw new FinanceValidationError("Reload the income form before saving.");
   if (body.acknowledgeMismatch !== undefined && typeof body.acknowledgeMismatch !== "boolean")
     throw new FinanceValidationError("Amount confirmation must be true or false.");
+  if (body.syncMovement !== undefined && typeof body.syncMovement !== "boolean")
+    throw new FinanceValidationError("Invalid financial-record save option.");
   return {
     sourceId: id(body.sourceId),
     description: text(body.description, "Description", 300, true)!,
@@ -213,19 +214,20 @@ export function incomeInput(value: unknown, editing = false): IncomeInput {
     periodStart,
     periodEnd,
     accountId,
-    categoryId: id(body.categoryId),
+    categoryId: null,
     currency: body.currency,
     grossAmount:
       body.grossAmount == null || body.grossAmount === ""
         ? null
         : nonnegativeAmount(body.grossAmount),
-    netAmount: nonnegativeAmount(body.netAmount),
+    netAmount,
     deductions,
     notes: text(body.notes, "Notes", 2000),
-    transactionAction: body.transactionAction as IncomeInput["transactionAction"],
-    transactionId: body.transactionAction === "LINK" ? id(body.transactionId) : null,
+    transactionAction,
+    transactionId: transactionAction === "LINK" ? id(body.transactionId) : null,
     requestKey: editing ? null : (body.requestKey as string).toLowerCase(),
     expectedUpdatedAt: editing ? (body.expectedUpdatedAt as string) : null,
     acknowledgeMismatch: body.acknowledgeMismatch === true,
+    syncMovement: body.syncMovement === true,
   };
 }

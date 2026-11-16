@@ -11,12 +11,11 @@ export const TASK_FIELDS = [
   "dependsOnId",
   "rewardXp",
   "rewardCoins",
+  "activityTypeId",
   "contextId",
   "projectId",
   "stageId",
   "kind",
-  "company",
-  "course",
   "system",
   "tags",
   "desiredOutcome",
@@ -39,8 +38,6 @@ export const TASK_FIELDS = [
   "allowUnfinishedChildren",
 ];
 const optionalText = {
-  company: 120,
-  course: 120,
   system: 120,
   desiredOutcome: 10000,
   nextAction: 1000,
@@ -60,14 +57,13 @@ export type TaskData = Partial<
     | "parentId"
     | "rewardXp"
     | "rewardCoins"
+    | "activityTypeId"
     | "contextId"
     | "projectId"
     | "stageId"
     | "requesterId"
     | "waitingOnContactId"
     | "kind"
-    | "company"
-    | "course"
     | "system"
     | "tags"
     | "desiredOutcome"
@@ -118,6 +114,7 @@ export function parseTaskFields(body: Record<string, unknown>): TaskData {
     data.kind = body.kind as TaskData["kind"];
   }
   for (const key of [
+    "activityTypeId",
     "contextId",
     "projectId",
     "stageId",
@@ -128,7 +125,11 @@ export function parseTaskFields(body: Record<string, unknown>): TaskData {
   ] as const)
     if (body[key] !== undefined) data[key] = body[key] === null ? null : workId(body[key]);
   for (const key of ["rewardXp", "rewardCoins"] as const)
-    if (body[key] !== undefined) data[key] = workInteger(body[key], key);
+    if (body[key] !== undefined) {
+      if (workInteger(body[key], key) !== 0)
+        throw new WorkValidationError("Task rewards are no longer supported.");
+      data[key] = 0;
+    }
   if (body.tags !== undefined) {
     if (
       !Array.isArray(body.tags) ||
@@ -175,7 +176,12 @@ export function lifecycleData(
     status = data.status ?? row.status;
   if (data.priorityLevel === null && row.priorityLevel !== null)
     throw new WorkValidationError("Choose a named priority.");
-  if (row.archivedAt && status !== row.status && body.archived !== false)
+  if (
+    row.archivedAt &&
+    status !== row.status &&
+    body.archived !== false &&
+    !(isClosed(row.status) && !isClosed(status))
+  )
     throw new WorkValidationError("Restore this task before changing its status.", 409);
   if (body.closureMode !== undefined || body.acceptWorkaround === true) {
     if (status !== "DONE")
@@ -225,6 +231,8 @@ export function lifecycleData(
   }
   if (body.archived !== undefined)
     result.archivedAt = body.archived ? (row.archivedAt ?? now) : null;
+  if (status !== row.status && isClosed(status)) result.archivedAt = row.archivedAt ?? now;
+  if (isClosed(row.status) && !isClosed(status)) result.archivedAt = null;
   return result;
 }
 export const AUDIT_FIELDS = [
@@ -237,8 +245,6 @@ export const AUDIT_FIELDS = [
   "waitingOnContact",
   "affectedPeople",
   "kind",
-  "company",
-  "course",
   "system",
   "tags",
   "desiredOutcome",

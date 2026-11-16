@@ -1,3 +1,9 @@
+import {
+  FIXED_STATEMENT_MAPPING,
+  fixedReview,
+  assertFixedReview,
+  type StatementPeriod,
+} from "./fixed-statement";
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
@@ -113,6 +119,7 @@ async function candidates(
   }
   if (!validCurrency(row.currency)) return { items: [], sourceIds: [] };
   const priorScope = {
+    id: { not: entry.id },
     import: {
       userId: FINANCE_USER_ID,
       accountId: batch.accountId,
@@ -133,7 +140,7 @@ async function candidates(
     ? await db.financialImportEntry.findMany({
         where: { ...priorScope, rowFingerprint: entry.rowFingerprint },
         include: { transaction: { include: candidateInclude } },
-        take: 21,
+        take: batch.matchingOnly ? 200 : 21,
       })
     : [];
   const prior = [...byFingerprint, ...byReference];
@@ -157,11 +164,19 @@ async function candidates(
           excludedAmount: 0,
           amount,
           currency: row.currency,
-          OR: conditions,
+          ...(batch.matchingOnly
+            ? {
+                type: {
+                  in: row.amount.startsWith("-")
+                    ? ["EXPENSE", "TRANSFER"]
+                    : ["INCOME", "REFUND", "TRANSFER"],
+                },
+              }
+            : { OR: conditions }),
         },
         include: candidateInclude,
         orderBy: [{ occurredOn: "desc" }, { id: "desc" }],
-        take: 21,
+        take: batch.matchingOnly ? 1000 : 21,
       })
     : [];
   // An explicitly selected old transaction must remain matchable even when suggestions are capped.
@@ -207,30 +222,43 @@ async function candidates(
       (!row.type || row.type === transaction.type);
     rows.set(transaction.id, { row: transaction, confidence: exact ? "EXACT" : "POSSIBLE" });
   }
+  if (batch.matchingOnly) {
+    for (const [id, item] of rows)
+      if (
+        item.row.amount.toFixed(4) !== amount ||
+        item.row.currency !== row.currency ||
+        !(
+          amount.startsWith("-") ? ["EXPENSE", "TRANSFER"] : ["INCOME", "REFUND", "TRANSFER"]
+        ).includes(item.row.type)
+      )
+        rows.delete(id);
+  }
   const ordered = [...rows.values()].sort(
     (a, b) =>
       Number(b.row.id === row.matchId) - Number(a.row.id === row.matchId) ||
-      Number(b.confidence === "SOURCE_ID") - Number(a.confidence === "SOURCE_ID"),
+      Number(b.confidence === "SOURCE_ID") - Number(a.confidence === "SOURCE_ID") ||
+      (batch.matchingOnly
+        ? Math.abs(a.row.occurredOn.getTime() - Date.parse(row.date)) -
+          Math.abs(b.row.occurredOn.getTime() - Date.parse(row.date))
+        : 0),
   );
   return {
     sourceIds,
-    items: ordered
-      .slice(0, 40)
-      .map(({ row: item, confidence }) => ({
-        id: item.id,
-        date: item.occurredOn.toISOString().slice(0, 10),
-        description: item.description,
-        amount: item.amount.toFixed(4),
-        currency: item.currency,
-        type: item.type,
-        source: item.source,
-        confidence,
-        otherAccount:
-          item.transfer?.userId === FINANCE_USER_ID
-            ? (item.transfer.transactions.find((leg) => leg.accountId !== batch.accountId)?.account
-                .name ?? null)
-            : null,
-      })),
+    items: ordered.slice(0, batch.matchingOnly ? 1000 : 40).map(({ row: item, confidence }) => ({
+      id: item.id,
+      date: item.occurredOn.toISOString().slice(0, 10),
+      description: item.description,
+      amount: item.amount.toFixed(4),
+      currency: item.currency,
+      type: item.type,
+      source: item.source,
+      confidence,
+      otherAccount:
+        item.transfer?.userId === FINANCE_USER_ID
+          ? (item.transfer.transactions.find((leg) => leg.accountId !== batch.accountId)?.account
+              .name ?? null)
+          : null,
+    })),
   };
 }
 function compatible(row: ImportReview, candidate: ImportCandidate) {
@@ -269,10 +297,33 @@ async function analyze(
       duplicateOf,
     };
   const row = reviewInput(entry.normalized);
-  if (batch.status === "COMPLETED")
+  if (batch.status === "COMPLETED" && !batch.matchingOnly)
     return { ...base, review: row, errors: [], warnings: [], candidates: [], duplicateOf: null };
   const errors: string[] = [],
     warnings: string[] = [];
+  if (batch.matchingOnly) {
+    try {
+      assertFixedReview(
+        mappedReview(
+          original(entry).cells,
+          batch.mapping as unknown as ImportMapping,
+          batch.account.currency,
+        ),
+        row,
+      );
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : "Invalid statement row.");
+    }
+    if (base.action !== "MATCH")
+      errors.push("Every statement row must be matched; rows cannot be created or skipped.");
+    if (
+      batch.periodStart &&
+      batch.periodEnd &&
+      (row.date < batch.periodStart.toISOString().slice(0, 10) ||
+        row.date > batch.periodEnd.toISOString().slice(0, 10))
+    )
+      errors.push("The row date is outside this statement period.");
+  }
   try {
     calendarDate(row.date);
   } catch {
@@ -373,18 +424,29 @@ async function analyze(
   }
   if (action === "MATCH") {
     const selected = found.items.find((item) => item.id === row.matchId);
-    if (!selected || !compatible(row, selected))
+    if ((!batch.matchingOnly || row.matchId) && (!selected || !compatible(row, selected)))
       errors.push(
         "Select an owned transaction on this account with the same signed amount, currency and type.",
       );
-    if (found.sourceIds.length && !found.sourceIds.includes(row.matchId ?? 0))
+    if (row.matchId && found.sourceIds.length && !found.sourceIds.includes(row.matchId))
       errors.push(
         "This source identifier already refers to another transaction. Use that transaction or skip the row.",
       );
   }
   if (action === "REVIEW")
     errors.push("Choose create, link existing, or skip after reviewing this row.");
-  return { ...base, action, review: row, errors, warnings, candidates: found.items, duplicateOf };
+  return {
+    ...base,
+    action,
+    review: row,
+    errors,
+    warnings,
+    candidates: batch.matchingOnly
+      ? found.items.filter((candidate) => candidate.type === row.type)
+      : found.items,
+    ...(batch.matchingOnly ? { candidateOptions: found.items } : {}),
+    duplicateOf,
+  };
 }
 async function serialize(db: DB, batch: Batch, defaults = false): Promise<ImportBatch> {
   const refs = await references(db),
@@ -418,6 +480,9 @@ async function serialize(db: DB, batch: Batch, defaults = false): Promise<Import
     mapping: batch.mapping as unknown as ImportMapping | null,
     rows,
     documentAvailable: !!batch.documents.length,
+    periodStart: batch.periodStart?.toISOString().slice(0, 10) ?? null,
+    periodEnd: batch.periodEnd?.toISOString().slice(0, 10) ?? null,
+    matchingOnly: batch.matchingOnly,
   };
 }
 export async function getStatement(id: number) {
@@ -430,6 +495,7 @@ export async function createStatement(
   accountId: number,
   parsed: ParsedStatement,
   file: PreparedReceiptFile,
+  period?: StatementPeriod,
 ) {
   let key: string | null = null,
     adopted = false;
@@ -450,12 +516,32 @@ export async function createStatement(
               where: { userId: FINANCE_USER_ID, accountId, fingerprint: file.contentHash },
               include,
             });
-            if (existing) return { batch: await serialize(db, existing), reused: true };
+            if (existing) {
+              if (
+                period &&
+                existing.periodStart &&
+                (existing.periodStart.toISOString().slice(0, 10) !== period.periodStart ||
+                  existing.periodEnd?.toISOString().slice(0, 10) !== period.periodEnd)
+              )
+                throw new FinanceValidationError(
+                  "This file was already uploaded for a different statement period.",
+                  409,
+                );
+              return { batch: await serialize(db, existing), reused: true };
+            }
             const batch = await db.financialImport.create({
               data: {
                 userId: FINANCE_USER_ID,
                 accountId,
                 fingerprint: file.contentHash,
+                ...(period
+                  ? {
+                      periodStart: new Date(`${period.periodStart}T00:00:00Z`),
+                      periodEnd: new Date(`${period.periodEnd}T00:00:00Z`),
+                      matchingOnly: true,
+                      mapping: json(FIXED_STATEMENT_MAPPING),
+                    }
+                  : {}),
                 originalName: file.originalName,
                 byteSize: file.buffer.length,
                 parsing: json(parsed.parsing),
@@ -465,6 +551,12 @@ export async function createStatement(
                     rowKey: String(index + 1),
                     rowNumber: index + 1,
                     originalData: json(row),
+                    ...(period
+                      ? {
+                          action: "MATCH",
+                          normalized: json(fixedReview(row.cells, account.currency)),
+                        }
+                      : {}),
                   })),
                 },
               },
@@ -498,6 +590,86 @@ export async function createStatement(
     if (key && !adopted) await removeReceiptFile(key);
   }
 }
+// Save only links: a partially matched statement never creates money movements.
+async function saveStatementMatches(db: DB, batch: Batch) {
+  const refs = await references(db),
+    selectedIds = new Set<number>();
+  const checkedRows = [];
+  for (const entry of batch.entries) {
+    const checked = await analyze(db, batch, entry, refs, null);
+    if (checked.errors.length)
+      throw new FinanceValidationError(`Row ${entry.rowNumber}: ${checked.errors.join(" ")}`, 409);
+    const row = checked.review!;
+    if (row.matchId && selectedIds.has(row.matchId))
+      throw new FinanceValidationError(
+        "Two statement rows cannot use the same financial record.",
+        409,
+      );
+    if (row.matchId) selectedIds.add(row.matchId);
+    checkedRows.push({ entry, row });
+  }
+  let changed = false;
+  for (const { entry, row } of checkedRows) {
+    const links = await db.financialMatch.findMany({
+      where: {
+        userId: FINANCE_USER_ID,
+        importEntryId: entry.id,
+        kind: "STATEMENT",
+        status: "CONFIRMED",
+      },
+    });
+    for (const link of links) {
+      if (link.transactionId === row.matchId) continue;
+      await writeMatch(db, {
+        kind: "STATEMENT",
+        sourceId: entry.id,
+        transactionId: link.transactionId!,
+        amount: link.amount.toFixed(4),
+        currency: link.currency,
+        status: "UNLINKED",
+        snapshot: link.sourceSnapshot ?? {},
+        action: "UNLINK",
+        note: "Statement match changed",
+      });
+      changed = true;
+    }
+    if (row.matchId && !links.some((link) => link.transactionId === row.matchId)) {
+      await writeMatch(db, {
+        kind: "STATEMENT",
+        sourceId: entry.id,
+        transactionId: row.matchId,
+        amount: row.amount.replace(/^-/, ""),
+        currency: row.currency,
+        status: "CONFIRMED",
+        snapshot: json({
+          ...row,
+          label: row.description,
+          signedAmount: row.amount,
+          accountId: batch.accountId,
+          origin: "import",
+        }),
+        action: "CONFIRM",
+        note: "Statement row matched",
+      });
+      changed = true;
+    }
+    if (entry.transactionId !== row.matchId) {
+      await db.financialImportEntry.update({
+        where: { id: entry.id },
+        data: { transactionId: row.matchId, sourceIdentifier: row.reference || null },
+      });
+      changed = true;
+    }
+  }
+  if (selectedIds.size && batch.status === "DRAFT") {
+    await db.financialImport.update({
+      where: { id: batch.id },
+      data: { status: "COMPLETED", completedAt: new Date() },
+    });
+    changed = true;
+  }
+  return changed;
+}
 export async function updateStatement(id: number, value: unknown) {
   const body = strictObject(value, ["expectedRevision", "mapping", "rows"]);
   if ((body.mapping === undefined) === (body.rows === undefined))
@@ -506,8 +678,12 @@ export async function updateStatement(id: number, value: unknown) {
     async (db) => {
       let batch = await findBatch(db, id);
       checkRevision(batch, body.expectedRevision);
-      if (batch.status !== "DRAFT")
+      if (batch.status !== "DRAFT" && !batch.matchingOnly)
         throw new FinanceValidationError("Completed imports are read-only.", 409);
+      if (batch.matchingOnly && body.mapping !== undefined)
+        throw new FinanceValidationError(
+          "The four statement columns are fixed; select the matching records instead.",
+        );
       if (body.mapping !== undefined) {
         const width = Array.isArray(batch.headers) ? batch.headers.length : 0,
           mapping = mappingInput(body.mapping, width),
@@ -574,6 +750,19 @@ export async function updateStatement(id: number, value: unknown) {
         if (typeof item.action !== "string" || !Object.hasOwn(IMPORT_ACTIONS, item.action))
           throw new FinanceValidationError("Choose a valid import action.");
         const review = reviewInput(item.review);
+        if (batch.matchingOnly) {
+          if (item.action !== "MATCH")
+            throw new FinanceValidationError(
+              "Every statement row must be matched to an existing income, expense or transfer.",
+            );
+          const entry = batch.entries.find((entry) => entry.id === rowId)!;
+          const source = mappedReview(
+            original(entry).cells,
+            batch.mapping as unknown as ImportMapping,
+            batch.account.currency,
+          );
+          assertFixedReview(source, review);
+        }
         await db.financialImportEntry.update({
           where: { id: rowId },
           data: {
@@ -587,6 +776,7 @@ export async function updateStatement(id: number, value: unknown) {
         where: { id, userId: FINANCE_USER_ID },
         data: { revision: { increment: 1 } },
       });
+      if (batch.matchingOnly) await saveStatementMatches(db, await findBatch(db, id));
       return serialize(db, await findBatch(db, id));
     },
     { isolationLevel: "Serializable", timeout: 60000 },
@@ -651,6 +841,21 @@ export async function commitStatement(id: number, value: unknown) {
           if (batch.status === "COMPLETED")
             return { batch: await serialize(db, batch), replayed: true };
           checkRevision(batch, body.expectedRevision);
+          if (batch.matchingOnly) {
+            if (
+              !batch.entries.some((entry) => (entry.normalized as unknown as ImportReview)?.matchId)
+            )
+              throw new FinanceValidationError(
+                "Choose at least one matching record before saving this statement.",
+              );
+            const changed = await saveStatementMatches(db, batch);
+            if (changed)
+              await db.financialImport.update({
+                where: { id },
+                data: { revision: { increment: 1 } },
+              });
+            return { batch: await serialize(db, await findBatch(db, id)), replayed: !changed };
+          }
           if (!batch.account.active)
             throw new FinanceValidationError("Reactivate this account before importing.", 409);
           if (!batch.mapping)
@@ -780,7 +985,10 @@ export async function listStatements(params: URLSearchParams) {
       const total = await db.financialImport.count({ where });
       const batches = await db.financialImport.findMany({
         where,
-        include: { account: { select: accountSelect }, entries: { select: { action: true } } },
+        include: {
+          account: { select: accountSelect },
+          entries: { select: { action: true, transactionId: true, normalized: true } },
+        },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: 20,
         skip: (page - 1) * 20,
@@ -793,6 +1001,19 @@ export async function listStatements(params: URLSearchParams) {
           originalName: batch.originalName,
           createdAt: batch.createdAt.toISOString(),
           completedAt: batch.completedAt?.toISOString() ?? null,
+          periodStart: batch.periodStart?.toISOString().slice(0, 10) ?? null,
+          periodEnd: batch.periodEnd?.toISOString().slice(0, 10) ?? null,
+          matchedCount: batch.entries.filter((row) => row.transactionId !== null).length,
+          remainingCount: batch.entries.filter(
+            (row) =>
+              row.transactionId === null &&
+              !(row.normalized as unknown as ImportReview)?.matchId &&
+              row.action !== "SKIP",
+          ).length,
+          selectedCount: batch.entries.filter(
+            (row) =>
+              row.transactionId !== null || !!(row.normalized as unknown as ImportReview)?.matchId,
+          ).length,
           counts: batch.entries.reduce(
             (counts, row) => {
               counts[row.action]++;

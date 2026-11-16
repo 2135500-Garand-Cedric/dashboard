@@ -1,5 +1,6 @@
 import {
   guardSupportingEdit,
+  assertSupportingUnmatched,
   syncSupportingMatch,
   unlinkSupportingMatches,
 } from "./reconciliation-ledger";
@@ -164,6 +165,13 @@ export async function saveReceipt(
               }
             }
             const current = id === undefined ? null : await rowById(db, id);
+            await assertSupportingUnmatched(
+              db,
+              "RECEIPT",
+              current?.id,
+              current?.transactionId ??
+                (input.transactionAction === "LINK" ? input.transactionId : null),
+            );
             await guardSupportingEdit(db, "RECEIPT", current, input);
             if (current && current.updatedAt.getTime() !== Date.parse(input.expectedUpdatedAt!))
               throw new FinanceValidationError(
@@ -176,7 +184,12 @@ export async function saveReceipt(
             const category = await db.financeCategory.findFirst({
               where: { id: input.categoryId, userId: FINANCE_USER_ID, type: "EXPENSE" },
             });
-            if (!account || (!account.active && current?.accountId !== account.id))
+            if (
+              !account ||
+              (!account.active &&
+                current?.accountId !== account.id &&
+                input.transactionAction !== "LINK")
+            )
               throw new FinanceValidationError(
                 "Choose an active payment account belonging to you.",
               );
@@ -218,6 +231,26 @@ export async function saveReceipt(
             const date = new Date(`${input.date}T00:00:00Z`),
               total = new Prisma.Decimal(input.total);
             if (input.transactionAction === "LINK") {
+              if (input.syncMovement) {
+                const { syncActivityMovement } = await import("./activity-movement");
+                await syncActivityMovement(
+                  db,
+                  "RECEIPT",
+                  current?.id ?? null,
+                  input.transactionId!,
+                  {
+                    amount: input.total,
+                    accountId: input.accountId,
+                    currency: input.currency,
+                    date: input.date,
+                    description: input.merchant,
+                    categoryId: input.categoryId,
+                    counterparty: input.merchant,
+                    notes: input.notes,
+                    allowDuplicate: input.allowDuplicate,
+                  },
+                );
+              }
               const transaction = await db.financialTransaction.findFirst({
                 where: { id: input.transactionId!, userId: FINANCE_USER_ID },
               });
@@ -254,7 +287,7 @@ export async function saveReceipt(
                 },
                 select: { id: true },
               });
-              if (duplicate)
+              if (duplicate && !input.allowDuplicate)
                 throw new ReceiptConflict(
                   "An expense with this account, date, currency and total already exists. Select and link that expense instead of creating another.",
                   "EXISTING_EXPENSE",
@@ -274,6 +307,7 @@ export async function saveReceipt(
                     counterparty: input.merchant,
                     notes: input.notes,
                     requestKey: randomUUID(),
+                    allowDuplicate: input.allowDuplicate,
                   }),
                 )
               ).transaction.id;
@@ -305,6 +339,11 @@ export async function saveReceipt(
                   },
                 });
             await syncSupportingMatch(db, "RECEIPT", saved, current?.transactionId ?? null);
+            if (input.syncMovement && transactionId)
+              await db.financialTransaction.update({
+                where: { id: transactionId, userId: FINANCE_USER_ID },
+                data: { updatedAt: new Date() },
+              });
             const oldKeys: string[] = [];
             if (file && storageKey) {
               if (current?.documents.length) {
@@ -361,6 +400,7 @@ export async function deleteReceipt(
   const keys = await prisma.$transaction(
     async (db) => {
       const row = await rowById(db, id);
+      await assertSupportingUnmatched(db, "RECEIPT", row.id, row.transactionId);
       if (!expectedUpdatedAt || Date.parse(expectedUpdatedAt) !== row.updatedAt.getTime())
         throw new FinanceValidationError("This receipt changed. Reload before deleting.", 409);
       await db.financialDocument.deleteMany({

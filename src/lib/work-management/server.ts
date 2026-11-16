@@ -1,3 +1,4 @@
+import { readSnapshot, memoTaskRead } from "./read-snapshot";
 import { createHash } from "node:crypto";
 import type { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
@@ -26,7 +27,7 @@ import {
   validateTransition,
 } from "./graph";
 
-import { APP_TIME_ZONE } from "@/lib/app-time-zone";
+import { getAppTimeZone } from "@/lib/time-zone-context";
 import { dateSortInstant, workDateState } from "./dates";
 import { retireFollowUps } from "./date-lifecycle";
 
@@ -46,6 +47,7 @@ export const todoInclude = {
   waitingOnContact: true,
   affectedPeople: { include: { contact: true }, orderBy: { contactId: "asc" as const } },
   context: true,
+  activityType: true,
   project: true,
   stage: true,
   subtasks: { orderBy: { id: "asc" as const } },
@@ -66,7 +68,16 @@ import {
 } from "./event-core";
 type TodoRow = Prisma.TodoGetPayload<{ include: typeof todoInclude }>;
 const todoDTO = (row: TodoRow, now = new Date()) => {
-  const { prerequisites, parent, followUps, ...fields } = row;
+  const {
+    prerequisites,
+    parent,
+    followUps,
+    company: retiredCompany,
+    course: retiredCourse,
+    ...fields
+  } = row;
+  void retiredCompany;
+  void retiredCourse;
   const single = prerequisites.length === 1 ? prerequisites[0].prerequisite : null;
   return {
     ...fields,
@@ -75,12 +86,12 @@ const todoDTO = (row: TodoRow, now = new Date()) => {
       row.project?.userId === WORK_USER_ID && row.stage?.projectId === row.projectId
         ? row.stage
         : null,
-    timeZone: APP_TIME_ZONE,
+    timeZone: getAppTimeZone(),
     deadlineState: workDateState(
       { date: row.deadlineDate, at: row.deadlineAt, timeZone: row.deadlineTimeZone },
       "deadline",
       now,
-      APP_TIME_ZONE,
+      getAppTimeZone(),
       !isClosed(row.status) && !row.archivedAt,
     ),
     activeFollowUp: followUps[0]
@@ -90,7 +101,7 @@ const todoDTO = (row: TodoRow, now = new Date()) => {
             followUps[0],
             "followup",
             now,
-            APP_TIME_ZONE,
+            getAppTimeZone(),
             !isClosed(row.status) && !row.archivedAt,
           ),
         }
@@ -196,12 +207,14 @@ export async function mutation(
   });
 }
 export async function todoRow(db: DB, id: number) {
-  const row = await db.todo.findFirst({
-    where: { id, userId: WORK_USER_ID },
-    include: todoInclude,
+  return memoTaskRead(db, "todoRow:" + id, async () => {
+    const row = await db.todo.findFirst({
+      where: { id, userId: WORK_USER_ID },
+      include: todoInclude,
+    });
+    if (!row) throw new WorkValidationError("Task not found.", 404);
+    return row;
   });
-  if (!row) throw new WorkValidationError("Task not found.", 404);
-  return row;
 }
 export async function listTodos(includeArchived = false) {
   return prisma.$transaction(
@@ -218,26 +231,28 @@ export async function listTodos(includeArchived = false) {
   );
 }
 export async function getTodoInDb(db: DB, id: number) {
-  const row = await todoRow(db, id);
-  const [edges, supportingRecordCount] = await Promise.all([
-    db.todoDependency.findMany({
-      where: { prerequisiteId: id, dependent: { userId: WORK_USER_ID } },
-      include: { dependent: { select: taskStubSelect } },
-      orderBy: { dependentId: "asc" },
-      take: 30,
-    }),
-    db.workNote
-      .count({ where: { todoId: id, userId: WORK_USER_ID } })
-      .then(
-        async (count) =>
-          count + (await db.workAttachment.count({ where: { todoId: id, userId: WORK_USER_ID } })),
-      ),
-  ]);
-  return {
-    ...(await serializeTodos(db, [row]))[0],
-    dependents: edges.map((edge) => graphStub(edge.dependent)),
-    supportingRecordCount,
-  };
+  return memoTaskRead(db, "getTodoInDb:" + id, async () => {
+    const row = await todoRow(db, id);
+    const [edges, supportingRecordCount] = await Promise.all([
+      db.todoDependency.findMany({
+        where: { prerequisiteId: id, dependent: { userId: WORK_USER_ID } },
+        include: { dependent: { select: taskStubSelect } },
+        orderBy: { dependentId: "asc" },
+        take: 30,
+      }),
+      Promise.all([
+        db.workNote.count({ where: { todoId: id, userId: WORK_USER_ID } }),
+        db.workAttachment.count({ where: { todoId: id, userId: WORK_USER_ID } }),
+        db.workFollowUp.count({ where: { todoId: id } }),
+        db.workKeyDate.count({ where: { todoId: id } }),
+      ]).then((counts) => counts.reduce((sum, count) => sum + count, 0)),
+    ]);
+    return {
+      ...(await serializeTodos(db, [row]))[0],
+      dependents: edges.map((edge) => graphStub(edge.dependent)),
+      supportingRecordCount,
+    };
+  });
 }
 export async function getTodo(id: number) {
   return prisma.$transaction((db) => getTodoInDb(db, id), { isolationLevel: "RepeatableRead" });
@@ -276,7 +291,7 @@ export async function searchWork(params: URLSearchParams) {
           if (!cache.has(identity))
             cache.set(
               identity,
-              dateSortInstant(value, query.sort as "deadline" | "followup", APP_TIME_ZONE),
+              dateSortInstant(value, query.sort as "deadline" | "followup", getAppTimeZone()),
             );
           return cache.get(identity)!;
         };
@@ -346,6 +361,15 @@ async function defaultContext(db: DB): Promise<number | null> {
     )?.id ?? null
   );
 }
+async function validateActivityType(
+  db: DB,
+  id: number | null | undefined,
+  previous?: number | null,
+) {
+  if (id == null || id === previous) return;
+  if (!(await db.activityType.findFirst({ where: { id, active: true } })))
+    throw new WorkValidationError("Choose an active calendar activity type.");
+}
 export async function createTodo(value: unknown, command: WorkCommand) {
   const body = workBody(value, TASK_FIELDS),
     data = parseTaskFields(body);
@@ -378,7 +402,10 @@ export async function createTodo(value: unknown, command: WorkCommand) {
   return mutation("todo:create", body, command, async (db) => {
     const contextId = data.contextId === undefined ? await defaultContext(db) : data.contextId;
     await validateContext(db, contextId);
-    await validateNewMembership(db, data.projectId, data.stageId);
+    const project = await validateNewMembership(db, data.projectId, data.stageId);
+    const activityTypeId =
+      data.activityTypeId === undefined ? (project?.activityTypeId ?? null) : data.activityTypeId;
+    await validateActivityType(db, activityTypeId);
     await validatePeople(db, body);
     const { dependsOnId, parentId, ...columns } = data;
     const row = await db.todo.create({
@@ -387,6 +414,7 @@ export async function createTodo(value: unknown, command: WorkCommand) {
         title: data.title!,
         userId: WORK_USER_ID,
         contextId,
+        activityTypeId,
         status: data.status ?? "NEW",
         priorityLevel: data.priorityLevel ?? "NORMAL",
         kind: data.kind ?? "TASK",
@@ -421,7 +449,7 @@ export async function patchTodo(id: number, value: unknown, command: WorkCommand
   const body = workBody(value, TASK_FIELDS),
     parsed = parseTaskFields(body);
   if (body.projectId !== undefined || body.stageId !== undefined)
-    throw new WorkValidationError("Use Project membership to move this task.");
+    throw new WorkValidationError("Use the project selector to move this task.");
   if (body.parentId !== undefined || body.parentRevision !== undefined)
     throw new WorkValidationError("Use Relationships to change a task parent.");
   if (
@@ -440,6 +468,7 @@ export async function patchTodo(id: number, value: unknown, command: WorkCommand
       throw new WorkValidationError("Use the named priority when editing an Urgent task.", 409);
     const data = lifecycleData(row, parsed, body, new Date());
     await validateContext(db, data.contextId, row.contextId);
+    await validateActivityType(db, data.activityTypeId, row.activityTypeId);
     await validatePeople(db, body, row);
     const status = data.status ?? row.status;
     if (data.dependsOnId !== undefined) {
@@ -450,50 +479,13 @@ export async function patchTodo(id: number, value: unknown, command: WorkCommand
       body.status !== undefined && ["IN_PROGRESS", "DONE", "CANCELLED"].includes(status)
         ? await validateTransition(db, id, status, body)
         : null;
-    let xp = 0,
-      coins = 0;
-    const reward: {
-      rewardAppliedXp?: number;
-      rewardAppliedCoins?: number;
-      rewardAccountingBasis?: string;
-    } = {};
-    if (row.status !== "DONE" && status === "DONE") {
-      reward.rewardAppliedXp = data.rewardXp ?? row.rewardXp;
-      reward.rewardAppliedCoins = data.rewardCoins ?? row.rewardCoins;
-      xp = reward.rewardAppliedXp;
-      coins = reward.rewardAppliedCoins;
-      reward.rewardAccountingBasis = "TRACKED";
-    } else if (row.status === "DONE" && status !== "DONE") {
-      xp = -row.rewardAppliedXp;
-      coins = -row.rewardAppliedCoins;
-      reward.rewardAppliedXp = 0;
-      reward.rewardAppliedCoins = 0;
-      reward.rewardAccountingBasis = "TRACKED";
-    }
-    if (xp || coins) {
-      const user = await db.user.findUniqueOrThrow({
-        where: { id: WORK_USER_ID },
-        select: { totalXp: true, coins: true },
-      });
-      if (
-        [user.totalXp + xp, user.coins + coins].some(
-          (value) => !Number.isSafeInteger(value) || value < -2147483648 || value > 2147483647,
-        )
-      )
-        throw new WorkValidationError(
-          "This reward change exceeds the supported balance range.",
-          409,
-        );
-      await db.user.update({
-        where: { id: WORK_USER_ID },
-        data: { totalXp: { increment: xp }, coins: { increment: coins } },
-      });
-    }
+    // Task completion is independent of personal XP/coins. Keep historic reward
+    // snapshots intact; neither completion nor reopening changes earned balances.
     if (!isClosed(row.status) && isClosed(status)) await retireFollowUps(db, id);
     await replaceAffected(db, id, body);
     const updated = await db.todo.update({
       where: { id, userId: WORK_USER_ID },
-      data: { ...data, ...reward, revision: { increment: 1 } },
+      data: { ...data, revision: { increment: 1 } },
       include: todoInclude,
     });
     await recordTaskActivity(db, row, updated);
@@ -527,7 +519,7 @@ export async function deleteTodo(id: number, command: WorkCommand) {
       (await db.workKeyDate.count({ where: { todoId: id } }))
     )
       throw new WorkValidationError(
-        "Archive this task to preserve its follow-up and key-date history.",
+        "This task has retained history and cannot be permanently deleted.",
         409,
       );
     if (
@@ -907,20 +899,17 @@ export async function listWorkContacts(params: URLSearchParams) {
         }
       : {}),
   };
-  return prisma.$transaction(
-    async (db) => {
-      const total = await db.workContact.count({ where }),
-        current = Math.min(page, Math.max(1, Math.ceil(total / 30)));
-      const items = await db.workContact.findMany({
-        where,
-        orderBy: [{ active: "desc" }, { name: "asc" }, { id: "asc" }],
-        skip: (current - 1) * 30,
-        take: 30,
-      });
-      return { items, total, page: current, pageSize: 30 };
-    },
-    { isolationLevel: "RepeatableRead" },
-  );
+  return readSnapshot(prisma, async (db) => {
+    const total = await db.workContact.count({ where }),
+      current = Math.min(page, Math.max(1, Math.ceil(total / 30)));
+    const items = await db.workContact.findMany({
+      where,
+      orderBy: [{ active: "desc" }, { name: "asc" }, { id: "asc" }],
+      skip: (current - 1) * 30,
+      take: 30,
+    });
+    return { items, total, page: current, pageSize: 30 };
+  });
 }
 export async function getWorkContact(id: number) {
   const row = await prisma.workContact.findFirst({ where: { id, userId: WORK_USER_ID } });

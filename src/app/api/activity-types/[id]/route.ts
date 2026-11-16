@@ -58,6 +58,14 @@ export async function DELETE(_: Request, context: Context) {
       where: { userId: WORK_USER_ID, type: activityType.name },
       data: { type: null, revision: { increment: 1 } },
     });
+    await db.todo.updateMany({
+      where: { userId: WORK_USER_ID, activityTypeId: Number(id) },
+      data: { activityTypeId: null, revision: { increment: 1 } },
+    });
+    await db.workProject.updateMany({
+      where: { userId: WORK_USER_ID, activityTypeId: Number(id) },
+      data: { activityTypeId: null, revision: { increment: 1 } },
+    });
     await db.activityType.delete({ where: { id: Number(id) } });
   });
 

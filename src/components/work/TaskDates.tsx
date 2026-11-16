@@ -1,11 +1,10 @@
 "use client";
+import { useInitialTaskLoad, useTaskRead } from "@/components/work/TaskInitialLoad";
+import TaskModal from "@/components/shared/TaskModal";
+import { useDateTime } from "@/context/SettingsContext";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { createWorkWriter, workRead } from "@/lib/work-management/client";
-import {
-  describeWorkDate,
-  localParts,
-  type StoredWorkDate,
-} from "@/lib/work-management/date-format";
+import { createWorkWriter } from "@/lib/work-management/client";
+import { localParts, type StoredWorkDate } from "@/lib/work-management/date-format";
 import type {
   SupportEditorHandle,
   SupportEditorState,
@@ -26,7 +25,6 @@ type Draft = {
   timeZone: string;
   occurrence: string;
   reason: string;
-  label: string;
 };
 const drafts = new Map<number, Draft>(),
   writer = createWorkWriter();
@@ -36,9 +34,6 @@ const labels: Record<string, string> = {
   "followup-snooze": "Snooze follow-up",
   "followup-complete": "Complete follow-up",
   "followup-cancel": "Cancel follow-up",
-  "key-create": "Add key date",
-  "key-edit": "Edit key date",
-  "key-remove": "Remove key date",
 };
 export default forwardRef<
   SupportEditorHandle,
@@ -49,9 +44,8 @@ export default forwardRef<
     onChanged: (task: WorkTodo) => void;
   }
 >(function TaskDates({ task, disabled, onStateChange, onChanged }, ref) {
+  const { describeWorkDate } = useDateTime();
   const [data, setData] = useState<WorkDatesView | null>(null),
-    [page, setPage] = useState(1),
-    [keyPage, setKeyPage] = useState(1),
     [reload, setReload] = useState(0),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
@@ -70,6 +64,8 @@ export default forwardRef<
     isDirty: () => !!live.current,
     isBusy: () => lock.current,
   }));
+  const read = useTaskRead();
+  useInitialTaskLoad(!data && !error);
   useEffect(() => {
     onStateChange({ dirty: !!draft, busy });
   }, [draft, busy, onStateChange]);
@@ -83,7 +79,7 @@ export default forwardRef<
     let active = true;
     setData(null);
     setError("");
-    void workRead<WorkDatesView>(`/api/todos/${task.id}/dates?page=${page}&keyPage=${keyPage}`)
+    void read<WorkDatesView>(`/api/todos/${task.id}/dates`)
       .then((result) => {
         if (active) setData(result);
       })
@@ -93,36 +89,26 @@ export default forwardRef<
     return () => {
       active = false;
     };
-  }, [task.id, task.revision, page, keyPage, reload]);
-  function start(
-    action: string,
-    value?: StoredWorkDate & { id?: number; reason?: string | null; label?: string },
-  ) {
+  }, [task.id, task.revision, reload, read]);
+  function start(action: string, value?: StoredWorkDate & { id?: number; reason?: string | null }) {
     setError("");
     setNotice("");
     setDraft({
       action,
       revision: task.revision,
       ...(value?.id ? { id: value.id } : {}),
-      kind: value?.at ? "TIME" : value?.date ? "DATE" : action === "deadline" ? "NONE" : "DATE",
+      kind: value?.at ? "TIME" : "DATE",
       date: value?.date ?? "",
-      local: value?.at ? localParts(value.at, value.timeZone!) : "",
-      timeZone: value?.timeZone ?? data!.timeZone,
+      local: value?.at ? localParts(value.at, data!.timeZone) : "",
+      timeZone: data!.timeZone,
       occurrence: "",
       reason: action === "followup-snooze" ? (value?.reason ?? "") : "",
-      label: value?.label ?? "",
     });
   }
   async function submit() {
     if (!draft || lock.current) return;
     const saved = { ...draft },
-      needsDate = [
-        "deadline",
-        "followup-create",
-        "followup-snooze",
-        "key-create",
-        "key-edit",
-      ].includes(saved.action);
+      needsDate = ["deadline", "followup-create", "followup-snooze"].includes(saved.action);
     const date =
       saved.kind === "NONE"
         ? null
@@ -139,7 +125,6 @@ export default forwardRef<
       ...(saved.id ? { id: saved.id } : {}),
       ...(needsDate ? { date } : {}),
       ...(saved.action.startsWith("followup-") ? { reason: saved.reason || null } : {}),
-      ...(["key-create", "key-edit"].includes(saved.action) ? { label: saved.label } : {}),
     };
     lock.current = true;
     setBusy(true);
@@ -168,86 +153,81 @@ export default forwardRef<
     }
   }
   const needsDate =
-    draft &&
-    ["deadline", "followup-create", "followup-snooze", "key-create", "key-edit"].includes(
-      draft.action,
-    );
+    draft && ["deadline", "followup-create", "followup-snooze"].includes(draft.action);
   return (
-    <section
-      id="task-dates"
-      aria-label="Task dates"
-      className="min-w-0 space-y-4 border-t border-card-border pt-4"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold">Dates</h2>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => setReload((value) => value + 1)}
-          className={button}
-        >
-          Reload dates
-        </button>
-      </div>
-      {error && (
-        <p role="alert" className="break-words text-sm text-rose-500">
-          {error}
+    <section id="task-dates" aria-label="Task dates" className="my-5 min-w-0">
+      {error && !draft && (
+        <p role="alert" className="mb-3 text-sm text-rose-500">
+          {error}{" "}
+          <button type="button" onClick={() => setReload((old) => old + 1)} className="underline">
+            Retry dates
+          </button>
         </p>
       )}
       {notice && (
-        <p role="status" className="text-sm text-emerald-500">
+        <p role="status" className="mb-3 text-sm text-emerald-500">
           {notice}
         </p>
       )}
       {!data ? (
-        !error && (
-          <p role="status" className="text-sm">
-            Loading dates…
-          </p>
-        )
+        !error && <p role="status">Loading task dates…</p>
       ) : (
-        <>
-          <p className="text-xs text-gray-500">
-            Calendar dates use {data.timeZone}. Exact times retain their own zone.
-          </p>
-          {!data.actionable && (
-            <p className="text-xs text-gray-500">
-              Historical dates · No outstanding-action indicators.
-            </p>
-          )}
-          <div className="space-y-2 text-sm">
-            <h3 className="font-medium">Deadline</h3>
-            <p className="break-words">{describeWorkDate(data.deadline)}</p>
-            {data.deadlineState && (
-              <p
-                className={
-                  data.deadlineState === "OVERDUE" ? "font-medium text-rose-500" : "text-gray-500"
-                }
+        <div className="grid gap-4 md:grid-cols-2">
+          <section
+            aria-label="Task deadline"
+            className={`rounded-xl border p-4 sm:p-5 ${data.deadlineState === "OVERDUE" ? "border-rose-500/60 bg-rose-500/10" : "border-rose-500/25 bg-rose-500/5"}`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-semibold text-rose-500">Deadline</h2>
+              <button
+                type="button"
+                disabled={disabled || busy || !!draft}
+                onClick={() => start("deadline", data.deadline)}
+                className={button}
               >
-                {data.deadlineState === "OVERDUE" ? "Overdue" : "Upcoming deadline"}
-              </p>
+                {data.deadline.date || data.deadline.at ? "Edit deadline" : "Set deadline"}
+              </button>
+            </div>
+            <p className="mt-3 break-words text-xl font-semibold">
+              {data.deadline.date || data.deadline.at
+                ? describeWorkDate(data.deadline)
+                : "No deadline"}
+            </p>
+            {data.deadlineState === "OVERDUE" && (
+              <p className="mt-2 text-sm font-semibold text-rose-500">Overdue</p>
             )}
-            <button
-              type="button"
-              disabled={disabled || busy || !!draft}
-              onClick={() => start("deadline", data.deadline)}
-              className={button}
-            >
-              Edit deadline
-            </button>
-          </div>
-          <div className="space-y-2 text-sm">
-            <h3 className="font-medium">Follow-up · Next check</h3>
+          </section>
+          <section
+            aria-label="Task follow-up"
+            className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4 sm:p-5"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-semibold text-amber-500">Follow-up</h2>
+              {!data.activeFollowUp && (
+                <button
+                  type="button"
+                  disabled={disabled || busy || !!draft || !data.actionable}
+                  onClick={() => start("followup-create")}
+                  className={button}
+                >
+                  Schedule follow-up
+                </button>
+              )}
+            </div>
             {data.activeFollowUp ? (
               <>
-                <p className="break-words">{describeWorkDate(data.activeFollowUp)}</p>
+                <p className="mt-3 break-words text-xl font-semibold">
+                  {describeWorkDate(data.activeFollowUp)}
+                </p>
                 {data.activeFollowUp.reason && (
-                  <p className="whitespace-pre-wrap break-words">{data.activeFollowUp.reason}</p>
+                  <p className="mt-2 whitespace-pre-wrap break-words text-sm">
+                    {data.activeFollowUp.reason}
+                  </p>
                 )}
                 {data.activeFollowUp.state === "DUE" && (
-                  <p className="font-medium text-amber-500">Follow-up due</p>
+                  <p className="mt-2 text-sm font-semibold text-amber-500">Follow-up due</p>
                 )}
-                <div className="flex flex-wrap gap-2">
+                <div className="mt-3 flex flex-wrap gap-2">
                   {["followup-complete", "followup-snooze", "followup-cancel"].map((action) => (
                     <button
                       type="button"
@@ -262,298 +242,140 @@ export default forwardRef<
                 </div>
               </>
             ) : (
+              <p className="mt-3 text-lg">No active follow-up</p>
+            )}
+          </section>
+        </div>
+      )}
+      <TaskModal
+        open={!!draft}
+        title={draft ? labels[draft.action] || "Task date" : "Task date"}
+        busy={busy}
+        onClose={clear}
+      >
+        {draft && (
+          <form
+            aria-label="Task date editor"
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submit();
+            }}
+          >
+            {error && (
+              <p role="alert" className="text-sm text-rose-500">
+                {error}
+              </p>
+            )}
+            {draft.revision !== task.revision && (
+              <p role="alert" className="text-sm text-amber-500">
+                This draft has an older task version. Discard it and reload the task before editing
+                again.
+              </p>
+            )}
+            {needsDate && (
               <>
-                <p className="text-gray-500">No active follow-up</p>
-                <button
-                  type="button"
-                  disabled={disabled || busy || !!draft || !data.actionable}
-                  onClick={() => start("followup-create")}
-                  className={button}
-                >
-                  Schedule follow-up
-                </button>
+                <label className="block text-sm">
+                  Date type
+                  <select
+                    aria-label="Date type"
+                    value={draft.kind}
+                    disabled={busy || disabled}
+                    onChange={(event) => setDraft({ ...draft, kind: event.target.value })}
+                    className={`${input} mt-1`}
+                  >
+                    {draft.action === "deadline" && <option value="NONE">No deadline</option>}
+                    <option value="DATE">Calendar date only</option>
+                    <option value="TIME">Exact date and time</option>
+                  </select>
+                </label>
+                {draft.kind === "DATE" && (
+                  <label className="block text-sm">
+                    Calendar date
+                    <input
+                      aria-label="Calendar date"
+                      type="date"
+                      min="1000-01-01"
+                      max="9999-12-31"
+                      required
+                      disabled={busy || disabled}
+                      value={draft.date}
+                      onChange={(event) => setDraft({ ...draft, date: event.target.value })}
+                      className={`${input} mt-1`}
+                    />
+                  </label>
+                )}
+                {draft.kind === "TIME" && (
+                  <>
+                    <label className="block text-sm">
+                      Local date and time
+                      <input
+                        aria-label="Local date and time"
+                        type="datetime-local"
+                        step="1"
+                        required
+                        value={draft.local}
+                        disabled={busy || disabled}
+                        onChange={(event) =>
+                          setDraft({ ...draft, local: event.target.value, occurrence: "" })
+                        }
+                        className={`${input} mt-1`}
+                      />
+                    </label>
+
+                    <label className="block text-sm">
+                      If the clock repeats this time
+                      <select
+                        aria-label="Repeated time occurrence"
+                        value={draft.occurrence}
+                        disabled={busy || disabled}
+                        onChange={(event) => setDraft({ ...draft, occurrence: event.target.value })}
+                        className={`${input} mt-1`}
+                      >
+                        <option value="">Require a choice if ambiguous</option>
+                        <option value="earlier">Earlier occurrence</option>
+                        <option value="later">Later occurrence</option>
+                      </select>
+                    </label>
+                  </>
+                )}
               </>
             )}
-            <p className="text-xs text-gray-500">
-              Completing a follow-up leaves the task and deadline unchanged. Closure retires it;
-              reopening does not recreate it.
-            </p>
-          </div>
-          <div className="space-y-3 text-sm">
-            <h3 className="font-medium">Key dates · Informational</h3>
-            <ul className="space-y-3">
-              {data.keyDates.map((item) => (
-                <li key={item.id} className="space-y-2">
-                  <p className="break-words font-medium">{item.label}</p>
-                  <p className="break-words">{describeWorkDate(item)}</p>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      disabled={disabled || busy || !!draft}
-                      aria-label={`Edit key date ${item.label}`}
-                      onClick={() => start("key-edit", item)}
-                      className={button}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      disabled={disabled || busy || !!draft}
-                      aria-label={`Remove key date ${item.label}`}
-                      onClick={() => start("key-remove", item)}
-                      className={button}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            {!data.keyTotal && <p className="text-gray-500">No key dates</p>}
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span>
-                {data.keyTotal} dates · Page {data.keyPage}
-              </span>
-              <button
-                type="button"
-                disabled={data.keyPage <= 1}
-                onClick={() => setKeyPage(data.keyPage - 1)}
-                className={button}
-              >
-                Previous key dates
-              </button>
-              <button
-                type="button"
-                disabled={data.keyPage * data.pageSize >= data.keyTotal}
-                onClick={() => setKeyPage(data.keyPage + 1)}
-                className={button}
-              >
-                Next key dates
-              </button>
-            </div>
-            <button
-              type="button"
-              disabled={disabled || busy || !!draft}
-              onClick={() => start("key-create")}
-              className={button}
-            >
-              Add key date
-            </button>
-          </div>
-          <details>
-            <summary className="cursor-pointer text-sm font-medium">
-              Follow-up history ({data.total})
-            </summary>
-            <ul className="mt-3 space-y-3 text-xs">
-              {data.followUps.map((item) => (
-                <li key={item.id} className="space-y-1 rounded border border-card-border p-2">
-                  <p className="break-words">{describeWorkDate(item)}</p>
-                  <p>
-                    {(
-                      {
-                        ACTIVE: "Active",
-                        COMPLETED: "Completed",
-                        SNOOZED: "Snoozed",
-                        CANCELLED: "Cancelled",
-                      } as Record<string, string>
-                    )[item.status] ?? item.status}
-                    {item.previousId ? ` · Replaces follow-up ${item.previousId}` : ""}
-                  </p>
-                  {item.reason && <p className="whitespace-pre-wrap break-words">{item.reason}</p>}
-                  {item.outcome && (
-                    <p className="whitespace-pre-wrap break-words">
-                      Outcome:{" "}
-                      {(
-                        {
-                          TASK_CLOSED: "Task closed; follow-up retired",
-                          FOLLOW_UP_COMPLETED: "Follow-up completed",
-                          FOLLOW_UP_SNOOZED: "Follow-up snoozed",
-                          USER_CANCELLED: "Cancelled by you",
-                        } as Record<string, string>
-                      )[item.outcome] ?? item.outcome}
-                    </p>
-                  )}
-                  <p>
-                    Recorded: {localParts(item.createdAt, data.timeZone).replace("T", " ")}{" "}
-                    {data.timeZone}
-                  </p>
-                  {item.resolvedAt && (
-                    <p>
-                      Resolved: {localParts(item.resolvedAt, data.timeZone).replace("T", " ")}{" "}
-                      {data.timeZone}
-                    </p>
-                  )}
-                </li>
-              ))}
-            </ul>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={data.page <= 1}
-                onClick={() => setPage(data.page - 1)}
-                className={button}
-              >
-                Previous follow-ups
-              </button>
-              <button
-                type="button"
-                disabled={data.page * data.pageSize >= data.total}
-                onClick={() => setPage(data.page + 1)}
-                className={button}
-              >
-                Next follow-ups
-              </button>
-            </div>
-          </details>
-        </>
-      )}
-      {draft && (
-        <form
-          aria-label="Task date editor"
-          className="space-y-3 rounded-lg border border-card-border p-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submit();
-          }}
-        >
-          <h3 className="font-medium">{labels[draft.action]}</h3>
-          {draft.revision !== task.revision && (
-            <p role="alert" className="text-sm text-amber-500">
-              This draft has an older task version. Discard it and reload the task before editing
-              again.
-            </p>
-          )}
-          {needsDate && (
-            <>
+            {draft.action.startsWith("followup-") && (
               <label className="block text-sm">
-                Date type
-                <select
-                  aria-label="Date type"
-                  value={draft.kind}
+                {draft.action === "followup-create" || draft.action === "followup-snooze"
+                  ? "Follow-up reason (optional)"
+                  : "Outcome note (optional)"}
+                <textarea
+                  aria-label="Follow-up reason"
+                  maxLength={2000}
+                  rows={2}
+                  value={draft.reason}
                   disabled={busy || disabled}
-                  onChange={(event) => setDraft({ ...draft, kind: event.target.value })}
+                  onChange={(event) => setDraft({ ...draft, reason: event.target.value })}
                   className={`${input} mt-1`}
-                >
-                  {draft.action === "deadline" && <option value="NONE">No deadline</option>}
-                  <option value="DATE">Calendar date only</option>
-                  <option value="TIME">Exact date and time</option>
-                </select>
+                />
               </label>
-              {draft.kind === "DATE" && (
-                <label className="block text-sm">
-                  Calendar date
-                  <input
-                    aria-label="Calendar date"
-                    type="date"
-                    min="1000-01-01"
-                    max="9999-12-31"
-                    required
-                    disabled={busy || disabled}
-                    value={draft.date}
-                    onChange={(event) => setDraft({ ...draft, date: event.target.value })}
-                    className={`${input} mt-1`}
-                  />
-                </label>
-              )}
-              {draft.kind === "TIME" && (
-                <>
-                  <label className="block text-sm">
-                    Local date and time
-                    <input
-                      aria-label="Local date and time"
-                      type="datetime-local"
-                      step="1"
-                      required
-                      value={draft.local}
-                      disabled={busy || disabled}
-                      onChange={(event) =>
-                        setDraft({ ...draft, local: event.target.value, occurrence: "" })
-                      }
-                      className={`${input} mt-1`}
-                    />
-                  </label>
-                  <label className="block text-sm">
-                    Time zone
-                    <input
-                      aria-label="Date time zone"
-                      maxLength={100}
-                      required
-                      value={draft.timeZone}
-                      disabled={busy || disabled}
-                      onChange={(event) =>
-                        setDraft({ ...draft, timeZone: event.target.value, occurrence: "" })
-                      }
-                      className={`${input} mt-1`}
-                    />
-                  </label>
-                  <label className="block text-sm">
-                    If the clock repeats this time
-                    <select
-                      aria-label="Repeated time occurrence"
-                      value={draft.occurrence}
-                      disabled={busy || disabled}
-                      onChange={(event) => setDraft({ ...draft, occurrence: event.target.value })}
-                      className={`${input} mt-1`}
-                    >
-                      <option value="">Require a choice if ambiguous</option>
-                      <option value="earlier">Earlier occurrence</option>
-                      <option value="later">Later occurrence</option>
-                    </select>
-                  </label>
-                </>
-              )}
-            </>
-          )}
-          {draft.action.startsWith("followup-") && (
-            <label className="block text-sm">
-              {draft.action === "followup-create" || draft.action === "followup-snooze"
-                ? "Follow-up reason (optional)"
-                : "Outcome note (optional)"}
-              <textarea
-                aria-label="Follow-up reason"
-                maxLength={2000}
-                rows={2}
-                value={draft.reason}
-                disabled={busy || disabled}
-                onChange={(event) => setDraft({ ...draft, reason: event.target.value })}
-                className={`${input} mt-1`}
-              />
-            </label>
-          )}
-          {["key-create", "key-edit"].includes(draft.action) && (
-            <label className="block text-sm">
-              Key date label
-              <input
-                aria-label="Key date label"
-                required
-                maxLength={120}
-                placeholder="Delivery, start, launch…"
-                value={draft.label}
-                disabled={busy || disabled}
-                onChange={(event) => setDraft({ ...draft, label: event.target.value })}
-                className={`${input} mt-1`}
-              />
-            </label>
-          )}
-          {draft.action === "key-remove" && (
-            <p className="break-words text-sm">
-              Remove {draft.label}? Its earlier values remain in task activity.
-            </p>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="submit"
-              disabled={disabled || busy || draft.revision !== task.revision}
-              className={`${button} bg-blue-600 text-white`}
-            >
-              {busy ? "Saving…" : "Save dates"}
-            </button>
-            <button type="button" disabled={busy} onClick={clear} className={button}>
-              Discard date draft
-            </button>
-          </div>
-        </form>
-      )}
+            )}
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="submit"
+                disabled={disabled || busy || draft.revision !== task.revision}
+                className={`${button} bg-blue-600 text-white`}
+              >
+                {busy
+                  ? "Saving…"
+                  : draft.action === "deadline"
+                    ? "Save deadline"
+                    : labels[draft.action]}
+              </button>
+              <button type="button" disabled={busy} onClick={clear} className={button}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+      </TaskModal>
     </section>
   );
 });

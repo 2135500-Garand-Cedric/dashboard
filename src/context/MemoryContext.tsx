@@ -1,13 +1,13 @@
 "use client";
 
-import { createContext, useContext, ReactNode, useState } from "react";
+import { createContext, useContext, ReactNode, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 
-type MemoryStore = Record<string, any>;
+type MemoryStore = Record<string, unknown>;
 
 interface MemoryContextType {
-  get: (key: string, defaultValue?: any) => any;
-  set: (key: string, value: any) => void;
+  get: <T = unknown>(key: string, defaultValue?: T) => T;
+  set: (key: string, value: unknown) => void;
   remove: (key: string) => void;
   clear: () => void;
   pageRouter: (prev: string, page: string) => void;
@@ -18,12 +18,17 @@ const MemoryContext = createContext<MemoryContextType | undefined>(undefined);
 export const MemoryProvider = ({ children }: { children: ReactNode }) => {
   const [store, setStore] = useState<MemoryStore>({});
   const router = useRouter();
+  const current = useRef(store);
+  current.current = store;
 
-  const get = (key: string, defaultValue?: any) => store[key] ?? defaultValue;
+  const get = useCallback(
+    <T,>(key: string, defaultValue?: T) => (current.current[key] ?? defaultValue) as T,
+    [],
+  );
 
-  const set = (key: string, value: any) => {
-    setStore((prev) => ({ ...prev, [key]: value }));
-  };
+  const set = useCallback((key: string, value: unknown) => {
+    setStore((prev) => (Object.is(prev[key], value) ? prev : { ...prev, [key]: value }));
+  }, []);
 
   const remove = (key: string) => {
     setStore((prev) => {

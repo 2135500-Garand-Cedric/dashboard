@@ -1,3 +1,4 @@
+import { timeZoneTestDependency } from "./helpers/time-zone.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { createRequire } from "node:module";
@@ -11,7 +12,10 @@ function load(file, deps = {}) {
     source = ts.transpileModule(fs.readFileSync(new URL(file, import.meta.url), "utf8"), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2017 },
     }).outputText;
-  new Function("exports", "require", source)(exports, (name) => deps[name] ?? require(name));
+  new Function("exports", "require", source)(
+    exports,
+    (name) => deps[name] ?? timeZoneTestDependency(name) ?? require(name),
+  );
   return exports;
 }
 test(
@@ -281,8 +285,6 @@ test(
             description: `${prefix} description needle`,
             contextId: context.id,
             priorityLevel: "URGENT",
-            company: "Synthetic company",
-            course: "Synthetic course",
             kind: "ISSUE",
             system: "Synthetic system",
             tags: ["test-tag"],
@@ -291,8 +293,6 @@ test(
           const filters = {
             context: String(context.id),
             priority: "URGENT",
-            company: "SYNTHETIC COMPANY",
-            course: "Synthetic course",
             kind: "ISSUE",
             system: "system",
             tag: "test-tag",
@@ -316,12 +316,13 @@ test(
           assert.ok(
             (await search({ context: "none" })).items.some((task) => task.id === unclassified.id),
           );
-          assert.equal((await search({ company: "absent company" })).total, 0);
+          await assert.rejects(create({ company: "Retired" }), (error) => error.status === 400);
+          await assert.rejects(create({ course: "Retired" }), (error) => error.status === 400);
           const done = await patch(row, { status: "DONE" });
           assert.ok(!(await search({})).items.some((task) => task.id === row.id));
           assert.ok((await search({ view: "history" })).items.some((task) => task.id === row.id));
           const archived = await patch(done, { archived: true });
-          assert.ok(!(await search({ view: "history" })).items.some((task) => task.id === row.id));
+          assert.ok((await search({ view: "history" })).items.some((task) => task.id === row.id));
           assert.ok((await search({ view: "archived" })).items.some((task) => task.id === row.id));
           assert.equal((await api.getTodo(archived.id)).id, row.id);
         },

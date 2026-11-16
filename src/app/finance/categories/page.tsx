@@ -1,5 +1,5 @@
-import CategoriesManager from "@/components/finance/CategoriesManager";
+import { redirect } from "next/navigation";
 
-export default function CategoriesPage() {
-  return <CategoriesManager />;
+export default function LegacyPage() {
+  redirect("/finance/settings/categories");
 }

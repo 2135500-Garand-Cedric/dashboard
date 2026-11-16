@@ -1,6 +1,6 @@
 import type { Prisma } from "@/generated/prisma";
 import { OWNER_DATABASE_USER_ID as owner, OWNER_GITHUB_ID } from "@/lib/owner-policy";
-import { APP_TIME_ZONE } from "@/lib/app-time-zone";
+import { getAppTimeZone } from "@/lib/time-zone-context";
 import { appendTaskActivity } from "./activity-server";
 import { graphStub, ownedGraphTask, taskStubSelect } from "./graph";
 import { parseWorkDate, calendarDate } from "./dates";
@@ -22,7 +22,11 @@ export const EVENT_FIELDS = [
 ];
 export const eventInclude = {
   taskLinks: {
-    include: { todo: { select: { ...taskStubSelect, contextId: true } } },
+    include: {
+      todo: {
+        select: { ...taskStubSelect, contextId: true, activityTypeId: true, activityType: true },
+      },
+    },
     orderBy: { todoId: "asc" as const },
   },
   conversions: { where: { active: true }, orderBy: { id: "desc" as const }, take: 1 },
@@ -46,7 +50,7 @@ export function eventDTO(row: CalendarEventRow) {
     legacyLinkWritable: taskLinks.length <= 1,
     conversion: conversions[0] ?? null,
     superseded: conversions[0]?.mode === "PLACEHOLDER",
-    appTimeZone: APP_TIME_ZONE,
+    appTimeZone: getAppTimeZone(),
   };
 }
 export async function eventRow(db: DB, id: number) {
@@ -130,8 +134,8 @@ export function parseEventFields(body: Record<string, unknown>) {
     } else if (timing.kind === "TIMED") {
       if (timing.startDate !== undefined || timing.endExclusive !== undefined)
         throw new WorkValidationError("Timed events use exact times only.");
-      const start = parseWorkDate(timing.start, APP_TIME_ZONE),
-        end = timing.end == null ? null : parseWorkDate(timing.end, APP_TIME_ZONE);
+      const start = parseWorkDate(timing.start, getAppTimeZone()),
+        end = timing.end == null ? null : parseWorkDate(timing.end, getAppTimeZone());
       if (!start.at || (end && !end.at))
         throw new WorkValidationError("Choose exact start/end times for a timed event.");
       if (end && end.timeZone !== start.timeZone)

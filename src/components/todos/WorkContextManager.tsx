@@ -31,8 +31,14 @@ export default function WorkContextManager({
     }
   }
   return (
-    <details className="mb-4 rounded-lg border border-card-border p-3">
-      <summary className="cursor-pointer font-medium">Manage contexts</summary>
+    <section
+      id="contexts"
+      aria-labelledby="contexts-title"
+      className="min-w-0 rounded-xl border border-card-border bg-card-bg p-5"
+    >
+      <h2 id="contexts-title" className="text-xl font-semibold">
+        Contexts
+      </h2>
       <div className="mt-3 space-y-2">
         {error && (
           <p role="alert" className="text-rose-500">
@@ -40,28 +46,42 @@ export default function WorkContextManager({
           </p>
         )}
         {contexts.map((context) => (
-          <div
+          <form
             key={`${context.id}-${context.revision}`}
-            className="flex min-w-0 flex-wrap items-center gap-2"
+            className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-card-border p-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const value = String(new FormData(event.currentTarget).get("name") || "").trim();
+              if (value !== context.name)
+                void save(() =>
+                  write.current(
+                    `/api/work-contexts/${context.id}`,
+                    "PATCH",
+                    { name: value },
+                    context.revision,
+                  ),
+                );
+            }}
           >
             <input
               aria-label={`Context name: ${context.name}`}
               defaultValue={context.name}
               disabled={busy}
-              onBlur={(event) => {
-                const value = event.target.value;
-                if (value !== context.name)
-                  void save(() =>
-                    write.current(
-                      `/api/work-contexts/${context.id}`,
-                      "PATCH",
-                      { name: value },
-                      context.revision,
-                    ),
-                  );
-              }}
+              name="name"
+              required
+              maxLength={80}
               className="min-w-0 flex-1 rounded border bg-card-bg p-2"
             />
+            <span className={`text-xs ${context.active ? "text-emerald-400" : "text-gray-400"}`}>
+              {context.active ? "Active" : "Inactive"}
+            </span>
+            <button
+              type="submit"
+              disabled={busy}
+              className="rounded border border-card-border px-3 py-2 text-sm"
+            >
+              Save name
+            </button>
             <button
               type="button"
               disabled={busy}
@@ -79,7 +99,7 @@ export default function WorkContextManager({
             >
               {context.active ? "Deactivate" : "Reactivate"}
             </button>
-          </div>
+          </form>
         ))}
         <form
           className="flex flex-wrap gap-2 pt-2"
@@ -107,6 +127,6 @@ export default function WorkContextManager({
           </button>
         </form>
       </div>
-    </details>
+    </section>
   );
 }

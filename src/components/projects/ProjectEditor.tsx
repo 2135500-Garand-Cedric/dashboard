@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { createWorkWriter, workRead } from "@/lib/work-management/client";
-import type { WorkProject, WorkContext } from "@/lib/work-management/types";
+import type { WorkProject, WorkActivityType } from "@/lib/work-management/types";
 import { useWorkDraftGuard } from "@/components/work/useWorkDraftGuard";
 const input = "mt-1 w-full min-w-0 rounded border border-card-border bg-card-bg p-2 text-sm";
 export default function ProjectEditor({
@@ -16,27 +16,30 @@ export default function ProjectEditor({
   const [name, setName] = useState(project?.name ?? ""),
     [objective, setObjective] = useState(project?.objective ?? ""),
     [summary, setSummary] = useState(project?.summary ?? ""),
-    [context, setContext] = useState(project?.contextId ? String(project.contextId) : ""),
+    [activityType, setActivityType] = useState(
+      project?.activityTypeId ? String(project.activityTypeId) : "",
+    ),
     [start, setStart] = useState(project?.startDate ?? ""),
     [target, setTarget] = useState(project?.targetDate ?? ""),
-    [contexts, setContexts] = useState<WorkContext[]>([]),
+    [activityTypes, setActivityTypes] = useState<WorkActivityType[]>([]),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const writer = useRef(createWorkWriter()),
     lock = useRef(false),
     revision = useRef(project?.revision),
     clean = useRef(false),
-    baseline = useRef(JSON.stringify({ name, objective, summary, context, start, target }));
+    baseline = useRef(JSON.stringify({ name, objective, summary, activityType, start, target }));
   const leave = useWorkDraftGuard(
     () =>
       !clean.current &&
-      baseline.current !== JSON.stringify({ name, objective, summary, context, start, target }),
+      baseline.current !==
+        JSON.stringify({ name, objective, summary, activityType, start, target }),
   );
   useEffect(() => {
     let active = true;
-    void workRead<WorkContext[]>("/api/work-contexts")
+    void workRead<WorkActivityType[]>("/api/activity-types")
       .then((rows) => {
-        if (active) setContexts(rows);
+        if (active) setActivityTypes(rows);
       })
       .catch((e) => {
         if (active) setError(e.message);
@@ -64,7 +67,7 @@ export default function ProjectEditor({
               name,
               objective: objective || null,
               summary: summary || null,
-              contextId: context ? Number(context) : null,
+              activityTypeId: activityType ? Number(activityType) : null,
               startDate: start || null,
               targetDate: target || null,
             },
@@ -122,17 +125,17 @@ export default function ProjectEditor({
       </label>
       <div className="grid gap-3 sm:grid-cols-3">
         <label className="text-sm">
-          Context
+          Activity type
           <select
-            aria-label="Project context"
-            value={context}
+            aria-label="Project activity type"
+            value={activityType}
             disabled={busy}
-            onChange={(e) => setContext(e.target.value)}
+            onChange={(e) => setActivityType(e.target.value)}
             className={input}
           >
             <option value="">Unclassified</option>
-            {contexts
-              .filter((row) => row.active || row.id === project?.contextId)
+            {activityTypes
+              .filter((row) => row.active || row.id === project?.activityTypeId)
               .map((row) => (
                 <option key={row.id} value={row.id}>
                   {row.name}

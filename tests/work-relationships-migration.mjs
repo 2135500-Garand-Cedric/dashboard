@@ -22,7 +22,10 @@ test(
         await db.$queryRaw`SELECT column_name FROM information_schema.columns WHERE table_name='Todo' AND column_name='parentId'`;
       assert.equal(columns.length, 0, "Restore a fresh pre-Phase-05 copy; do not reset it.");
       const prefix = `__legacy_graph_${randomUUID()}`,
-        foreign = await db.user.create({ data: { email: `${prefix}@invalid.test`, name: prefix } });
+        foreign = await db.user.create({
+          data: { email: `${prefix}@invalid.test`, name: prefix },
+          select: { id: true },
+        });
       const ids = [];
       for (let i = 0; i < 8; i++) {
         const [row] =

@@ -157,3 +157,27 @@ test("phase-02 inventory permits only declared additive fields/enums/defaults an
     ).some((value) => value.includes("historical")),
   );
 });
+
+test("task rewards are retired while zero-valued legacy requests remain compatible", () => {
+  for (const field of ["rewardXp", "rewardCoins"]) {
+    assert.throws(() => fields.parseTaskFields({ [field]: 10 }), /no longer supported/);
+    assert.equal(fields.parseTaskFields({ [field]: 0 })[field], 0);
+  }
+});
+
+test("closing automatically archives and reopening returns the task to active work", () => {
+  const now = new Date("2026-11-13T15:00:00Z");
+  for (const status of ["DONE", "CANCELLED"]) {
+    const closed = fields.lifecycleData(row(), { status }, {}, now);
+    assert.equal(closed.archivedAt, now);
+    const reopened = fields.lifecycleData(
+      row({ status, archivedAt: now }),
+      { status: "TODO" },
+      {},
+      new Date(now.getTime() + 1000),
+    );
+    assert.equal(reopened.archivedAt, null);
+    assert.equal(reopened.completedAt, null);
+    assert.equal(reopened.cancelledAt, null);
+  }
+});

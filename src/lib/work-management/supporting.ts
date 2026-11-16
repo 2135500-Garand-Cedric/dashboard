@@ -1,3 +1,4 @@
+import { readSnapshot } from "./read-snapshot";
 import type { Prisma, WorkAttachment, WorkNote } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
 import { OWNER_GITHUB_ID } from "@/lib/owner-policy";
@@ -160,56 +161,99 @@ export async function taskTimeline(parent: WorkParent, params: URLSearchParams) 
     throw new WorkValidationError("Choose Notes only or All activity.");
   const requested = pageNumber(params),
     pageSize = 20;
-  return prisma.$transaction(
-    async (db) => {
-      await parentRow(db, parent);
-      const where = supportWhere(parent);
-      const total =
-        filter === "notes"
-          ? await db.workNote.count({ where })
-          : await db.workActivity.count({ where });
-      const page = Math.min(requested, Math.max(1, Math.ceil(total / pageSize))),
-        skip = (page - 1) * pageSize;
-      if (filter === "notes")
-        return {
-          filter,
-          total,
-          page,
-          pageSize,
-          notes: await db.workNote.findMany({
-            where,
-            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-            skip,
-            take: pageSize,
-          }),
-          activity: [],
-        };
-      const activity = await db.workActivity.findMany({
-        where,
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        skip,
-        take: pageSize,
-        include: { noteRevision: { include: { note: true } } },
-      });
+  return readSnapshot(prisma, async (db) => {
+    await parentRow(db, parent);
+    const where = supportWhere(parent);
+    const activityWhere = {
+      ...where,
+      action: { notIn: ["KEY_CREATE", "KEY_EDIT", "KEY_REMOVE"] },
+    };
+    const noteCount = filter === "notes" ? await db.workNote.count({ where }) : 0;
+    const followUpCount =
+      filter === "notes" && typeof parent === "number"
+        ? await db.workFollowUp.count({
+            where: { todoId: parent, todo: { userId: WORK_USER_ID }, status: { not: "ACTIVE" } },
+          })
+        : 0;
+    const total =
+      filter === "notes"
+        ? noteCount + followUpCount
+        : await db.workActivity.count({ where: activityWhere });
+    const page = Math.min(requested, Math.max(1, Math.ceil(total / pageSize))),
+      skip = (page - 1) * pageSize;
+    if (filter === "notes" && typeof parent === "number") {
+      // Page the combined stream in PostgreSQL, rather than fetching all notes
+      // or paginating the two record types independently. Values are bound.
+      const entries = await db.$queryRaw<{ kind: "note" | "followup"; id: number }[]>`
+          SELECT stream.kind, stream.id FROM (
+            SELECT 'note'::text AS kind, n.id, n."createdAt" AS "sortAt"
+            FROM "WorkNote" n
+            WHERE n."todoId" = ${parent} AND n."userId" = ${WORK_USER_ID}
+              AND n."projectId" IS NULL
+            UNION ALL
+            SELECT 'followup'::text AS kind, f.id, COALESCE(f."resolvedAt", f."createdAt") AS "sortAt"
+            FROM "WorkFollowUp" f JOIN "Todo" t ON t.id = f."todoId"
+            WHERE f."todoId" = ${parent} AND t."userId" = ${WORK_USER_ID}
+              AND f.status <> 'ACTIVE'
+          ) stream ORDER BY stream."sortAt" DESC, stream.id DESC, stream.kind ASC
+          OFFSET ${skip} LIMIT ${pageSize}`;
+      const [notes, followUps] = await Promise.all([
+        db.workNote.findMany({
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          where: {
+            ...where,
+            id: { in: entries.filter((item) => item.kind === "note").map((item) => item.id) },
+          },
+        }),
+        db.workFollowUp.findMany({
+          orderBy: [{ resolvedAt: "desc" }, { id: "desc" }],
+          where: {
+            todoId: parent,
+            todo: { userId: WORK_USER_ID },
+            id: { in: entries.filter((item) => item.kind === "followup").map((item) => item.id) },
+          },
+        }),
+      ]);
+      return { filter, total, page, pageSize, entries, notes, followUps, activity: [] };
+    }
+    if (filter === "notes")
       return {
         filter,
         total,
         page,
         pageSize,
-        notes: [],
-        activity: activity.map((entry) => ({
-          ...entry,
-          noteRevision:
-            entry.noteRevision?.note.userId === WORK_USER_ID &&
-            entry.noteRevision.note.todoId === parentFields(parent).todoId &&
-            entry.noteRevision.note.projectId === parentFields(parent).projectId
-              ? entry.noteRevision
-              : null,
-        })),
+        notes: await db.workNote.findMany({
+          where,
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          skip,
+          take: pageSize,
+        }),
+        activity: [],
       };
-    },
-    { isolationLevel: "RepeatableRead" },
-  );
+    const activity = await db.workActivity.findMany({
+      where: activityWhere,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      skip,
+      take: pageSize,
+      include: { noteRevision: { include: { note: true } } },
+    });
+    return {
+      filter,
+      total,
+      page,
+      pageSize,
+      notes: [],
+      activity: activity.map((entry) => ({
+        ...entry,
+        noteRevision:
+          entry.noteRevision?.note.userId === WORK_USER_ID &&
+          entry.noteRevision.note.todoId === parentFields(parent).todoId &&
+          entry.noteRevision.note.projectId === parentFields(parent).projectId
+            ? entry.noteRevision
+            : null,
+      })),
+    };
+  });
 }
 export async function noteRevisions(parent: WorkParent, id: number, params: URLSearchParams) {
   const requested = pageNumber(params),
@@ -257,22 +301,19 @@ async function attachmentRow(db: DB, parent: WorkParent, id: number) {
 export async function listAttachments(parent: WorkParent, params: URLSearchParams) {
   const requested = pageNumber(params),
     pageSize = 12;
-  return prisma.$transaction(
-    async (db) => {
-      await parentRow(db, parent);
-      const where = supportWhere(parent),
-        total = await db.workAttachment.count({ where });
-      const page = Math.min(requested, Math.max(1, Math.ceil(total / pageSize)));
-      const rows = await db.workAttachment.findMany({
-        where,
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      });
-      return { total, page, pageSize, items: rows.map(attachmentDTO) };
-    },
-    { isolationLevel: "RepeatableRead" },
-  );
+  return readSnapshot(prisma, async (db) => {
+    await parentRow(db, parent);
+    const where = supportWhere(parent),
+      total = await db.workAttachment.count({ where });
+    const page = Math.min(requested, Math.max(1, Math.ceil(total / pageSize)));
+    const rows = await db.workAttachment.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
+    return { total, page, pageSize, items: rows.map(attachmentDTO) };
+  });
 }
 export async function cleanupAttachment(parent: WorkParent, id: number) {
   try {

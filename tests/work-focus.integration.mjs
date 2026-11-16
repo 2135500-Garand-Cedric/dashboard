@@ -35,10 +35,11 @@ test(
     };
     const focus = async (row, active, at = now, date = day) =>
       api.setFocus(row.id, { date, active }, command(await tasks.getTodo(row.id)), at);
+    const fixtureType = await db.activityType.create({ data: { name: prefix, color: "#3b82f6" } });
     const view = (filter = {}, at = now) =>
-      api.myWork(new URLSearchParams({ company: prefix, ...filter }), at);
-    const scoped = (body) => task({ company: prefix, ...body });
-    let a, b, foreign;
+      api.myWork(new URLSearchParams({ activityType: String(fixtureType.id), ...filter }), at);
+    const scoped = (body) => task({ activityTypeId: fixtureType.id, ...body });
+    let a, b, foreign, contextFixture;
     const originalUser = await db.user.findUniqueOrThrow({ where: { id: 1 } });
     try {
       await t.test(
@@ -109,7 +110,7 @@ test(
           assert.equal(updated.sections.blocked.total, 1);
           assert.equal(updated.sections.waiting.total, 1);
           const shared = await tasks.searchWork(
-            new URLSearchParams({ company: prefix, planning: "blocked" }),
+            new URLSearchParams({ activityType: String(fixtureType.id), planning: "blocked" }),
           );
           assert.equal(shared.total, updated.sections.blocked.total);
         },
@@ -285,8 +286,10 @@ test(
       await t.test(
         "combined/separate context and project filters, paging links, and reads do not write",
         async () => {
-          const contexts = await tasks.listWorkContexts(),
-            school = contexts.find((row) => row.key === "school");
+          contextFixture = await db.workContext.create({
+            data: { userId: 1, key: prefix, name: prefix, normalizedName: prefix, active: true },
+          });
+          const school = contextFixture;
           const project = await services.projects.createProject({ name: prefix }, command());
           const row = await scoped({ contextId: school.id });
           await services.projects.taskMembership(row.id, { projectId: project.id }, command(row));
@@ -376,7 +379,9 @@ test(
         await tx.todo.updateMany({ where: { id: { in: ids } }, data: { dependsOnId: null } });
         await tx.todo.deleteMany({ where: { id: { in: ids } } });
         await tx.workMutationReceipt.deleteMany({ where: { requestKey: { in: keys } } });
+        if (contextFixture) await tx.workContext.delete({ where: { id: contextFixture.id } });
         if (foreign) await tx.user.delete({ where: { id: foreign.id } });
+        await tx.activityType.delete({ where: { id: fixtureType.id } });
       });
       await db.$disconnect();
     }

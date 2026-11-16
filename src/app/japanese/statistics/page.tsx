@@ -38,14 +38,14 @@ const tooltipStyle = {
 };
 const shortDate = (date: string) =>
   new Date(`${date}T12:00:00Z`).toLocaleDateString("en-CA", {
-    timeZone: "America/Toronto",
+    timeZone: "UTC",
     month: "short",
     day: "numeric",
   });
 
 const monthLabel = (date: string) =>
   new Date(`${date}T12:00:00Z`).toLocaleDateString("en-CA", {
-    timeZone: "America/Toronto",
+    timeZone: "UTC",
     month: "short",
     year: "2-digit",
   });

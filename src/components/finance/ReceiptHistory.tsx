@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import FinanceExport from "./FinanceExport";
+import HistoryFilters, { HistoryFiltersButton } from "./HistoryFilters";
 import { useHistoryFilters } from "./useHistoryFilters";
 import { type FormEvent } from "react";
 import type { ReceiptPage } from "@/lib/finance/receipts";
@@ -16,13 +17,15 @@ import {
 } from "./shared";
 
 const defaults = { search: "", status: "", account: "", from: "", to: "" };
-export default function ReceiptHistory() {
-  const { draft, setDraft, filters, setFilters, page, setPage } = useHistoryFilters(defaults);
+export default function ReceiptHistory({ unmatchedOnly = false }: { unmatchedOnly?: boolean }) {
+  const { draft, setDraft, filters, setFilters, page, setPage, filtersOpen, setFiltersOpen } =
+    useHistoryFilters(defaults);
   const accounts = useFinanceData<{ accounts: FinanceAccount[] }>("/api/finance/accounts");
   const params = new URLSearchParams({ page: String(page) });
   Object.entries(filters).forEach(([key, value]) => {
     if (value) params.set(key, value);
   });
+  if (unmatchedOnly) params.set("status", "unmatched");
   const history = useFinanceData<ReceiptPage>(`/api/finance/receipts?${params}`);
   function apply(event: FormEvent) {
     event.preventDefault();
@@ -32,91 +35,103 @@ export default function ReceiptHistory() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-2xl font-semibold">Receipt history</h2>
-        <Link href="/finance/receipts/new" className={primaryButton}>
-          Add receipt
-        </Link>
-      </div>
-      <form onSubmit={apply} className="card grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <label className="space-y-1">
-          Search
-          <input
-            aria-label="Search receipts"
-            placeholder="Merchant or notes"
-            maxLength={200}
-            value={draft.search}
-            className={fieldClass}
-            onChange={(event) => setDraft({ ...draft, search: event.target.value })}
+        <h2 className="text-2xl font-semibold">Earlier receipt records</h2>
+        <div className="flex flex-wrap gap-2">
+          <HistoryFiltersButton
+            open={filtersOpen}
+            onToggle={() => setFiltersOpen((open) => !open)}
+            filters={filters}
           />
-        </label>
-        <label className="space-y-1">
-          Status
-          <select
-            aria-label="Receipt status"
-            value={draft.status}
-            className={fieldClass}
-            onChange={(event) => setDraft({ ...draft, status: event.target.value })}
-          >
-            <option value="">All receipts</option>
-            <option value="unmatched">Unmatched</option>
-            <option value="linked">Linked to transaction</option>
-          </select>
-        </label>
-        <label className="space-y-1">
-          Account
-          <select
-            aria-label="Receipt account filter"
-            value={draft.account}
-            className={fieldClass}
-            onChange={(event) => setDraft({ ...draft, account: event.target.value })}
-          >
-            <option value="">All accounts</option>
-            {accounts.data?.accounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.name}
-                {account.active ? "" : " (inactive)"}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="space-y-1">
-          From
-          <input
-            aria-label="Receipts from date"
-            type="date"
-            className={fieldClass}
-            value={draft.from}
-            onChange={(event) => setDraft({ ...draft, from: event.target.value })}
-          />
-        </label>
-        <label className="space-y-1">
-          To
-          <input
-            aria-label="Receipts to date"
-            type="date"
-            min={draft.from || undefined}
-            className={fieldClass}
-            value={draft.to}
-            onChange={(event) => setDraft({ ...draft, to: event.target.value })}
-          />
-        </label>
-        <div className="flex flex-wrap items-end gap-2">
-          <button type="submit" className={primaryButton}>
-            Apply filters
-          </button>
-          <button
-            type="button"
-            className={secondaryButton}
-            onClick={() => {
-              setDraft(defaults);
-              setFilters(defaults);
-            }}
-          >
-            Reset
-          </button>
+          <Link href="/finance/expenses/new" className={primaryButton}>
+            Add expense
+          </Link>
         </div>
-      </form>
-      <FinanceExport kind="receipts" filters={filters} />
+      </div>
+      <HistoryFilters open={filtersOpen}>
+        <form onSubmit={apply} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <label className="space-y-1">
+            Search
+            <input
+              aria-label="Search receipts"
+              placeholder="Merchant or notes"
+              maxLength={200}
+              value={draft.search}
+              className={fieldClass}
+              onChange={(event) => setDraft({ ...draft, search: event.target.value })}
+            />
+          </label>
+          <label className="space-y-1">
+            Status
+            <select
+              aria-label="Receipt status"
+              value={draft.status}
+              className={fieldClass}
+              onChange={(event) => setDraft({ ...draft, status: event.target.value })}
+            >
+              <option value="">All receipts</option>
+              <option value="unmatched">Unmatched</option>
+              <option value="linked">Linked to transaction</option>
+            </select>
+          </label>
+          <label className="space-y-1">
+            Account
+            <select
+              aria-label="Receipt account filter"
+              value={draft.account}
+              className={fieldClass}
+              onChange={(event) => setDraft({ ...draft, account: event.target.value })}
+            >
+              <option value="">All accounts</option>
+              {accounts.data?.accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name}
+                  {account.active ? "" : " (inactive)"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1">
+            From
+            <input
+              aria-label="Receipts from date"
+              type="date"
+              className={fieldClass}
+              value={draft.from}
+              onChange={(event) => setDraft({ ...draft, from: event.target.value })}
+            />
+          </label>
+          <label className="space-y-1">
+            To
+            <input
+              aria-label="Receipts to date"
+              type="date"
+              min={draft.from || undefined}
+              className={fieldClass}
+              value={draft.to}
+              onChange={(event) => setDraft({ ...draft, to: event.target.value })}
+            />
+          </label>
+          <div className="flex flex-wrap items-end gap-2">
+            <button type="submit" className={primaryButton}>
+              Apply filters
+            </button>
+            <button
+              type="button"
+              className={secondaryButton}
+              onClick={() => {
+                setDraft(defaults);
+                setFilters(defaults);
+              }}
+            >
+              Reset
+            </button>
+          </div>
+        </form>
+        <FinanceExport
+          kind="receipts"
+          filters={unmatchedOnly ? { ...filters, status: "unmatched" } : filters}
+        />
+      </HistoryFilters>
       {accounts.error && <FinanceLoadError error={accounts.error} retry={accounts.retry} />}
       {history.error && <FinanceLoadError error={history.error} retry={history.retry} />}
       {history.loading ? (
@@ -158,7 +173,10 @@ export default function ReceiptHistory() {
                         : "No document"}
                       {receipt.difference !== "0.0000" ? " · Totals differ" : ""}
                     </p>
-                    <Link href={`/finance/receipts/${receipt.id}`} className={secondaryButton}>
+                    <Link
+                      href={`/finance/expenses/documents/${receipt.id}`}
+                      className={secondaryButton}
+                    >
                       View receipt
                     </Link>
                   </li>

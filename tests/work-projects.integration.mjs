@@ -230,7 +230,7 @@ test(
         },
       );
       await t.test(
-        "counts exclude Cancelled and archived work without claiming effort progress",
+        "counts retain automatically archived completed work without claiming effort progress",
         async () => {
           cancelled = await task({ projectId: a.id });
           await tasks.patchTodo(cancelled.id, { status: "CANCELLED" }, command(cancelled));
@@ -242,11 +242,13 @@ test(
             actual = await db.todo.findMany({ where: { projectId: a.id, userId: 1 } });
           assert.equal(
             row.counts.total,
-            actual.filter((item) => !item.archivedAt && item.status !== "CANCELLED").length,
+            actual.filter(
+              (item) => (!item.archivedAt || item.status === "DONE") && item.status !== "CANCELLED",
+            ).length,
           );
           assert.equal(row.counts.completed, 1);
           assert.equal(row.counts.cancelled, 1);
-          assert.equal(row.counts.archived, 1);
+          assert.equal(row.counts.archived, 3);
         },
       );
       await t.test(

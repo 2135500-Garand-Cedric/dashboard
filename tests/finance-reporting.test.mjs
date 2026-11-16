@@ -1,3 +1,4 @@
+import { timeZoneTestDependency } from "./helpers/time-zone.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
@@ -13,7 +14,10 @@ function load(file, deps = {}) {
     },
   }).outputText;
   const exports = {};
-  new Function("exports", "require", compiled)(exports, (name) => deps[name] ?? require(name));
+  new Function("exports", "require", compiled)(
+    exports,
+    (name) => deps[name] ?? timeZoneTestDependency(name) ?? require(name),
+  );
   return exports;
 }
 const validation = load("../src/lib/finance/validation.ts"),
@@ -136,7 +140,7 @@ test("ledger totals exclude receipt/pay-stub duplication, confirmed aliases, tra
     match("RECEIPT", 1, 2, "100"),
     match("INCOME", 1, 1, "1500"),
   ];
-  const report = buildReport(data, filters());
+  const report = buildReport(data, filters({}));
   assert.equal(report.totals.income, "1535.0000");
   assert.equal(report.totals.purchases, "225.0000");
   assert.equal(report.totals.refunds, "20.0000");
@@ -158,7 +162,7 @@ test("refunds can make period spending negative; account/category/currency and e
     row(4, "12.50", "INCOME", { accountId: 4, currency: "USD" }),
   ];
   data.examples.accountIds = [3];
-  const all = buildReport(data, filters());
+  const all = buildReport(data, filters({}));
   assert.equal(all.totals.expenses, "-20.0000");
   assert.equal(all.totals.net, "20.0000");
   assertReconciles(all);
@@ -199,7 +203,7 @@ test("split net deposits, partial alias shares, unassigned remainders and overla
     },
   ];
   data.matches = [match("INCOME", 1, 1, "100"), match("DUPLICATE", 1, 2, "40")];
-  let report = buildReport(data, filters());
+  let report = buildReport(data, filters({}));
   assert.equal(report.totals.income, "150.0000");
   assert.equal(report.incomeBySource.find((row) => row.key === "1").amount, "100.0000");
   assert.equal(report.incomeBySource.find((row) => row.key === "unattributed").amount, "50.0000");
@@ -209,13 +213,13 @@ test("split net deposits, partial alias shares, unassigned remainders and overla
     { ...data.income[0], id: 3, transactionId: 3, net: "50" },
   );
   data.matches.push(match("INCOME", 2, 3, "50"), match("INCOME", 3, 3, "50"));
-  report = buildReport(data, filters());
+  report = buildReport(data, filters({}));
   assert.equal(report.coverage.overlappingIncome, 1);
   assert.equal(report.incomeBySource.find((row) => row.key === "overlap").amount, "50.0000");
   assertReconciles(report);
 });
 test("date ranges are calendar safe; empty buckets and trend totals remain exact beyond Number precision", () => {
-  assert.equal(filters().to, "2026-11-30");
+  assert.equal(filters({}).to, "2026-11-30");
   assert.equal(filters({ mode: "year", year: "2024" }).to, "2024-12-31");
   assert.equal(filters({ month: "2024-02" }).to, "2024-02-29");
   for (const extra of [
@@ -234,7 +238,7 @@ test("date ranges are calendar safe; empty buckets and trend totals remain exact
     row(2, "900719925474099.1234", "INCOME"),
     row(3, "-0.0001", "EXPENSE"),
   ];
-  const report = buildReport(data, filters());
+  const report = buildReport(data, filters({}));
   assert.equal(report.totals.income, "1801439850948198.2468");
   assert.equal(report.totals.net, "1801439850948198.2467");
   assert.equal(report.timeline.length, 30);
@@ -245,4 +249,76 @@ test("date ranges are calendar safe; empty buckets and trend totals remain exact
   assert.equal(year.interval, "month");
   assert.equal(year.timeline.length, 12);
   assertReconciles(year);
+});
+
+const { buildOverview } = load("../src/lib/finance/overview.ts", { "./reporting": reporting });
+test("overview counts canonical activities and confirmed statement matches, not documents or imported origin", () => {
+  const data = fixture();
+  data.transactions = [
+    row(1, "100", "INCOME", { source: "IMPORTED", statementBacked: true }),
+    row(2, "-20", "EXPENSE"),
+    row(3, "5", "REFUND"),
+    row(4, "-50", "TRANSFER", { transferId: "pair" }),
+    row(5, "50", "TRANSFER", { transferId: "pair", accountId: 2 }),
+    row(6, "-20", "EXPENSE", { excludedAmount: "20" }),
+    row(7, "999", "INCOME", { accountId: 4, currency: "USD" }),
+  ];
+  data.matches = [match("STATEMENT", 1, 2, "20"), match("STATEMENT", 2, 4, "50")];
+  data.statements = [
+    {
+      id: 1,
+      accountId: 1,
+      name: "Bank November",
+      status: "COMPLETED",
+      from: "2026-11-01",
+      to: "2026-11-30",
+      rows: [
+        { date: "2026-11-06", transactionId: 2 },
+        { date: "2026-11-07", transactionId: null },
+      ],
+    },
+    {
+      id: 2,
+      accountId: 4,
+      name: "USD November",
+      status: "DRAFT",
+      from: "2026-11-01",
+      to: "2026-11-30",
+      rows: [{ date: "2026-11-07", transactionId: null }],
+    },
+  ];
+  const overview = buildOverview(data, filters({}));
+  assert.deepEqual(overview.matching, { total: 4, matched: 1, partial: 1, unmatched: 2 });
+  assert.equal(overview.groups.find((row) => row.key === "expenses").total, 2);
+  assert.equal(overview.pendingStatementRows, 1);
+  assert.equal(overview.statements.length, 1);
+  assert.equal(overview.statements[0].saved, true);
+  assert.equal(overview.recent.filter((row) => row.type === "TRANSFER").length, 1);
+  assert.equal(overview.recent.find((row) => row.type === "TRANSFER").id, 4);
+  data.matches.push(match("STATEMENT", 3, 5, "50"));
+  const matched = buildOverview(data, filters({ account: "2" }));
+  assert.equal(matched.matching.total, 1);
+  assert.equal(matched.matching.matched, 1);
+  assert.equal(matched.recent[0].fromAccount, "Bank");
+  assert.equal(matched.recent[0].toAccount, "Visa");
+});
+test("overview respects custom dates and datasets and displays only the counted remainder", () => {
+  const data = fixture();
+  data.examples.accountIds = [1];
+  data.transactions = [
+    row(1, "-100", "EXPENSE", { excludedAmount: "25" }),
+    row(2, "-20", "EXPENSE", { accountId: 2 }),
+    row(3, "100", "INCOME", { date: "2026-10-01" }),
+  ];
+  assert.equal(
+    buildOverview(data, filters({})).recent.find((row) => row.id === 1).amount,
+    "-75.0000",
+  );
+  assert.equal(buildOverview(data, filters({ dataset: "personal" })).recent.length, 1);
+  assert.equal(buildOverview(data, filters({ dataset: "examples" })).recent.length, 1);
+  assert.equal(
+    buildOverview(data, filters({ mode: "custom", from: "2026-11-07", to: "2026-11-08" })).matching
+      .total,
+    0,
+  );
 });

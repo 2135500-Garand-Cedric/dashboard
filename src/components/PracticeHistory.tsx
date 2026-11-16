@@ -11,7 +11,8 @@ import {
   formatPracticeDuration,
   practiceHistoryTotals,
 } from "@/lib/japanese/practice-session-types";
-import { torontoDateKey } from "@/lib/japanese/dates";
+import { useDateTime } from "@/context/SettingsContext";
+import { localToday } from "@/lib/work-management/date-format";
 
 const backButtonClassName =
   "inline-flex items-center justify-center gap-2 rounded-lg border border-card-border bg-card-bg px-4 py-2 text-sm font-medium text-foreground shadow-sm transition-colors hover:border-blue-500 hover:bg-blue-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500";
@@ -99,19 +100,20 @@ export default function PracticeHistory({
   kind: string;
   range: string;
 }) {
+  const { timeZone } = useDateTime();
   const query = new URLSearchParams({ date, kind, range });
   const { data, error, retry } = useHistoryData<{ sessions: PracticeSessionSummary[] }>(
     `/api/japanese-practice/practice-sessions?${query}`,
   );
   const groups = new Map<string, PracticeSessionSummary[]>();
   for (const session of data?.sessions ?? []) {
-    const day = torontoDateKey(new Date(session.date));
+    const day = localToday(new Date(session.date), timeZone);
     groups.set(day, [...(groups.get(day) ?? []), session]);
   }
   const labelDate = new Date(`${date}T12:00:00Z`);
   const titleDate = Number.isFinite(labelDate.getTime())
     ? labelDate.toLocaleDateString("en-CA", {
-        timeZone: "America/Toronto",
+        timeZone: "UTC",
         month: "long",
         ...(range === "month" ? {} : { day: "numeric" }),
         year: "numeric",
@@ -141,7 +143,7 @@ export default function PracticeHistory({
               {range === "month" && (
                 <h2 className="text-lg font-semibold">
                   {new Date(`${day}T12:00:00Z`).toLocaleDateString("en-CA", {
-                    timeZone: "America/Toronto",
+                    timeZone: "UTC",
                     dateStyle: "long",
                   })}
                 </h2>
@@ -153,7 +155,7 @@ export default function PracticeHistory({
                     <h2 className="text-lg font-semibold">{session.activityName}</h2>
                     <span className="text-sm text-gray-500">
                       {new Date(session.date).toLocaleTimeString("en-CA", {
-                        timeZone: "America/Toronto",
+                        timeZone,
                         hour: "2-digit",
                         minute: "2-digit",
                       })}
@@ -202,12 +204,13 @@ export default function PracticeHistory({
 }
 
 export function SavedPracticeOverview({ id }: { id: string }) {
+  const { timeZone } = useDateTime();
   const { data, error, retry } = useHistoryData<{ review: PracticeSessionReview }>(
     `/api/japanese-practice/practice-sessions/${encodeURIComponent(id)}`,
   );
   const review = data?.review;
   const historyUrl = review
-    ? `/japanese/practice/history?${new URLSearchParams({ date: torontoDateKey(new Date(review.date)), kind: review.activityId === 5 ? "kanji" : "vocab", range: "day" })}`
+    ? `/japanese/practice/history?${new URLSearchParams({ date: localToday(new Date(review.date), timeZone), kind: review.activityId === 5 ? "kanji" : "vocab", range: "day" })}`
     : "/japanese/statistics";
   const back = (
     <Link href={historyUrl} className={backButtonClassName}>

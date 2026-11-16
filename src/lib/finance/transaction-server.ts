@@ -18,7 +18,16 @@ import {
 } from "./transactions";
 
 type DB = Prisma.TransactionClient;
+const statementEntries = {
+  where: { import: { userId: FINANCE_USER_ID, status: "COMPLETED" as const } },
+  select: {
+    import: {
+      select: { id: true, accountId: true, originalName: true, periodStart: true, periodEnd: true },
+    },
+  },
+};
 const include = {
+  importEntries: statementEntries,
   account: { select: accountSelect },
   category: { select: categorySelect },
   receipts: {
@@ -28,7 +37,12 @@ const include = {
   },
   incomeRecords: {
     where: { userId: FINANCE_USER_ID },
-    select: { id: true, description: true, paidOn: true },
+    select: {
+      id: true,
+      description: true,
+      paidOn: true,
+      source: { select: { id: true, name: true, kind: true } },
+    },
     orderBy: [{ paidOn: "desc" as const }, { id: "desc" as const }],
   },
   _count: { select: { importEntries: true } },
@@ -37,7 +51,14 @@ const include = {
     where: { userId: FINANCE_USER_ID, status: "CONFIRMED" as const },
     include: {
       receipt: { select: { id: true, merchant: true, purchasedOn: true } },
-      incomeRecord: { select: { id: true, description: true, paidOn: true } },
+      incomeRecord: {
+        select: {
+          id: true,
+          description: true,
+          paidOn: true,
+          source: { select: { id: true, name: true, kind: true } },
+        },
+      },
       sourceTransaction: {
         select: {
           receipts: {
@@ -46,7 +67,12 @@ const include = {
           },
           incomeRecords: {
             where: { userId: FINANCE_USER_ID },
-            select: { id: true, description: true, paidOn: true },
+            select: {
+              id: true,
+              description: true,
+              paidOn: true,
+              source: { select: { id: true, name: true, kind: true } },
+            },
           },
         },
       },
@@ -59,6 +85,7 @@ const include = {
         include: {
           account: { select: accountSelect },
           _count: { select: { importEntries: true } },
+          importEntries: statementEntries,
         },
       },
     },
@@ -128,6 +155,20 @@ export function serializeTransaction(row: Row): FinanceTransaction {
       : row.amount.minus(row.excludedAmount).toFixed(4),
     excludedAmount: row.excludedAmount.toFixed(4),
     source: row.source,
+    statementMatches: [
+      ...new Map(
+        [...row.importEntries, ...(incoming?.importEntries ?? [])].map((entry) => [
+          entry.import.id,
+          {
+            id: entry.import.id,
+            accountId: entry.import.accountId,
+            name: entry.import.originalName,
+            from: entry.import.periodStart?.toISOString().slice(0, 10) ?? null,
+            to: entry.import.periodEnd?.toISOString().slice(0, 10) ?? null,
+          },
+        ]),
+      ).values(),
+    ],
     updatedAt: row.updatedAt.toISOString(),
     receipts: [
       ...new Map(
@@ -161,6 +202,7 @@ export function serializeTransaction(row: Row): FinanceTransaction {
             id: record.id,
             description: record.description,
             date: record.paidOn.toISOString().slice(0, 10),
+            source: record.source,
           },
         ]),
       ).values(),
@@ -373,7 +415,7 @@ export async function saveTransactionInDb(db: DB, input: TransactionInput, id?: 
           used.greaterThan(amount.abs()))
       )
         throw new FinanceValidationError(
-          "These changes conflict with confirmed payment allocations. Correct or unlink them in Reconciliation first.",
+          "These changes conflict with historical split-payment links. Their amount, currency or account cannot be changed from this form.",
           409,
         );
     }
@@ -452,6 +494,11 @@ export async function deleteTransaction(id: number) {
     async (db) => {
       const row = await rowById(db, id);
       assertEditable(row);
+      if (row.incomeRecords.length)
+        throw new FinanceValidationError(
+          "This deposit belongs to an income record. Delete the income record before deleting its deposit.",
+          409,
+        );
       if (row.matchTargets.length || row.matchSources.length)
         throw new FinanceValidationError(
           "Unlink confirmed reconciliation allocations before deleting this transaction.",
@@ -488,6 +535,19 @@ export async function listTransactions(params: URLSearchParams, exporting = fals
           },
         ],
       });
+  }
+  const activity = params.get("activity");
+  if (activity) {
+    if (!["income", "expenses", "transfers"].includes(activity))
+      throw new FinanceValidationError("Choose income, expenses or transfers.");
+    conditions.push({
+      type:
+        activity === "expenses"
+          ? { in: ["EXPENSE", "REFUND"] }
+          : activity === "income"
+            ? "INCOME"
+            : "TRANSFER",
+    });
   }
   const type = params.get("type"),
     currency = params.get("currency");
@@ -533,6 +593,30 @@ export async function listTransactions(params: URLSearchParams, exporting = fals
   return prisma.$transaction(
     async (db) => {
       const where = { userId: FINANCE_USER_ID, AND: conditions };
+      // A matched manual/import pair is one activity. Keep partially matched remainders visible.
+      if (activity) {
+        const movements = await db.financialTransaction.findMany({
+          where,
+          select: { id: true, amount: true, excludedAmount: true },
+          take: 5001,
+        });
+        if (movements.length > 5000)
+          throw new FinanceValidationError(
+            "Narrow the date range or account filter to at most 5,000 activities.",
+            413,
+          );
+        const ids = movements
+          .filter((row) => row.excludedAmount.lessThan(row.amount.abs()))
+          .map((row) => row.id);
+        const rows = await db.financialTransaction.findMany({
+          where: { ...where, id: { in: ids } },
+          include,
+          orderBy: [{ occurredOn: "desc" }, { id: "desc" }],
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        });
+        return { transactions: rows.map(serializeTransaction), total: ids.length, page, pageSize };
+      }
       const total = await db.financialTransaction.count({ where });
       if (exporting && total > pageSize)
         throw new FinanceValidationError(

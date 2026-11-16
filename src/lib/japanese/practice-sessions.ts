@@ -66,6 +66,10 @@ export function parsePracticeSession(value: unknown): PracticeSessionInput {
   return { ...data, categories: [...new Set(data.categories)] };
 }
 
+export function practiceRewards(wordCount: number, goodCount: number, perfectCount: number) {
+  return { xpEarned: goodCount + 2 * perfectCount, goldEarned: Math.floor(wordCount / 5) };
+}
+
 export async function buildPracticeReview(
   db: Prisma.TransactionClient,
   input: PracticeSessionInput,
@@ -168,6 +172,11 @@ export async function buildPracticeReview(
     perfectCount: words.filter((word) => word.status === "PERFECT").length,
     averageBefore: average(vocabularyProgress(vocabulary, ids)),
     averageAfter: average(vocabularyProgress(projected, ids)),
+    ...practiceRewards(
+      words.length,
+      words.filter((word) => word.status === "GOOD").length,
+      words.filter((word) => word.status === "PERFECT").length,
+    ),
     hasDetails: true,
     selectedCategories: categories,
     starredOnly: input.starredOnly,
@@ -191,6 +200,8 @@ export function serializePractice(practice: StoredPractice): PracticeSessionRevi
     perfectCount: practice.perfectCount,
     averageBefore: practice.averageBefore,
     averageAfter: practice.averageAfter,
+    xpEarned: practice.xpEarned ?? null,
+    goldEarned: practice.goldEarned ?? null,
     hasDetails: practice.words !== null,
     selectedCategories: practice.selectedCategories as PracticeSessionReview["selectedCategories"],
     starredOnly: practice.starredOnly,
@@ -218,7 +229,21 @@ export async function savePracticeSession(input: PracticeSessionInput, userId = 
               existing.userId !== userId ||
               existing.activityId !== input.activity ||
               existing.startedAt?.getTime() !== Date.parse(input.startedAt) ||
-              existing.completedAt?.getTime() !== Date.parse(input.completedAt)
+              existing.completedAt?.getTime() !== Date.parse(input.completedAt) ||
+              existing.starredOnly !== input.starredOnly ||
+              JSON.stringify(
+                ((existing.selectedCategories as { id: number }[] | null) ?? [])
+                  .map((category) => category.id)
+                  .sort((a, b) => a - b),
+              ) !== JSON.stringify([...input.categories].sort((a, b) => a - b)) ||
+              JSON.stringify(
+                ((existing.words as { activityVocabId: number; status: string }[] | null) ?? [])
+                  .map(({ activityVocabId, status }) => ({ activityVocabId, status }))
+                  .sort((a, b) => a.activityVocabId - b.activityVocabId),
+              ) !==
+                JSON.stringify(
+                  [...input.updates].sort((a, b) => a.activityVocabId - b.activityVocabId),
+                )
             )
               throw new PracticeSessionError(
                 "This session identifier has already been used. Please start a new practice.",
@@ -250,6 +275,8 @@ export async function savePracticeSession(input: PracticeSessionInput, userId = 
               weakCount: review.weakCount,
               goodCount: review.goodCount,
               perfectCount: review.perfectCount,
+              xpEarned: review.xpEarned,
+              goldEarned: review.goldEarned,
               averageBefore: review.averageBefore,
               averageAfter: review.averageAfter,
               selectedCategories: review.selectedCategories!.map((category) => ({ ...category })),
@@ -258,6 +285,15 @@ export async function savePracticeSession(input: PracticeSessionInput, userId = 
             },
             include: { activity: true },
           });
+          if (review.xpEarned || review.goldEarned)
+            await tx.user.update({
+              where: { id: userId },
+              data: {
+                totalXp: { increment: review.xpEarned ?? 0 },
+                coins: { increment: review.goldEarned ?? 0 },
+              },
+              select: { id: true },
+            });
           await recordJapaneseProgress(tx, userId);
           return serializePractice(saved);
         },

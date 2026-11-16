@@ -207,6 +207,7 @@ test("activity formatting preserves script-like and invalid date-like text witho
   const preview = loadWorkModule("src/components/todos/TaskActivityPreview.tsx", {
     "@/lib/work-management/types": types,
     "@/lib/work-management/client": {},
+    "@/context/SettingsContext": {},
   });
   assert.equal(preview.valueLabel("2026-99-99Task details"), "2026-99-99Task details");
   assert.equal(preview.valueLabel("<script>alert(1)</script>"), "<script>alert(1)</script>");

@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
+import ActivityNotes from "./ActivityNotes";
+import { activityHref } from "@/lib/finance/activity-links";
 import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
 import type { FinanceAccount, FinanceCategory } from "@/lib/finance/validation";
@@ -23,14 +26,50 @@ import {
 export default function TransactionEntry({
   id,
   initialDate,
+  transferOnly = false,
+  refundOnly = false,
+  headerMeta,
+  headerActions,
 }: {
+  transferOnly?: boolean;
+  refundOnly?: boolean;
+  headerMeta?: ReactNode;
+  headerActions?: ReactNode;
   id?: string;
   initialDate?: string;
 }) {
-  return id ? <ExistingEntry id={id} /> : <EntryForm initialDate={initialDate!} />;
+  return id ? (
+    <ExistingEntry
+      id={id}
+      transferOnly={transferOnly}
+      refundOnly={refundOnly}
+      headerMeta={headerMeta}
+      headerActions={headerActions}
+    />
+  ) : (
+    <EntryForm
+      initialDate={initialDate!}
+      transferOnly={transferOnly}
+      refundOnly={refundOnly}
+      headerMeta={headerMeta}
+      headerActions={headerActions}
+    />
+  );
 }
 
-function ExistingEntry({ id }: { id: string }) {
+function ExistingEntry({
+  id,
+  transferOnly,
+  refundOnly,
+  headerMeta,
+  headerActions,
+}: {
+  id: string;
+  transferOnly: boolean;
+  refundOnly: boolean;
+  headerMeta?: ReactNode;
+  headerActions?: ReactNode;
+}) {
   const { data, loading, error, retry } = useFinanceData<{ transaction: FinanceTransaction }>(
     `/api/finance/transactions/${encodeURIComponent(id)}`,
   );
@@ -46,17 +85,37 @@ function ExistingEntry({ id }: { id: string }) {
       key={data.transaction.updatedAt}
       initialDate={data.transaction.date}
       existing={data.transaction}
+      onNotesSaved={retry}
+      transferOnly={transferOnly}
+      refundOnly={refundOnly}
+      headerMeta={headerMeta}
+      headerActions={headerActions}
     />
   );
 }
 
 function EntryForm({
   initialDate,
+  onNotesSaved,
   existing,
+  transferOnly,
+  refundOnly,
+  headerMeta,
+  headerActions,
 }: {
+  transferOnly: boolean;
+  refundOnly: boolean;
+  headerMeta?: ReactNode;
+  headerActions?: ReactNode;
   initialDate: string;
+  onNotesSaved?: () => void;
   existing?: FinanceTransaction;
 }) {
+  const historyPath = refundOnly
+    ? "/finance/expenses"
+    : transferOnly
+      ? "/finance/transfers"
+      : "/finance/transactions";
   const accounts = useFinanceData<{ accounts: FinanceAccount[] }>("/api/finance/accounts");
   const categories = useFinanceData<{ categories: FinanceCategory[] }>("/api/finance/categories");
   const router = useRouter();
@@ -68,7 +127,9 @@ function EntryForm({
   const [draft, setDraft] = useState(() => ({
     date: initialDate,
     description: existing?.description ?? "",
-    type: existing?.type ?? ("EXPENSE" as TransactionType),
+    type:
+      existing?.type ??
+      ((refundOnly ? "REFUND" : transferOnly ? "TRANSFER" : "EXPENSE") as TransactionType),
     amount: existing?.amount.replace(/^-/, "") ?? "",
     accountId: existing ? String(existing.account.id) : "",
     categoryId: existing?.category ? String(existing.category.id) : "",
@@ -82,7 +143,7 @@ function EntryForm({
   const destination = accounts.data?.accounts.find(
     (item) => item.id === Number(draft.destinationAccountId),
   );
-  const needsCategory = ["EXPENSE", "INCOME", "REFUND"].includes(draft.type);
+  const needsCategory = ["EXPENSE", "REFUND"].includes(draft.type);
   const crossCurrency =
     draft.type === "TRANSFER" &&
     account &&
@@ -141,7 +202,7 @@ function EntryForm({
       showMessage(
         existing ? "Transaction updated successfully." : "Transaction saved successfully.",
       );
-      router.push("/finance/transactions");
+      router.push(historyPath);
     } catch (error) {
       const result =
         error instanceof FinanceRequestError
@@ -165,21 +226,33 @@ function EntryForm({
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-2xl font-semibold">
-          {existing ? (readOnly ? "Transaction details" : "Edit transaction") : "New transaction"}
-        </h2>
-        <Link href="/finance/transactions" className={secondaryButton}>
-          ← Transaction history
-        </Link>
-      </div>
-      {existing && (
-        <section className="card space-y-3">
-          <Link
-            href={`/finance/reconciliation?kind=${existing.type === "REFUND" ? "REFUND" : "DUPLICATE"}&source=${existing.id}`}
-            className={secondaryButton}
-          >
-            Reconcile / view matches
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-2xl font-semibold">
+            {refundOnly
+              ? existing
+                ? "Refund details"
+                : "New refund"
+              : transferOnly
+                ? existing
+                  ? "Transfer details"
+                  : "New transfer"
+                : existing
+                  ? readOnly
+                    ? "Transaction details"
+                    : "Edit transaction"
+                  : "New transaction"}
+          </h2>
+          {headerMeta}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {headerActions}
+          <Link href={historyPath} className={secondaryButton}>
+            ← {refundOnly ? "Expenses" : transferOnly ? "Transfers" : "Transaction history"}
           </Link>
+        </div>
+      </div>
+      {existing && existing.excludedAmount && existing.excludedAmount !== "0.0000" && (
+        <section className="card space-y-3">
           {existing.excludedAmount && existing.excludedAmount !== "0.0000" && (
             <p className="text-sm text-amber-500">
               Counted amount: {existing.ledgerAmount} {existing.currency}. {existing.excludedAmount}{" "}
@@ -233,10 +306,7 @@ function EntryForm({
           <p className="text-rose-500">{failure.message}</p>
           {failure.existingId && (
             <div className="flex flex-wrap gap-3">
-              <Link
-                href={`/finance/transactions/${failure.existingId}`}
-                className={secondaryButton}
-              >
+              <Link href={activityHref(failure.existingId, draft.type)} className={secondaryButton}>
                 Review existing transaction
               </Link>
               {failure.code === "DUPLICATE_TRANSACTION" && (
@@ -262,7 +332,7 @@ function EntryForm({
       {!accounts.loading && accounts.data && !availableAccounts.length && (
         <div className="card space-y-3">
           <p>Create an active account before entering transactions.</p>
-          <Link href="/finance/accounts" className={primaryButton}>
+          <Link href="/finance/settings/accounts" className={primaryButton}>
             Manage accounts
           </Link>
         </div>
@@ -273,257 +343,274 @@ function EntryForm({
       <form aria-busy={busy} onSubmit={submit} className="card max-w-5xl">
         <fieldset
           disabled={
-            busy ||
-            accounts.loading ||
-            categories.loading ||
-            !!accounts.error ||
-            !!categories.error ||
-            !availableAccounts.length ||
-            readOnly
+            !readOnly &&
+            (busy ||
+              accounts.loading ||
+              categories.loading ||
+              !!accounts.error ||
+              !!categories.error ||
+              !availableAccounts.length)
           }
           className="min-w-0 space-y-5"
         >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block space-y-2">
-              <span className="text-sm font-medium">Transaction type</span>
-              <select
-                aria-label="Transaction type"
-                className={fieldClass}
-                value={draft.type}
-                onChange={(event) => {
-                  setDraft({
-                    ...draft,
-                    type: event.target.value as TransactionType,
-                    categoryId: "",
-                    amount: draft.amount.replace(/^-/, ""),
-                    ...(event.target.value !== "TRANSFER"
-                      ? { destinationAccountId: "", destinationAmount: "" }
-                      : {}),
-                  });
-                  setFailure(null);
-                }}
-              >
-                {Object.entries(TRANSACTION_TYPES).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block space-y-2">
-              <span className="text-sm font-medium">Date</span>
-              <input
-                aria-label="Date"
-                type="date"
-                required
-                className={fieldClass}
-                value={draft.date}
-                onChange={(event) => setDraft({ ...draft, date: event.target.value })}
-              />
-            </label>
-          </div>
-          {draft.type === "TRANSFER" && (
-            <p className="rounded-lg bg-blue-500/10 p-3 text-sm">
-              Use transfers for moves between your own accounts, including credit card bill payments
-              and cash withdrawals into a tracked cash account.
-            </p>
-          )}
-          {draft.type === "REFUND" && (
-            <p className="rounded-lg bg-blue-500/10 p-3 text-sm">
-              A refund returns money to your account against an expense category. It is kept
-              separate from income.
-            </p>
-          )}
-          <label className="block space-y-2">
-            <span className="text-sm font-medium">Description</span>
-            <input
-              aria-label="Description"
-              required
-              maxLength={300}
-              className={fieldClass}
-              value={draft.description}
-              onChange={(event) => setDraft({ ...draft, description: event.target.value })}
-            />
-          </label>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block space-y-2">
-              <span className="text-sm font-medium">
-                {draft.type === "TRANSFER" ? "From account" : "Account"}
-              </span>
-              <select
-                aria-label={draft.type === "TRANSFER" ? "From account" : "Account"}
-                required
-                className={fieldClass}
-                value={draft.accountId}
-                onChange={(event) =>
-                  setDraft({
-                    ...draft,
-                    accountId: event.target.value,
-                    ...(event.target.value === draft.destinationAccountId
-                      ? { destinationAccountId: "", destinationAmount: "" }
-                      : {}),
-                  })
-                }
-              >
-                <option value="">Choose an account</option>
-                {availableAccounts.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name} · {item.currency}
-                    {item.active ? "" : " (inactive)"}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block space-y-2">
-              <span className="text-sm font-medium">Currency</span>
-              <input
-                aria-label="Currency"
-                className={fieldClass}
-                readOnly
-                value={account?.currency ?? existing?.currency ?? ""}
-                placeholder="Choose an account"
-              />
-            </label>
-            <label className="block space-y-2">
-              <span className="text-sm font-medium">
-                {draft.type === "TRANSFER" ? "Amount sent" : "Amount"}
-              </span>
-              <input
-                aria-label={draft.type === "TRANSFER" ? "Amount sent" : "Amount"}
-                required
-                inputMode="decimal"
-                maxLength={20}
-                autoComplete="off"
-                placeholder="0.00"
-                className={fieldClass}
-                value={draft.amount}
-                onChange={(event) => setDraft({ ...draft, amount: event.target.value })}
-              />
-            </label>
-            {draft.type === "ADJUSTMENT" && (
+          <fieldset disabled={readOnly} className="min-w-0 space-y-5">
+            <div className="grid gap-4 sm:grid-cols-2">
+              {!transferOnly && !refundOnly && (
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium">Transaction type</span>
+                  <select
+                    aria-label="Transaction type"
+                    className={fieldClass}
+                    value={draft.type}
+                    onChange={(event) => {
+                      setDraft({
+                        ...draft,
+                        type: event.target.value as TransactionType,
+                        categoryId: "",
+                        amount: draft.amount.replace(/^-/, ""),
+                        ...(event.target.value !== "TRANSFER"
+                          ? { destinationAccountId: "", destinationAmount: "" }
+                          : {}),
+                      });
+                      setFailure(null);
+                    }}
+                  >
+                    {Object.entries(TRANSACTION_TYPES).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="block space-y-2">
-                <span className="text-sm font-medium">Adjustment direction</span>
-                <select
-                  aria-label="Adjustment direction"
-                  className={fieldClass}
-                  value={draft.adjustmentDirection}
-                  onChange={(event) =>
-                    setDraft({ ...draft, adjustmentDirection: event.target.value })
-                  }
-                >
-                  <option value="IN">Increase / money in</option>
-                  <option value="OUT">Decrease / money out</option>
-                </select>
-              </label>
-            )}
-            {needsCategory && (
-              <label className="block space-y-2">
-                <span className="text-sm font-medium">Category</span>
-                <select
-                  aria-label="Category"
+                <span className="text-sm font-medium">Date</span>
+                <input
+                  aria-label="Date"
+                  type="date"
                   required
                   className={fieldClass}
-                  value={draft.categoryId}
-                  onChange={(event) => setDraft({ ...draft, categoryId: event.target.value })}
+                  value={draft.date}
+                  onChange={(event) => setDraft({ ...draft, date: event.target.value })}
+                />
+              </label>
+            </div>
+            {draft.type === "TRANSFER" && (
+              <p className="rounded-lg bg-blue-500/10 p-3 text-sm">
+                Use transfers for moves between your own accounts, including credit card bill
+                payments and cash withdrawals into a tracked cash account.
+              </p>
+            )}
+
+            <label className="block space-y-2">
+              <span className="text-sm font-medium">Description</span>
+              <input
+                aria-label="Description"
+                required
+                maxLength={300}
+                className={fieldClass}
+                value={draft.description}
+                onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+              />
+            </label>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block space-y-2">
+                <span className="text-sm font-medium">
+                  {draft.type === "TRANSFER" ? "From account" : "Account"}
+                </span>
+                <select
+                  aria-label={draft.type === "TRANSFER" ? "From account" : "Account"}
+                  required
+                  className={fieldClass}
+                  value={draft.accountId}
+                  onChange={(event) =>
+                    setDraft({
+                      ...draft,
+                      accountId: event.target.value,
+                      ...(event.target.value === draft.destinationAccountId
+                        ? { destinationAccountId: "", destinationAmount: "" }
+                        : {}),
+                    })
+                  }
                 >
-                  <option value="">Choose a category</option>
-                  {availableCategories.map((item) => (
+                  <option value="">Choose an account</option>
+                  {availableAccounts.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.name}
+                      {item.name} · {item.currency}
                       {item.active ? "" : " (inactive)"}
                     </option>
                   ))}
                 </select>
               </label>
-            )}
-            {draft.type === "TRANSFER" && (
               <label className="block space-y-2">
-                <span className="text-sm font-medium">To account</span>
-                <select
-                  aria-label="To account"
-                  required
+                <span className="text-sm font-medium">Currency</span>
+                <input
+                  aria-label="Currency"
                   className={fieldClass}
-                  value={draft.destinationAccountId}
-                  onChange={(event) =>
-                    setDraft({
-                      ...draft,
-                      destinationAccountId: event.target.value,
-                      destinationAmount: "",
-                    })
-                  }
-                >
-                  <option value="">Choose a destination</option>
-                  {availableAccounts
-                    .filter((item) => String(item.id) !== draft.accountId)
-                    .map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name} · {item.currency}
-                        {item.active ? "" : " (inactive)"}
-                      </option>
-                    ))}
-                </select>
+                  readOnly
+                  value={account?.currency ?? existing?.currency ?? ""}
+                  placeholder="Choose an account"
+                />
               </label>
-            )}
-            {crossCurrency && (
               <label className="block space-y-2">
                 <span className="text-sm font-medium">
-                  Amount received ({destination.currency})
+                  {draft.type === "TRANSFER" ? "Amount sent" : "Amount"}
                 </span>
                 <input
-                  aria-label={`Amount received (${destination.currency})`}
+                  aria-label={draft.type === "TRANSFER" ? "Amount sent" : "Amount"}
                   required
                   inputMode="decimal"
                   maxLength={20}
+                  autoComplete="off"
+                  placeholder="0.00"
                   className={fieldClass}
-                  value={draft.destinationAmount}
-                  onChange={(event) =>
-                    setDraft({ ...draft, destinationAmount: event.target.value })
-                  }
+                  value={draft.amount}
+                  onChange={(event) => setDraft({ ...draft, amount: event.target.value })}
+                />
+              </label>
+              {draft.type === "ADJUSTMENT" && (
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium">Adjustment direction</span>
+                  <select
+                    aria-label="Adjustment direction"
+                    className={fieldClass}
+                    value={draft.adjustmentDirection}
+                    onChange={(event) =>
+                      setDraft({ ...draft, adjustmentDirection: event.target.value })
+                    }
+                  >
+                    <option value="IN">Increase / money in</option>
+                    <option value="OUT">Decrease / money out</option>
+                  </select>
+                </label>
+              )}
+              {needsCategory && (
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium">Category</span>
+                  <select
+                    aria-label="Category"
+                    required
+                    className={fieldClass}
+                    value={draft.categoryId}
+                    onChange={(event) => setDraft({ ...draft, categoryId: event.target.value })}
+                  >
+                    <option value="">Choose a category</option>
+                    {availableCategories.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                        {item.active ? "" : " (inactive)"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {draft.type === "TRANSFER" && (
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium">To account</span>
+                  <select
+                    aria-label="To account"
+                    required
+                    className={fieldClass}
+                    value={draft.destinationAccountId}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        destinationAccountId: event.target.value,
+                        destinationAmount: "",
+                      })
+                    }
+                  >
+                    <option value="">Choose a destination</option>
+                    {availableAccounts
+                      .filter((item) => String(item.id) !== draft.accountId)
+                      .map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name} · {item.currency}
+                          {item.active ? "" : " (inactive)"}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              )}
+              {crossCurrency && (
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium">
+                    Amount received ({destination.currency})
+                  </span>
+                  <input
+                    aria-label={`Amount received (${destination.currency})`}
+                    required
+                    inputMode="decimal"
+                    maxLength={20}
+                    className={fieldClass}
+                    value={draft.destinationAmount}
+                    onChange={(event) =>
+                      setDraft({ ...draft, destinationAmount: event.target.value })
+                    }
+                  />
+                </label>
+              )}
+            </div>
+            {needsCategory &&
+              !categories.loading &&
+              categories.data &&
+              !availableCategories.length && (
+                <p className="text-sm text-amber-500">
+                  Create an active {draft.type === "INCOME" ? "income" : "expense"} category first.{" "}
+                  <Link href="/finance/settings/categories" className="underline">
+                    Manage categories
+                  </Link>
+                </p>
+              )}
+            {!refundOnly && !transferOnly && (
+              <label className="block space-y-2">
+                <span className="text-sm font-medium">Merchant or counterparty (optional)</span>
+                <input
+                  aria-label="Merchant or counterparty (optional)"
+                  maxLength={200}
+                  autoComplete="off"
+                  className={fieldClass}
+                  value={draft.counterparty}
+                  onChange={(event) => setDraft({ ...draft, counterparty: event.target.value })}
                 />
               </label>
             )}
-          </div>
-          {needsCategory &&
-            !categories.loading &&
-            categories.data &&
-            !availableCategories.length && (
-              <p className="text-sm text-amber-500">
-                Create an active {draft.type === "INCOME" ? "income" : "expense"} category first.{" "}
-                <Link href="/finance/categories" className="underline">
-                  Manage categories
-                </Link>
-              </p>
-            )}
-          <label className="block space-y-2">
-            <span className="text-sm font-medium">Merchant or counterparty (optional)</span>
-            <input
-              aria-label="Merchant or counterparty (optional)"
-              maxLength={200}
-              autoComplete="off"
-              className={fieldClass}
-              value={draft.counterparty}
-              onChange={(event) => setDraft({ ...draft, counterparty: event.target.value })}
-            />
-          </label>
-          <label className="block space-y-2">
-            <span className="text-sm font-medium">Notes (optional)</span>
-            <textarea
-              aria-label="Notes (optional)"
-              rows={3}
-              maxLength={2000}
-              className={fieldClass}
-              value={draft.notes}
-              onChange={(event) => setDraft({ ...draft, notes: event.target.value })}
-            />
-          </label>
-          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-            <button type="submit" className={primaryButton}>
-              {busy ? "Saving…" : existing ? "Save changes" : "Save transaction"}
-            </button>
-            <Link href="/finance/transactions" className={secondaryButton}>
-              Cancel
-            </Link>
-          </div>
+          </fieldset>
+          {refundOnly && readOnly && existing ? (
+            <ActivityNotes inline transaction={existing} onSaved={() => onNotesSaved?.()} />
+          ) : (
+            <fieldset disabled={readOnly} className="min-w-0">
+              <label className="block space-y-2">
+                <span className="text-sm font-medium">Notes (optional)</span>
+                <textarea
+                  aria-label="Notes (optional)"
+                  rows={3}
+                  maxLength={2000}
+                  className={fieldClass}
+                  value={draft.notes}
+                  onChange={(event) => setDraft({ ...draft, notes: event.target.value })}
+                />
+              </label>
+            </fieldset>
+          )}
+          <fieldset disabled={readOnly} className="min-w-0">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+              <button type="submit" hidden={readOnly} className={primaryButton}>
+                {busy
+                  ? "Saving…"
+                  : existing
+                    ? "Save changes"
+                    : refundOnly
+                      ? "Save refund"
+                      : transferOnly
+                        ? "Save transfer"
+                        : "Save transaction"}
+              </button>
+              <Link href={historyPath} className={secondaryButton}>
+                Cancel
+              </Link>
+            </div>
+          </fieldset>
         </fieldset>
       </form>
     </div>

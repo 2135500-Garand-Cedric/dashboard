@@ -4,9 +4,11 @@ import { secondaryButton } from "./shared";
 export default function FinanceExport({
   kind,
   filters,
+  filename,
 }: {
   kind: "transactions" | "receipts" | "income";
   filters: Record<string, string>;
+  filename?: string;
 }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -27,7 +29,7 @@ export default function FinanceExport({
       const url = URL.createObjectURL(await response.blob()),
         link = document.createElement("a");
       link.href = url;
-      link.download = `finance-${kind}.csv`;
+      link.download = filename ?? `finance-${kind}.csv`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
@@ -45,9 +47,6 @@ export default function FinanceExport({
       <button type="button" disabled={busy} onClick={download} className={secondaryButton}>
         {busy ? "Preparing CSV…" : "Export CSV"}
       </button>
-      <p className="text-xs text-gray-400">
-        Exports all records matching the applied filters, across all pages.
-      </p>
       {error && (
         <p role="alert" className="text-sm text-rose-500">
           {error}

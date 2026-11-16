@@ -7,7 +7,7 @@ export async function POST(request: Request) {
   return NextResponse.json(
     {
       error:
-        "Task rewards are applied automatically when the task status is saved. Reload the page before changing task status.",
+        "Task rewards have been retired. Completing or reopening a task does not change XP or coins.",
     },
     { status: 410, headers: { "Cache-Control": "no-store" } },
   );

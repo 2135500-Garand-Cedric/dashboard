@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { financeHeaders } from "@/lib/finance/server";
 import { transactionError } from "@/lib/finance/transaction-server";
 import { createStatement, listStatements } from "@/lib/finance/statement-server";
+import { fixedStatementPeriod } from "@/lib/finance/fixed-statement";
 import { statementUpload } from "@/lib/finance/statement-files";
 
 export const runtime = "nodejs";
@@ -22,7 +23,8 @@ export async function POST(request: Request) {
   if (accessError) return accessError;
   try {
     const form = await statementUpload(request);
-    const result = await createStatement(form.input.accountId, form.parsed, form.file);
+    const period = fixedStatementPeriod(form.input, form.parsed);
+    const result = await createStatement(form.input.accountId, form.parsed, form.file, period);
     return NextResponse.json(result, {
       status: result.reused ? 200 : 201,
       headers: financeHeaders,

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { DateTime } from "@/context/SettingsContext";
 import { useState, type FormEvent } from "react";
 import type { FinanceAccount } from "@/lib/finance/validation";
 import type { ImportSummary } from "@/lib/finance/statement-imports";
@@ -63,7 +64,7 @@ export default function StatementHistory() {
           >
             <option value="">All imports</option>
             <option value="DRAFT">Drafts</option>
-            <option value="COMPLETED">Completed</option>
+            <option value="COMPLETED">Saved</option>
           </select>
         </label>
         <div className="flex flex-wrap items-end gap-2">
@@ -106,20 +107,25 @@ export default function StatementHistory() {
                         </h3>
                         <p className="text-sm text-gray-400">
                           {batch.account.name} · {batch.account.currency} ·{" "}
-                          {batch.createdAt.slice(0, 10)}
+                          <DateTime value={batch.createdAt} />
                         </p>
                       </div>
+                      {batch.periodStart && batch.periodEnd && (
+                        <p className="text-sm text-gray-400">
+                          {batch.periodStart} → {batch.periodEnd}
+                        </p>
+                      )}
                       <span
                         className={`rounded-full px-3 py-1 text-xs ${batch.status === "COMPLETED" ? "bg-emerald-500/10 text-emerald-500" : "bg-amber-500/10 text-amber-500"}`}
                       >
-                        {batch.status === "COMPLETED" ? "Completed" : "Draft"}
+                        {batch.status === "COMPLETED" ? "Saved" : "Draft"}
                       </span>
                     </div>
                     <p className="text-sm">
-                      {batch.counts.CREATE} {batch.status === "COMPLETED" ? "created" : "new"} ·{" "}
-                      {batch.counts.MATCH} {batch.status === "COMPLETED" ? "matched" : "to match"} ·{" "}
-                      {batch.counts.SKIP} skipped
-                      {batch.counts.REVIEW ? ` · ${batch.counts.REVIEW} need review` : ""}
+                      {batch.matchedCount} matched · {batch.remainingCount} remaining
+                      {batch.selectedCount > batch.matchedCount
+                        ? ` · ${batch.selectedCount - batch.matchedCount} selected`
+                        : ""}
                     </p>
                     <Link href={`/finance/imports/${batch.id}`} className={secondaryButton}>
                       {batch.status === "COMPLETED" ? "View import" : "Continue review"}

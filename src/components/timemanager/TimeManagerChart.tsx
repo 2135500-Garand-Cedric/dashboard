@@ -1,4 +1,6 @@
 "use client";
+import { useSettings } from "@/context/SettingsContext";
+import { localToday } from "@/lib/work-management/date-format";
 
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { useCallback, useEffect, useState } from "react";
@@ -25,6 +27,7 @@ const COLORS = [
 type TimeRecord = { start_time: string; activity_name: string; duration_seconds: number | string };
 
 export default function TimeManagerChart() {
+  const { timeZone } = useSettings();
   const [timeframe, setTimeframe] = useState<"week" | "month" | "year">("week");
   const [records, setRecords] = useState<TimeRecord[]>([]);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
@@ -52,18 +55,19 @@ export default function TimeManagerChart() {
   }, [fetchData]);
 
   const now = new Date();
-  const getThresholdDate = () => {
-    const date = new Date(now);
-    if (timeframe === "week") date.setDate(now.getDate() - 7);
-    else if (timeframe === "month") date.setDate(now.getDate() - 30);
-    else date.setDate(now.getDate() - 365);
-    return date;
-  };
-  const threshold = getThresholdDate();
-
-  const filteredRecords = records.filter(
-    (r) => new Date(r.start_time) >= threshold && new Date(r.start_time) <= now,
+  const threshold = new Date(`${localToday(now, timeZone)}T12:00:00Z`);
+  threshold.setUTCDate(
+    threshold.getUTCDate() - (timeframe === "week" ? 7 : timeframe === "month" ? 30 : 365),
   );
+  const firstDay = threshold.toISOString().slice(0, 10);
+  const filteredRecords = records.filter((record) => {
+    const instant = new Date(record.start_time);
+    return (
+      Number.isFinite(instant.getTime()) &&
+      localToday(instant, timeZone) >= firstDay &&
+      instant <= now
+    );
+  });
 
   // Aggregate activities
   const activityMap: Record<string, number> = {};

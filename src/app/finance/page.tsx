@@ -1,6 +1,7 @@
+import { withUserTimeZone } from "@/lib/user-settings";
 import FinanceOverview from "@/components/finance/FinanceOverview";
 import { reportingToday } from "@/lib/finance/reporting";
 
-export default function FinancePage() {
-  return <FinanceOverview today={reportingToday()} />;
+export default async function FinancePage() {
+  return withUserTimeZone(async () => <FinanceOverview today={reportingToday()} />);
 }

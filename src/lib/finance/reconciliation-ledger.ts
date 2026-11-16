@@ -88,6 +88,60 @@ type Supporting = {
   total?: Prisma.Decimal;
   netAmount?: Prisma.Decimal;
 };
+export async function assertSupportingUnmatched(
+  db: DB,
+  kind: "INCOME" | "RECEIPT",
+  recordId?: number,
+  transactionId?: number | null,
+) {
+  const related: Prisma.FinancialTransactionWhereInput[] = [];
+  if (transactionId) related.push({ id: transactionId });
+  if (recordId) {
+    related.push(
+      kind === "INCOME"
+        ? { incomeRecords: { some: { id: recordId, userId: FINANCE_USER_ID } } }
+        : { receipts: { some: { id: recordId, userId: FINANCE_USER_ID } } },
+    );
+    related.push({
+      matchTargets: {
+        some: {
+          userId: FINANCE_USER_ID,
+          status: "CONFIRMED",
+          kind,
+          ...(kind === "INCOME" ? { incomeRecordId: recordId } : { receiptId: recordId }),
+        },
+      },
+    });
+  }
+  if (!related.length) return;
+  const matched = await db.financialTransaction.findFirst({
+    where: {
+      userId: FINANCE_USER_ID,
+      AND: [
+        { OR: related },
+        {
+          OR: [
+            {
+              importEntries: { some: { import: { userId: FINANCE_USER_ID, status: "COMPLETED" } } },
+            },
+            {
+              matchTargets: {
+                some: { userId: FINANCE_USER_ID, kind: "STATEMENT", status: "CONFIRMED" },
+              },
+            },
+          ],
+        },
+      ],
+    },
+    select: { id: true },
+  });
+  if (matched)
+    throw new FinanceValidationError(
+      "This record is matched to a statement. Only its notes can be changed; use Save notes.",
+      409,
+    );
+}
+
 export async function guardSupportingEdit(
   db: DB,
   kind: "RECEIPT" | "INCOME",
@@ -115,7 +169,7 @@ export async function guardSupportingEdit(
       !(current.total ?? current.netAmount)!.equals(next.total ?? next.netAmount!))
   )
     throw new FinanceValidationError(
-      "This record has payment allocations. Correct or unlink them in Reconciliation before changing its amount, currency, account or direct transaction link.",
+      "This record has historical split-payment links. Its amount, currency, account or direct transaction link cannot be changed from this form.",
       409,
     );
 }

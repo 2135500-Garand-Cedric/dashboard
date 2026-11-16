@@ -36,6 +36,8 @@ export interface PracticeSessionSummary {
   perfectCount: number;
   averageBefore: number | null;
   averageAfter: number | null;
+  xpEarned: number | null;
+  goldEarned: number | null;
   hasDetails: boolean;
 }
 

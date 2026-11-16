@@ -1,4 +1,6 @@
 "use client";
+import TaskModal from "@/components/shared/TaskModal";
+import { PlusIcon, PencilSquareIcon } from "@heroicons/react/24/outline";
 import { useRef, useState } from "react";
 import { createWorkWriter } from "@/lib/work-management/client";
 import type { WorkProject } from "@/lib/work-management/types";
@@ -29,10 +31,6 @@ export default function ProjectStages({
       className="space-y-3 rounded-xl border border-card-border bg-card-bg p-4"
     >
       <h2 className="font-semibold">Stages</h2>
-      <p className="text-xs text-gray-500">
-        Stages organize tasks; each task keeps its own status. Inactive stages retain their existing
-        tasks.
-      </p>
       <ul className="space-y-2">
         {project.stages.map((row) => (
           <li
@@ -55,9 +53,11 @@ export default function ProjectStages({
                   revision: project.revision,
                 })
               }
-              className={button}
+              aria-label={`Edit stage ${row.name}`}
+              title={`Edit stage ${row.name}`}
+              className={`${button} text-blue-500`}
             >
-              Edit stage {row.name}
+              <PencilSquareIcon className="h-4 w-4" />
             </button>
           </li>
         ))}
@@ -75,88 +75,103 @@ export default function ProjectStages({
         }
         className={button}
       >
+        <PlusIcon className="mr-1.5 inline h-4 w-4" />
         Add stage
       </button>
-      {draft && (
-        <form
-          aria-label="Stage editor"
-          className="space-y-3"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (lock.current) return;
-            lock.current = true;
-            setBusy(true);
-            setError("");
-            try {
-              const { revision, ...data } = draft;
-              const row = await writer.current<WorkProject>(
-                `/api/projects/${project.id}/stages`,
-                "POST",
-                data,
-                revision,
-              );
-              setDraft(null);
-              onChanged(row);
-            } catch (e) {
-              setError(e instanceof Error ? e.message : "Unable to save stage.");
-            } finally {
-              lock.current = false;
-              setBusy(false);
-            }
-          }}
-        >
-          <label className="block text-sm">
-            Stage name
-            <input
-              aria-label="Stage name"
-              required
-              maxLength={120}
-              value={draft.name}
-              disabled={busy}
-              onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-              className="w-full rounded border border-card-border bg-card-bg p-2"
-            />
-          </label>
-          <label className="block text-sm">
-            Sort order (zero first)
-            <input
-              aria-label="Stage order"
-              type="number"
-              min="0"
-              step="1"
-              required
-              value={draft.position}
-              disabled={busy}
-              onChange={(e) => setDraft({ ...draft, position: Number(e.target.value) })}
-              className="w-full rounded border border-card-border bg-card-bg p-2"
-            />
-          </label>
-          <label className="flex gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={draft.active}
-              disabled={busy}
-              onChange={(e) => setDraft({ ...draft, active: e.target.checked })}
-            />
-            Active stage
-          </label>
-          <div className="flex gap-3">
-            <button type="submit" disabled={busy} className={`${button} bg-blue-600 text-white`}>
-              Save stage
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                if (leave()) setDraft(null);
-              }}
-              className={button}
-            >
-              Cancel stage edit
-            </button>
-          </div>
-        </form>
-      )}
+      <TaskModal
+        open={!!draft}
+        title={draft?.id ? "Edit stage" : "Add stage"}
+        busy={busy}
+        onClose={() => {
+          if (leave()) setDraft(null);
+        }}
+      >
+        {draft && (
+          <form
+            aria-label="Stage editor"
+            className="space-y-3"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (lock.current) return;
+              lock.current = true;
+              setBusy(true);
+              setError("");
+              try {
+                const { revision, ...data } = draft;
+                const row = await writer.current<WorkProject>(
+                  `/api/projects/${project.id}/stages`,
+                  "POST",
+                  data,
+                  revision,
+                );
+                setDraft(null);
+                onChanged(row);
+              } catch (e) {
+                setError(e instanceof Error ? e.message : "Unable to save stage.");
+              } finally {
+                lock.current = false;
+                setBusy(false);
+              }
+            }}
+          >
+            {error && (
+              <p role="alert" className="text-sm text-rose-500">
+                {error}
+              </p>
+            )}
+            <label className="block text-sm">
+              Stage name
+              <input
+                aria-label="Stage name"
+                required
+                maxLength={120}
+                value={draft.name}
+                disabled={busy}
+                onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                className="w-full rounded border border-card-border bg-card-bg p-2"
+              />
+            </label>
+            <label className="block text-sm">
+              Sort order (zero first)
+              <input
+                aria-label="Stage order"
+                type="number"
+                min="0"
+                step="1"
+                required
+                value={draft.position}
+                disabled={busy}
+                onChange={(e) => setDraft({ ...draft, position: Number(e.target.value) })}
+                className="w-full rounded border border-card-border bg-card-bg p-2"
+              />
+            </label>
+            <label className="flex gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={draft.active}
+                disabled={busy}
+                onChange={(e) => setDraft({ ...draft, active: e.target.checked })}
+              />
+              Active stage
+            </label>
+            <div className="flex gap-3">
+              <button type="submit" disabled={busy} className={`${button} bg-blue-600 text-white`}>
+                Save stage
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  if (leave()) setDraft(null);
+                }}
+                className={button}
+              >
+                Cancel stage edit
+              </button>
+            </div>
+          </form>
+        )}
+      </TaskModal>
       {error && (
         <p role="alert" className="text-sm text-rose-500">
           {error}

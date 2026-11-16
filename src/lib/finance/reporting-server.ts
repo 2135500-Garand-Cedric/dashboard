@@ -1,12 +1,7 @@
+import { buildOverview, type OverviewData } from "./overview";
 import { prisma } from "@/lib/prisma";
 import { FINANCE_USER_ID, accountSelect, categorySelect } from "./server";
-import {
-  buildReport,
-  moneyText,
-  moneyUnits,
-  type ReportData,
-  type ReportFilters,
-} from "./reporting";
+import { buildReport, moneyText, moneyUnits, type ReportFilters } from "./reporting";
 
 // One consistent snapshot for summaries, charts, pay details and reconciliation coverage.
 export async function financeReport(filters: ReportFilters) {
@@ -63,12 +58,33 @@ export async function financeReport(filters: ReportFilters) {
               (id): id is number => typeof id === "number" && Number.isInteger(id) && id > 0,
             )
           : [];
-      const data: ReportData = {
+      const statements = await db.financialImport.findMany({
+        where: { userId: FINANCE_USER_ID, account: { userId: FINANCE_USER_ID } },
+        include: { entries: { select: { normalized: true, transactionId: true } } },
+      });
+      const data: OverviewData = {
+        statements: statements.map((statement) => ({
+          id: statement.id,
+          accountId: statement.accountId,
+          name: statement.originalName ?? `Statement #${statement.id}`,
+          status: statement.status,
+          from: statement.periodStart?.toISOString().slice(0, 10) ?? null,
+          to: statement.periodEnd?.toISOString().slice(0, 10) ?? null,
+          rows: statement.entries.map((entry) => ({
+            date:
+              typeof (entry.normalized as { date?: unknown } | null)?.date === "string"
+                ? (entry.normalized as { date: string }).date
+                : null,
+            transactionId: entry.transactionId,
+          })),
+        })),
         accounts,
         categories,
         sources,
         transactions: transactions.map((row) => ({
           id: row.id,
+          transferId: row.transferId,
+          statementMatched: !!row.importEntries.length,
           accountId: row.accountId,
           categoryId: row.categoryId,
           date: row.occurredOn.toISOString().slice(0, 10),
@@ -116,7 +132,7 @@ export async function financeReport(filters: ReportFilters) {
           incomeIds: ids(manifest?.incomeIds),
         },
       };
-      return buildReport(data, filters);
+      return { ...buildReport(data, filters), overview: buildOverview(data, filters) };
     },
     { isolationLevel: "RepeatableRead", timeout: 30000 },
   );

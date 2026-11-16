@@ -16,7 +16,7 @@ export function validTimeZone(value: unknown): string {
   try {
     return new Intl.DateTimeFormat("en", { timeZone: value }).resolvedOptions().timeZone;
   } catch {
-    throw new WorkValidationError("Enter a valid IANA time zone, such as America/Toronto.");
+    throw new WorkValidationError("Choose a valid timezone in Settings.");
   }
 }
 // Resolve wall time using the zone's actual offsets around the entered date.

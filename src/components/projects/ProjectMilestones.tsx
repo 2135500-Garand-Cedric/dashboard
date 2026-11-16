@@ -1,7 +1,10 @@
 "use client";
+import TaskModal from "@/components/shared/TaskModal";
+import { PlusIcon, PencilSquareIcon } from "@heroicons/react/24/outline";
+import { useDateTime } from "@/context/SettingsContext";
 import { useEffect, useRef, useState } from "react";
 import { createWorkWriter, workRead } from "@/lib/work-management/client";
-import { describeWorkDate, localParts } from "@/lib/work-management/date-format";
+import { localParts } from "@/lib/work-management/date-format";
 import type { WorkProject, WorkKeyDate } from "@/lib/work-management/types";
 import { useWorkDraftGuard } from "@/components/work/useWorkDraftGuard";
 type Milestone = WorkKeyDate & { completedAt: string | null };
@@ -14,6 +17,7 @@ export default function ProjectMilestones({
   project: WorkProject;
   onChanged: (row: WorkProject) => void;
 }) {
+  const { describeWorkDate } = useDateTime();
   const [items, setItems] = useState<Milestone[] | null>(null),
     [error, setError] = useState(""),
     [refresh, setRefresh] = useState(0),
@@ -88,12 +92,10 @@ export default function ProjectMilestones({
           }
           className={button}
         >
+          <PlusIcon className="mr-1.5 inline h-4 w-4" />
           Add milestone
         </button>
       </div>
-      <p className="text-xs text-gray-500">
-        Milestones inform planning. They do not complete tasks or reserve time.
-      </p>
       {error && (
         <p role="alert" className="text-sm text-rose-500">
           {error}{" "}
@@ -106,113 +108,116 @@ export default function ProjectMilestones({
           </button>
         </p>
       )}
-      {draft && (
-        <form
-          aria-label="Milestone editor"
-          className="space-y-3 rounded border border-card-border p-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void save(
-              {
-                action: draft.id ? "edit" : "create",
-                ...(draft.id ? { id: draft.id } : {}),
-                label: draft.label,
-                date:
-                  draft.kind === "DATE"
-                    ? { kind: "DATE", date: draft.value }
-                    : {
-                        kind: "TIME",
-                        local: draft.value,
-                        timeZone: draft.zone,
-                        ...(draft.occurrence ? { occurrence: draft.occurrence } : {}),
-                      },
-              },
-              draft.revision,
-            );
-          }}
-        >
-          <label className="block text-sm">
-            Label
-            <input
-              aria-label="Milestone label"
-              required
-              maxLength={120}
-              value={draft.label}
-              onChange={(e) => setDraft({ ...draft, label: e.target.value })}
-              disabled={busy}
-              className={input}
-            />
-          </label>
-          <label className="block text-sm">
-            Date precision
-            <select
-              aria-label="Milestone date precision"
-              value={draft.kind}
-              disabled={busy}
-              onChange={(e) =>
-                setDraft({ ...draft, kind: e.target.value, value: "", occurrence: "" })
-              }
-              className={input}
-            >
-              <option value="DATE">Calendar date</option>
-              <option value="TIME">Exact date and time</option>
-            </select>
-          </label>
-          <label className="block text-sm">
-            Milestone date
-            <input
-              aria-label="Milestone date"
-              type={draft.kind === "DATE" ? "date" : "datetime-local"}
-              required
-              value={draft.value}
-              disabled={busy}
-              onChange={(e) => setDraft({ ...draft, value: e.target.value, occurrence: "" })}
-              className={input}
-            />
-          </label>
-          {draft.kind === "TIME" && (
-            <>
-              <label className="block text-sm">
-                Time zone
-                <input
-                  aria-label="Milestone time zone"
-                  required
-                  value={draft.zone}
-                  disabled={busy}
-                  onChange={(e) => setDraft({ ...draft, zone: e.target.value, occurrence: "" })}
-                  className={input}
-                />
-              </label>
-              <select
-                aria-label="Milestone repeated time"
-                value={draft.occurrence}
+      <TaskModal
+        open={!!draft}
+        title={draft?.id ? "Edit milestone" : "Add milestone"}
+        busy={busy}
+        onClose={() => {
+          if (leave()) setDraft(null);
+        }}
+      >
+        {draft && (
+          <form
+            aria-label="Milestone editor"
+            className="space-y-3 rounded border border-card-border p-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void save(
+                {
+                  action: draft.id ? "edit" : "create",
+                  ...(draft.id ? { id: draft.id } : {}),
+                  label: draft.label,
+                  date:
+                    draft.kind === "DATE"
+                      ? { kind: "DATE", date: draft.value }
+                      : {
+                          kind: "TIME",
+                          local: draft.value,
+                          timeZone: draft.zone,
+                          ...(draft.occurrence ? { occurrence: draft.occurrence } : {}),
+                        },
+                },
+                draft.revision,
+              );
+            }}
+          >
+            {error && (
+              <p role="alert" className="text-sm text-rose-500">
+                {error}
+              </p>
+            )}
+            <label className="block text-sm">
+              Label
+              <input
+                aria-label="Milestone label"
+                required
+                maxLength={120}
+                value={draft.label}
+                onChange={(e) => setDraft({ ...draft, label: e.target.value })}
                 disabled={busy}
-                onChange={(e) => setDraft({ ...draft, occurrence: e.target.value })}
+                className={input}
+              />
+            </label>
+            <label className="block text-sm">
+              Date precision
+              <select
+                aria-label="Milestone date precision"
+                value={draft.kind}
+                disabled={busy}
+                onChange={(e) =>
+                  setDraft({ ...draft, kind: e.target.value, value: "", occurrence: "" })
+                }
                 className={input}
               >
-                <option value="">Require explicit repeated-time choice</option>
-                <option value="earlier">Earlier occurrence</option>
-                <option value="later">Later occurrence</option>
+                <option value="DATE">Calendar date</option>
+                <option value="TIME">Exact date and time</option>
               </select>
-            </>
-          )}
-          <div className="flex gap-3">
-            <button type="submit" disabled={busy} className={`${button} bg-blue-600 text-white`}>
-              Save milestone
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                if (leave()) setDraft(null);
-              }}
-              className={button}
-            >
-              Cancel milestone edit
-            </button>
-          </div>
-        </form>
-      )}
+            </label>
+            <label className="block text-sm">
+              Milestone date
+              <input
+                aria-label="Milestone date"
+                type={draft.kind === "DATE" ? "date" : "datetime-local"}
+                required
+                value={draft.value}
+                disabled={busy}
+                onChange={(e) => setDraft({ ...draft, value: e.target.value, occurrence: "" })}
+                className={input}
+              />
+            </label>
+            {draft.kind === "TIME" && (
+              <>
+                <select
+                  aria-label="Milestone repeated time"
+                  value={draft.occurrence}
+                  disabled={busy}
+                  onChange={(e) => setDraft({ ...draft, occurrence: e.target.value })}
+                  className={input}
+                >
+                  <option value="">Require explicit repeated-time choice</option>
+                  <option value="earlier">Earlier occurrence</option>
+                  <option value="later">Later occurrence</option>
+                </select>
+              </>
+            )}
+            <div className="flex gap-3">
+              <button type="submit" disabled={busy} className={`${button} bg-blue-600 text-white`}>
+                Save milestone
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  if (leave()) setDraft(null);
+                }}
+                className={button}
+              >
+                Cancel milestone edit
+              </button>
+            </div>
+          </form>
+        )}
+      </TaskModal>
       {!items ? (
         <p role="status">Loading milestones…</p>
       ) : items.length === 0 ? (
@@ -236,14 +241,15 @@ export default function ProjectMilestones({
                       id: row.id,
                       label: row.label,
                       kind: row.at ? "TIME" : "DATE",
-                      value: row.at ? localParts(row.at, row.timeZone!) : row.date!,
-                      zone: row.timeZone || project.timeZone,
+                      value: row.at ? localParts(row.at, project.timeZone) : row.date!,
+                      zone: project.timeZone,
                       occurrence: "",
                       revision: project.revision,
                     })
                   }
                   className={button}
                 >
+                  <PencilSquareIcon className="mr-1.5 inline h-4 w-4" />
                   Edit
                 </button>
                 <button

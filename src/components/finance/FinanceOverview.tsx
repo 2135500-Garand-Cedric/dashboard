@@ -1,10 +1,25 @@
 "use client";
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
-import type { FinanceAccount, FinanceCategory } from "@/lib/finance/validation";
-import type { FinanceReport } from "@/lib/finance/reporting";
+import { useMemo, useState, type FormEvent } from "react";
+import {
+  ArrowDownLeftIcon,
+  ArrowUpRightIcon,
+  ArrowsRightLeftIcon,
+  PlusIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  AdjustmentsHorizontalIcon,
+  ChartBarIcon,
+} from "@heroicons/react/24/outline";
+import type { FinanceAccount } from "@/lib/finance/validation";
+import type { FinanceOverviewReport } from "@/lib/finance/overview";
+import { INCOME_KINDS, type IncomeKind } from "@/lib/finance/income";
 import { displayAmount } from "@/lib/finance/transactions";
-import { FinanceBreakdown, FinanceTimeline } from "./FinanceReportCharts";
+import { FinanceTimeline } from "./FinanceReportCharts";
+import OverviewBreakdown from "./OverviewBreakdown";
+import OverviewMatching from "./OverviewMatching";
+import OverviewRecent from "./OverviewRecent";
+import { useHistoryFilters } from "./useHistoryFilters";
 import {
   fieldClass,
   FinanceLoadError,
@@ -12,133 +27,234 @@ import {
   secondaryButton,
   useFinanceData,
 } from "./shared";
+
 const money = (value: string, currency: string) =>
   displayAmount(value, currency).replace(/^\+/, "");
+const writtenDate = (date: string) =>
+  new Intl.DateTimeFormat("en-CA", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${date}T00:00:00Z`));
+function historyLink(view: string, report: FinanceOverviewReport) {
+  const params = new URLSearchParams({
+    from: report.filters.from,
+    to: report.filters.to,
+    currency: report.filters.currency,
+  });
+  if (report.filters.accountId) params.set("account", String(report.filters.accountId));
+  return `/finance/${view}?${params}`;
+}
+
 export default function FinanceOverview({ today }: { today: string }) {
-  const initial = {
-    mode: "month",
-    month: today.slice(0, 7),
-    year: today.slice(0, 4),
-    from: `${today.slice(0, 7)}-01`,
-    to: today,
-    currency: "CAD",
-    account: "",
-    category: "",
-    dataset: "all",
-  };
-  const [draft, setDraft] = useState(initial),
-    [filters, setFilters] = useState(initial);
-  const accounts = useFinanceData<{ accounts: FinanceAccount[] }>("/api/finance/accounts"),
-    categories = useFinanceData<{ categories: FinanceCategory[] }>("/api/finance/categories"),
-    result = useFinanceData<FinanceReport>(`/api/finance/reports?${new URLSearchParams(filters)}`);
+  const initial = useMemo(
+    () => ({
+      mode: "month",
+      month: today.slice(0, 7),
+      year: today.slice(0, 4),
+      from: `${today.slice(0, 7)}-01`,
+      to: today,
+      currency: "CAD",
+      account: "",
+      dataset: "all",
+    }),
+    [today],
+  );
+  const { draft, setDraft, filters, setFilters, filtersOpen, setFiltersOpen } =
+    useHistoryFilters(initial);
+  const accounts = useFinanceData<{ accounts: FinanceAccount[] }>("/api/finance/accounts");
+  const result = useFinanceData<FinanceOverviewReport>(
+    `/api/finance/reports?${new URLSearchParams(filters)}`,
+  );
   const currencies = [
     ...new Set(["CAD", ...(accounts.data?.accounts.map((row) => row.currency) ?? [])]),
   ].sort();
-  function apply(event: FormEvent) {
+  function update(patch: Partial<typeof initial>) {
+    setDraft((previous) => ({ ...previous, ...patch }));
+    setFilters({ ...filters, ...patch });
+  }
+  function movePeriod(offset: number) {
+    if (filters.mode === "month") {
+      const date = new Date(`${filters.month}-01T00:00:00Z`);
+      date.setUTCMonth(date.getUTCMonth() + offset);
+      update({ month: date.toISOString().slice(0, 7) });
+    } else update({ year: String(Number(filters.year) + offset) });
+  }
+  function applyCustom(event: FormEvent) {
     event.preventDefault();
     setFilters({ ...draft });
-    result.retry();
   }
+  const filterCount = Number(!!filters.account) + Number(filters.dataset !== "all");
   return (
-    <div className="min-w-0 space-y-6">
+    <div className="min-w-0 max-w-[1800px] space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-2xl font-semibold">Financial overview</h2>
-        <Link href="/finance/transactions/new" className={primaryButton}>
-          Add transaction
-        </Link>
-      </div>
-      <form onSubmit={apply} className="card min-w-0 space-y-4">
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Report period">
-          {[
-            ["month", "Month"],
-            ["year", "Year"],
-            ["custom", "Custom range"],
-          ].map(([value, name]) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={draft.mode === value}
-              className={draft.mode === value ? primaryButton : secondaryButton}
-              onClick={() => {
-                const next = { ...draft, mode: value };
-                setDraft(next);
-                setFilters(next);
-              }}
-            >
-              {name}
-            </button>
-          ))}
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/finance/income/new"
+            className={`${secondaryButton} gap-2 !border-emerald-500/30`}
+          >
+            <PlusIcon className="h-4 w-4 text-emerald-400" aria-hidden="true" />
+            Add income
+          </Link>
+          <Link
+            href="/finance/expenses/new"
+            className={`${secondaryButton} gap-2 !border-rose-500/30`}
+          >
+            <PlusIcon className="h-4 w-4 text-rose-400" aria-hidden="true" />
+            Add expense
+          </Link>
         </div>
-        <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {draft.mode === "month" && (
+      </div>
+      <section
+        aria-label="Overview period and filters"
+        className="rounded-xl border border-card-border bg-card-bg p-3 sm:p-4"
+      >
+        <div className="flex flex-wrap items-center gap-3">
+          <div
+            className="flex max-w-full gap-1 rounded-lg bg-background/40 p-1"
+            role="group"
+            aria-label="Report period"
+          >
+            {[
+              ["month", "Month"],
+              ["year", "Year"],
+              ["custom", "Custom range"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={filters.mode === value}
+                className={`min-h-10 rounded-md px-3 text-sm font-medium ${filters.mode === value ? "bg-blue-600 text-white" : "text-gray-400 hover:bg-foreground/5"}`}
+                onClick={() => update({ mode: value })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {filters.mode !== "custom" && (
+            <div className="flex min-w-0 items-center gap-1">
+              <button
+                type="button"
+                aria-label="Previous period"
+                disabled={
+                  filters.mode === "year"
+                    ? Number(filters.year) <= 1900
+                    : filters.month <= "1900-01"
+                }
+                className={`${secondaryButton} !px-2`}
+                onClick={() => movePeriod(-1)}
+              >
+                <ChevronLeftIcon className="h-4 w-4" aria-hidden="true" />
+              </button>
+              {filters.mode === "month" ? (
+                <input
+                  aria-label="Report month"
+                  type="month"
+                  min="1900-01"
+                  max="9998-12"
+                  className={`${fieldClass} !w-44`}
+                  value={draft.month}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setDraft((previous) => ({ ...previous, month: value }));
+                    if (/^\d{4}-\d{2}$/.test(value)) update({ month: value });
+                  }}
+                />
+              ) : (
+                <input
+                  aria-label="Report year"
+                  type="number"
+                  min={1900}
+                  max={9998}
+                  className={`${fieldClass} !w-28`}
+                  value={draft.year}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setDraft((previous) => ({ ...previous, year: value }));
+                    if (/^\d{4}$/.test(value) && Number(value) >= 1900 && Number(value) <= 9998)
+                      update({ year: value });
+                  }}
+                />
+              )}
+              <button
+                type="button"
+                aria-label="Next period"
+                disabled={
+                  filters.mode === "year"
+                    ? Number(filters.year) >= 9998
+                    : filters.month >= "9998-12"
+                }
+                className={`${secondaryButton} !px-2`}
+                onClick={() => movePeriod(1)}
+              >
+                <ChevronRightIcon className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+          )}
+          <select
+            aria-label="Report currency"
+            className={`${fieldClass} !w-auto sm:ml-auto`}
+            value={draft.currency}
+            onChange={(event) => update({ currency: event.target.value, account: "" })}
+          >
+            {currencies.map((currency) => (
+              <option key={currency}>{currency}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            aria-expanded={filtersOpen}
+            aria-controls="overview-filters"
+            className={`${secondaryButton} gap-2`}
+            onClick={() => setFiltersOpen(!filtersOpen)}
+          >
+            <AdjustmentsHorizontalIcon className="h-4 w-4" aria-hidden="true" />
+            Filters{filterCount ? ` (${filterCount})` : ""}
+          </button>
+        </div>
+        {filters.mode === "custom" && (
+          <form
+            onSubmit={applyCustom}
+            className="mt-4 grid gap-3 border-t border-card-border pt-4 sm:grid-cols-[1fr_1fr_auto]"
+          >
             <label className="space-y-1 text-sm">
-              Month
+              From
               <input
-                aria-label="Report month"
-                type="month"
+                aria-label="Report from date"
+                type="date"
                 required
                 className={fieldClass}
-                value={draft.month}
-                onChange={(event) => setDraft({ ...draft, month: event.target.value })}
+                value={draft.from}
+                max={draft.to || undefined}
+                onChange={(event) =>
+                  setDraft((previous) => ({ ...previous, from: event.target.value }))
+                }
               />
             </label>
-          )}
-          {draft.mode === "year" && (
             <label className="space-y-1 text-sm">
-              Year
+              To
               <input
-                aria-label="Report year"
-                type="number"
-                min={1900}
-                max={9998}
+                aria-label="Report to date"
+                type="date"
                 required
                 className={fieldClass}
-                value={draft.year}
-                onChange={(event) => setDraft({ ...draft, year: event.target.value })}
+                value={draft.to}
+                min={draft.from || undefined}
+                onChange={(event) =>
+                  setDraft((previous) => ({ ...previous, to: event.target.value }))
+                }
               />
             </label>
-          )}
-          {draft.mode === "custom" && (
-            <>
-              <label className="space-y-1 text-sm">
-                From
-                <input
-                  aria-label="Report from date"
-                  type="date"
-                  required
-                  className={fieldClass}
-                  value={draft.from}
-                  onChange={(event) => setDraft({ ...draft, from: event.target.value })}
-                />
-              </label>
-              <label className="space-y-1 text-sm">
-                To
-                <input
-                  aria-label="Report to date"
-                  type="date"
-                  required
-                  className={fieldClass}
-                  value={draft.to}
-                  onChange={(event) => setDraft({ ...draft, to: event.target.value })}
-                />
-              </label>
-            </>
-          )}
-          <label className="space-y-1 text-sm">
-            Currency
-            <select
-              aria-label="Report currency"
-              className={fieldClass}
-              value={draft.currency}
-              onChange={(event) =>
-                setDraft({ ...draft, currency: event.target.value, account: "" })
-              }
-            >
-              {currencies.map((currency) => (
-                <option key={currency}>{currency}</option>
-              ))}
-            </select>
-          </label>
+            <button className={`${primaryButton} self-end`}>Apply range</button>
+          </form>
+        )}
+        <div
+          hidden={!filtersOpen}
+          id="overview-filters"
+          className="mt-4 grid gap-4 border-t border-card-border pt-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto]"
+        >
           <label className="space-y-1 text-sm">
             Account
             <select
@@ -149,35 +265,17 @@ export default function FinanceOverview({ today }: { today: string }) {
                 const account = accounts.data?.accounts.find(
                   (row) => row.id === Number(event.target.value),
                 );
-                setDraft({
-                  ...draft,
+                update({
                   account: event.target.value,
-                  currency: account?.currency ?? draft.currency,
+                  currency: account?.currency ?? filters.currency,
                 });
               }}
             >
-              <option value="">All accounts in currency</option>
+              <option value="">All accounts in {filters.currency}</option>
               {accounts.data?.accounts.map((row) => (
                 <option key={row.id} value={row.id}>
                   {row.name} · {row.currency}
-                  {row.active ? "" : " (inactive)"}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-sm">
-            Category
-            <select
-              aria-label="Report category"
-              className={fieldClass}
-              value={draft.category}
-              onChange={(event) => setDraft({ ...draft, category: event.target.value })}
-            >
-              <option value="">All categories</option>
-              {categories.data?.categories.map((row) => (
-                <option key={row.id} value={row.id}>
-                  {row.name} · {row.type === "INCOME" ? "Income" : "Expense"}
-                  {row.active ? "" : " (inactive)"}
+                  {row.active ? "" : " · Inactive"}
                 </option>
               ))}
             </select>
@@ -188,341 +286,279 @@ export default function FinanceOverview({ today }: { today: string }) {
               aria-label="Report data"
               className={fieldClass}
               value={draft.dataset}
-              onChange={(event) => setDraft({ ...draft, dataset: event.target.value })}
+              onChange={(event) => update({ dataset: event.target.value })}
             >
-              <option value="all">All records, including examples</option>
+              <option value="all">All records</option>
               <option value="personal">Personal records only</option>
               <option value="examples">Example records only</option>
             </select>
           </label>
-          <button type="submit" className={`${primaryButton} self-end`}>
-            Apply filters
+          <button
+            type="button"
+            className={`${secondaryButton} self-end`}
+            onClick={() => update({ account: "", dataset: "all" })}
+          >
+            Clear filters
           </button>
         </div>
-      </form>
-      <div className="rounded-xl border border-card-border bg-blue-500/5 p-4 text-sm text-gray-400">
-        <strong className="text-foreground">Recorded activity only.</strong> Missing accounts,
-        statements or entries can make this incomplete. These figures are not account balances or
-        net worth; currencies are never combined.
-      </div>
+      </section>
       {accounts.error && <FinanceLoadError error={accounts.error} retry={accounts.retry} />}
-      {categories.error && <FinanceLoadError error={categories.error} retry={categories.retry} />}
       {result.error && <FinanceLoadError error={result.error} retry={result.retry} />}
       {result.loading ? (
-        <p role="status">Loading financial reports…</p>
+        <div role="status" className="grid animate-pulse gap-4 sm:grid-cols-3">
+          <span className="sr-only">Loading financial overview…</span>
+          {[0, 1, 2].map((key) => (
+            <div key={key} className="h-40 rounded-xl border border-card-border bg-card-bg" />
+          ))}
+        </div>
       ) : (
-        !result.error && result.data?.totals && <ReportContent report={result.data} />
+        !result.error && result.data?.overview && <ReportContent report={result.data} />
       )}
-      <section className="card flex flex-wrap gap-2">
-        {[
-          ["accounts", "Manage accounts →"],
-          ["categories", "Manage categories →"],
-          ["transactions", "Transaction history"],
-          ["receipts", "Receipt history"],
-          ["income", "Income & pay stubs"],
-          ["imports", "Statement imports"],
-          ["reconciliation", "Reconciliation"],
-        ].map(([href, label]) => (
-          <Link key={href} href={`/finance/${href}`} className={secondaryButton}>
-            {label}
-          </Link>
-        ))}
-      </section>
     </div>
   );
 }
-function ReportContent({ report }: { report: FinanceReport }) {
-  const { totals, filters, coverage } = report,
-    currency = filters.currency;
+
+function ReportContent({ report }: { report: FinanceOverviewReport }) {
+  const [spendingView, setSpendingView] = useState<"category" | "account">("category");
+  const [trend, setTrend] = useState<"period" | "months">("period");
+  const { totals, filters, previous, coverage, overview } = report;
+  const currency = filters.currency;
+  const incomeCount = overview.groups.find((row) => row.key === "income")?.total ?? 0;
+  const expenseCount = overview.groups.find((row) => row.key === "expenses")?.total ?? 0;
+  const scope =
+    overview.accountCount === 1
+      ? (coverage.accounts[0]?.name ?? "1 account")
+      : `${overview.accountCount} accounts`;
+  const comparison = `${writtenDate(previous.from)} – ${writtenDate(previous.to)}`;
+  const chartRows = trend === "period" ? report.timeline : report.monthlyTrend;
+  const sourceRows = report.incomeBySource
+    .map((row) => ({
+      key: row.key,
+      name: row.name,
+      value: row.amount,
+      detail:
+        INCOME_KINDS[
+          overview.sources.find((source) => String(source.id) === row.key)?.kind as IncomeKind
+        ],
+    }))
+    .sort((a, b) => {
+      const left = BigInt(a.value.replace(".", "")),
+        right = BigInt(b.value.replace(".", ""));
+      return left === right ? a.name.localeCompare(b.name) : left > right ? -1 : 1;
+    });
+  const spendingRows =
+    spendingView === "category" ? report.spendingByCategory : report.spendingByAccount;
   return (
-    <div className="min-w-0 space-y-6" data-finance-report>
-      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-        <span>
-          {filters.from} → {filters.to} · {currency}
-        </span>
-        <span className="text-gray-400">
-          {totals.count} counted account movements
-          {coverage.inProgress ? " · Period still in progress" : ""}
-        </span>
-      </div>
-      {coverage.examplesIncluded && (
-        <p
-          role="status"
-          className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-500"
-        >
-          Example data is included in these figures. Choose “Personal records only” to exclude the
-          synthetic accounts and their activity.
+    <div className="min-w-0 space-y-5" data-finance-report>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-gray-400">
+        <p>
+          {writtenDate(filters.from)} – {writtenDate(filters.to)} · {currency} · {scope}
         </p>
-      )}
-      {(coverage.unresolvedDuplicates > 0 ||
-        coverage.overlappingIncome > 0 ||
-        coverage.futureDated > 0) && (
-        <div className="card space-y-2 text-sm text-amber-500">
-          {coverage.unresolvedDuplicates > 0 && (
-            <p>
-              {coverage.unresolvedDuplicates} potential manual/statement duplicate(s) need review.
-              Unresolved entries remain counted.{" "}
-              <Link href="/finance/reconciliation?kind=DUPLICATE" className="underline">
-                Review duplicates
-              </Link>
-            </p>
+        <div className="flex flex-wrap gap-2">
+          {coverage.inProgress && (
+            <span className="rounded-full border border-card-border px-2 py-1 text-xs">
+              Period in progress
+            </span>
           )}
-          {coverage.overlappingIncome > 0 && (
-            <p>
-              {coverage.overlappingIncome} deposit(s) have overlapping income-source allocations;
-              their cash is counted once and source attribution is marked for review.
-            </p>
-          )}
-          {coverage.futureDated > 0 && (
-            <p>
-              {coverage.futureDated} future-dated recorded movements are included in this selected
-              range.
-            </p>
+          {coverage.examplesIncluded && (
+            <span className="rounded-full border border-amber-500/30 px-2 py-1 text-xs text-amber-500">
+              Includes example data
+            </span>
           )}
         </div>
-      )}
-      <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        {[
-          ["Income deposits", totals.income, "text-emerald-500"],
-          ["Net expenses", totals.expenses, "text-rose-500"],
-          [
-            "Net cash flow",
-            totals.net,
-            totals.net.startsWith("-") ? "text-rose-500" : "text-blue-400",
-          ],
-          ["Refunds", totals.refunds, "text-emerald-500"],
-          ["Adjustments", totals.adjustments, "text-gray-300"],
-        ].map(([title, value, color]) => (
-          <section key={title} className="card min-w-0 space-y-2">
-            <h3 className="text-sm text-gray-400">{title}</h3>
-            <p
-              className={`break-words text-xl font-semibold tabular-nums 2xl:text-2xl ${color}`}
-              data-total={title}
-            >
-              {money(value, currency)}
-            </p>
-            {title === "Net expenses" && (
-              <p className="text-xs text-gray-400">
-                Purchases {money(totals.purchases, currency)} less refunds
-              </p>
-            )}
-          </section>
-        ))}
       </div>
-      <div className="card flex flex-wrap gap-x-6 gap-y-2 text-sm">
-        <span className="text-gray-400">
-          Change from {report.previous.from} → {report.previous.to}:
-        </span>
-        <span>Income {displayAmount(report.previous.change.income, currency)}</span>
-        <span>Net expenses {displayAmount(report.previous.change.expenses, currency)}</span>
-        <span>Net flow {displayAmount(report.previous.change.net, currency)}</span>
-      </div>
-      <FinanceTimeline rows={report.timeline} currency={currency} title="Income versus expenses" />
-      <div className="grid min-w-0 gap-5 lg:grid-cols-2">
-        <FinanceBreakdown
-          title="Spending by category"
-          rows={report.spendingByCategory}
+      <div className="grid min-w-0 gap-4 lg:grid-cols-3">
+        <Metric
+          title="Income"
+          value={totals.income}
+          change={previous.change.income}
           currency={currency}
+          tone="income"
+          detail={`${incomeCount} income ${incomeCount === 1 ? "record" : "records"}`}
+          comparison={comparison}
+          inProgress={coverage.inProgress}
+          href={historyLink("income", report)}
         />
-        <FinanceBreakdown
-          title="Spending by merchant"
-          rows={report.spendingByMerchant}
+        <Metric
+          title="Net expenses"
+          value={totals.expenses}
+          change={previous.change.expenses}
           currency={currency}
+          tone="expenses"
+          detail={`${money(totals.purchases, currency)} purchases − ${money(totals.refunds, currency)} refunds`}
+          comparison={comparison}
+          inProgress={coverage.inProgress}
+          href={historyLink("expenses", report)}
         />
-        <FinanceBreakdown
-          title="Spending by account"
-          rows={report.spendingByAccount}
+        <Metric
+          title="Net cash flow"
+          value={totals.net}
+          change={previous.change.net}
           currency={currency}
-        />
-        <FinanceBreakdown
-          title="Income deposits by source"
-          rows={report.incomeBySource.map((row) => ({ ...row, net: row.amount }))}
-          currency={currency}
-          income
+          tone="net"
+          detail={
+            totals.adjustments !== "0.0000"
+              ? `Includes ${money(totals.adjustments, currency)} in adjustments`
+              : "Income − net expenses"
+          }
+          comparison={comparison}
+          inProgress={coverage.inProgress}
         />
       </div>
-      <section className="card min-w-0 space-y-4">
-        <h3 className="text-lg font-semibold">Pay records — separate from deposits</h3>
-        <p className="text-sm text-gray-400">
-          {report.earnings.records} income record(s), filtered by pay date and their own
-          account/category. These amounts are not added to cash totals. Split deposits follow their
-          transaction dates.
+      {coverage.futureDated > 0 && (
+        <p className="rounded-lg border border-amber-500/20 p-3 text-sm text-amber-500">
+          {coverage.futureDated} future-dated records are included in this range.
         </p>
-        <dl className="grid gap-4 sm:grid-cols-3">
-          {[
-            ["Known gross earnings", report.earnings.gross],
-            ["Recorded net pay", report.earnings.net],
-            ["Recorded deductions", report.earnings.deductions],
-          ].map(([name, value]) => (
-            <div key={name}>
-              <dt className="text-sm text-gray-400">{name}</dt>
-              <dd className="break-all text-xl font-semibold tabular-nums">
-                {money(value, currency)}
-              </dd>
-            </div>
-          ))}
-        </dl>
-        {report.earnings.missingGross > 0 && (
-          <p className="text-sm text-amber-500">
-            Gross earnings are missing for {report.earnings.missingGross} record(s); the known gross
-            total is incomplete.
-          </p>
-        )}
-        <Link href="/finance/income" className={secondaryButton}>
-          View income records
-        </Link>
-      </section>
-      <div className="grid min-w-0 gap-5 2xl:grid-cols-2">
-        <FinanceTimeline
-          rows={report.monthlyTrend}
-          currency={currency}
-          lines
-          title={`Monthly trends · 12 months through ${filters.to.slice(0, 7)}`}
-        />
-        <FinanceTimeline
-          rows={report.yearlyTrend}
-          currency={currency}
-          lines
-          title={`Yearly trends · 5 years through ${filters.to.slice(0, 4)}`}
-        />
-      </div>
-      <section className="card min-w-0 space-y-4">
-        <div className="flex flex-wrap justify-between gap-3">
-          <h3 className="text-lg font-semibold">Recent transactions</h3>
-          <Link href="/finance/transactions" className={secondaryButton}>
-            View history
-          </Link>
-        </div>
-        {report.recent.length ? (
-          <ul className="divide-y divide-card-border">
-            {report.recent.map((row) => (
-              <li key={row.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                <div className="min-w-0">
-                  <Link
-                    className="break-words font-medium hover:underline"
-                    href={`/finance/transactions/${row.id}`}
+      )}
+      <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
+        <div className="min-w-0 space-y-5">
+          <FinanceTimeline
+            rows={chartRows}
+            currency={currency}
+            title="Income versus expenses"
+            actions={
+              <div className="flex gap-1 rounded-lg bg-background/40 p-1">
+                {[
+                  ["period", "Selected period"],
+                  ["months", "12 months"],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={trend === value}
+                    onClick={() => setTrend(value as typeof trend)}
+                    className={`min-h-9 rounded-md px-2.5 text-xs ${trend === value ? "bg-blue-600 text-white" : "text-gray-400"}`}
                   >
-                    {row.description}
-                  </Link>
-                  <p className="break-words text-xs text-gray-400">
-                    {row.date} · {row.account} · {row.type}
-                  </p>
-                </div>
-                <span className="break-all tabular-nums">
-                  {displayAmount(row.amount, currency)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="py-8 text-center text-gray-400">No transactions in this selection.</p>
-        )}
-      </section>
-      <div className="grid min-w-0 gap-5 lg:grid-cols-2">
-        <section className="card min-w-0 space-y-4">
-          <h3 className="text-lg font-semibold">
-            Transactions without full support · {report.unmatched.transactionCount}
-          </h3>
-          <p className="text-sm text-gray-400">
-            Expenses without full receipt coverage and deposits without full income-record coverage.
-            Supporting documents are optional.
-          </p>
-          <ul className="space-y-3">
-            {report.unmatched.transactions.map((row) => (
-              <li key={row.id} className="min-w-0 border-t border-card-border pt-3">
-                <p className="break-words font-medium">{row.description}</p>
-                <p className="text-sm text-gray-400">
-                  {row.date} · {money(row.remaining, currency)} unsupported
-                </p>
-                <Link
-                  className={`${secondaryButton} mt-2`}
-                  href={`/finance/transactions/${row.id}`}
-                >
-                  Review transaction
-                </Link>
-              </li>
-            ))}
-          </ul>
-          <Link href="/finance/reconciliation" className={secondaryButton}>
-            Open reconciliation
-          </Link>
-        </section>
-        <section className="card min-w-0 space-y-4">
-          <h3 className="text-lg font-semibold">
-            Unmatched / partial receipts · {report.unmatched.receiptCount}
-          </h3>
-          <ul className="space-y-3">
-            {report.unmatched.receipts.map((row) => (
-              <li key={row.id} className="min-w-0 border-t border-card-border pt-3">
-                <p className="break-words font-medium">{row.merchant}</p>
-                <p className="text-sm text-gray-400">
-                  {row.date} · {money(row.remaining, currency)} remaining
-                </p>
-                <Link
-                  className={`${secondaryButton} mt-2`}
-                  href={`/finance/reconciliation?kind=RECEIPT&source=${row.id}`}
-                >
-                  Match receipt
-                </Link>
-              </li>
-            ))}
-          </ul>
-          <Link href="/finance/receipts" className={secondaryButton}>
-            View receipts
-          </Link>
-        </section>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            }
+          />
+        </div>
+        <OverviewMatching report={report} />
       </div>
-      <section className="card min-w-0 space-y-4">
-        <h3 className="text-lg font-semibold">Recorded account coverage</h3>
-        <p className="text-sm text-gray-400">
-          Dates and counts describe entries in this selection; they do not establish complete
-          statement coverage.
-          {coverage.otherCurrencyAccounts > 0
-            ? ` ${coverage.otherCurrencyAccounts} account(s) in other currencies are excluded.`
-            : ""}
-        </p>
-        <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {coverage.accounts.map((row) => (
-            <li key={row.id} className="min-w-0 rounded-lg border border-card-border p-3">
-              <strong className="break-words text-sm">
-                {row.name}
-                {row.active ? "" : " · Inactive"}
-              </strong>
-              <p className="mt-1 text-xs text-gray-400">
-                {row.count} movements · {row.statementBacked} statement-backed
-              </p>
-              <p className="mt-1 text-xs text-gray-400">
-                {row.first ? `${row.first} → ${row.last}` : "No entries in this selection"}
-              </p>
-            </li>
-          ))}
-        </ul>
-      </section>
-      <details className="card min-w-0 space-y-3">
-        <summary className="cursor-pointer font-semibold">How these totals reconcile</summary>
-        <p className="break-words text-sm">
-          Income {money(totals.income, currency)} − purchases {money(totals.purchases, currency)} +
-          refunds {money(totals.refunds, currency)} + adjustments{" "}
-          {money(totals.adjustments, currency)} = net cash flow {money(totals.net, currency)}.
-        </p>
-        <p className="text-sm text-gray-400">
-          Owned-account transfers and credit card payments are excluded from income, expenses and
-          net flow. Selected transfer legs: {money(totals.transfersIn, currency)} in /{" "}
-          {money(totals.transfersOut, currency)} out. Confirmed duplicate amounts excluded:{" "}
-          {money(totals.excludedDuplicates, currency)}.
-        </p>
-        <p className="text-sm text-gray-400">
-          Receipts and income records are supporting details, not additional money movements.
-          Refunds reduce expenses; reimbursements recorded as income stay income. Card charges count
-          on their recorded purchase date. Deposit sources follow confirmed net-pay allocations;
-          partial duplicate shares are prorated at four-decimal precision and any remainder stays
-          unattributed. Overlapping source matches require review.
-        </p>
-        <p className="text-sm text-gray-400">
-          Trend charts use the same account, category, currency and dataset filters over the
-          labelled 12-month / 5-year windows ending on the selected end date.
-        </p>
-      </details>
+      <div className="grid min-w-0 gap-5 md:grid-cols-2">
+        <div className="min-w-0 space-y-2">
+          <div className="flex gap-2 px-1" role="group" aria-label="Spending breakdown">
+            {[
+              ["category", "By category"],
+              ["account", "By account"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={spendingView === value}
+                className={`rounded-md px-2 py-1 text-xs ${spendingView === value ? "bg-rose-500/10 text-rose-400" : "text-gray-400"}`}
+                onClick={() => setSpendingView(value as typeof spendingView)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <OverviewBreakdown
+            title={spendingView === "category" ? "Spending by category" : "Spending by account"}
+            rows={spendingRows.map((row) => ({
+              key: row.key,
+              name: row.name,
+              value: row.net,
+              detail: row.net.startsWith("-") ? "Refunds exceed purchases" : undefined,
+            }))}
+            currency={currency}
+            tone="expenses"
+            href={historyLink("expenses", report)}
+          />
+        </div>
+        <div className="min-w-0 space-y-2">
+          <div className="px-1 py-1 text-xs text-gray-400">
+            {incomeCount} income records · {expenseCount} expense / refund records
+          </div>
+          <OverviewBreakdown
+            title="Income by source"
+            rows={sourceRows}
+            currency={currency}
+            tone="income"
+            href={historyLink("income", report)}
+          />
+        </div>
+      </div>
+
+      <OverviewRecent report={report} />
+      <p className="flex items-center gap-2 text-xs text-gray-500">
+        <ChartBarIcon className="h-4 w-4" aria-hidden="true" />
+        Recorded activity only · Transfers are separate · {currency}
+      </p>
     </div>
+  );
+}
+
+function Metric({
+  title,
+  value,
+  change,
+  currency,
+  tone,
+  detail,
+  comparison,
+  inProgress,
+  href,
+}: {
+  title: string;
+  value: string;
+  change: string;
+  currency: string;
+  tone: "income" | "expenses" | "net";
+  detail: string;
+  comparison: string;
+  inProgress: boolean;
+  href?: string;
+}) {
+  const Icon =
+    tone === "income"
+      ? ArrowDownLeftIcon
+      : tone === "expenses"
+        ? ArrowUpRightIcon
+        : ArrowsRightLeftIcon;
+  const color =
+    tone === "income"
+      ? "text-emerald-400"
+      : tone === "expenses"
+        ? "text-rose-400"
+        : value.startsWith("-")
+          ? "text-rose-400"
+          : "text-blue-400";
+  const favorable = tone === "expenses" ? change.startsWith("-") : !change.startsWith("-");
+  return (
+    <section className="flex min-w-0 flex-col gap-4 rounded-xl border border-card-border bg-card-bg p-5">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-medium text-gray-400">{title}</h3>
+        <Icon className={`h-5 w-5 ${color}`} aria-hidden="true" />
+      </div>
+      <div>
+        <p
+          className={`break-words text-3xl font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere] ${color}`}
+          data-total={title}
+        >
+          {money(value, currency)}
+        </p>
+        <p className="mt-2 break-words text-xs text-gray-400">{detail}</p>
+      </div>
+      <div className="mt-auto border-t border-card-border pt-3">
+        <p
+          className={`text-sm tabular-nums ${inProgress ? "text-gray-300" : favorable ? "text-emerald-400" : "text-rose-400"}`}
+        >
+          {displayAmount(change, currency)}{" "}
+          <span className="text-xs text-gray-500">
+            {inProgress ? "change · period in progress" : "change"}
+          </span>
+        </p>
+        <p className="mt-1 text-xs text-gray-500">vs {comparison}</p>
+        {href && (
+          <Link href={href} className="mt-3 inline-block text-sm text-blue-400 hover:underline">
+            View {tone === "income" ? "income" : "expenses"} →
+          </Link>
+        )}
+      </div>
+    </section>
   );
 }

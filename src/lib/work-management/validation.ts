@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { withUserTimeZone } from "@/lib/user-settings";
+import { getAppTimeZone } from "@/lib/time-zone-context";
 
 export class WorkValidationError extends Error {
   constructor(
@@ -64,17 +66,28 @@ export async function workResponse(
   operation: "save" | "load" = "save",
 ) {
   try {
-    return NextResponse.json(await action(), { status, headers: { "Cache-Control": "no-store" } });
+    return await withUserTimeZone(async () =>
+      NextResponse.json(await action(), {
+        status,
+        headers: { "Cache-Control": "no-store", "X-App-Time-Zone": getAppTimeZone() },
+      }),
+    );
   } catch (error) {
     if (error instanceof WorkValidationError)
       return NextResponse.json(
         { error: error.message },
-        { status: error.status, headers: { "Cache-Control": "no-store" } },
+        {
+          status: error.status,
+          headers: { "Cache-Control": "no-store", "X-App-Time-Zone": getAppTimeZone() },
+        },
       );
     if (error instanceof SyntaxError)
       return NextResponse.json(
         { error: "Enter a valid request." },
-        { status: 400, headers: { "Cache-Control": "no-store" } },
+        {
+          status: 400,
+          headers: { "Cache-Control": "no-store", "X-App-Time-Zone": getAppTimeZone() },
+        },
       );
     // Never log request bodies, Prisma errors/parameters, notes or contact data.
     console.error("Work management: operation failed.");
@@ -85,7 +98,10 @@ export async function workResponse(
             ? "Unable to load this data. Reload the page and try again."
             : "Unable to save this change. Reload the record and try again.",
       },
-      { status: 500, headers: { "Cache-Control": "no-store" } },
+      {
+        status: 500,
+        headers: { "Cache-Control": "no-store", "X-App-Time-Zone": getAppTimeZone() },
+      },
     );
   }
 }

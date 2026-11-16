@@ -1,5 +1,6 @@
 import {
   guardSupportingEdit,
+  assertSupportingUnmatched,
   syncSupportingMatch,
   unlinkSupportingMatches,
 } from "./reconciliation-ledger";
@@ -176,6 +177,13 @@ export async function saveIncome(
               }
             }
             const current = id === undefined ? null : await rowById(db, id);
+            await assertSupportingUnmatched(
+              db,
+              "INCOME",
+              current?.id,
+              current?.transactionId ??
+                (input.transactionAction === "LINK" ? input.transactionId : null),
+            );
             await guardSupportingEdit(db, "INCOME", current, input);
             if (current && current.updatedAt.getTime() !== Date.parse(input.expectedUpdatedAt!))
               throw new FinanceValidationError(
@@ -187,22 +195,22 @@ export async function saveIncome(
             });
             if (!source || (!source.active && current?.sourceId !== source.id))
               throw new FinanceValidationError("Choose an active income source belonging to you.");
-            const category = await db.financeCategory.findFirst({
-              where: { id: input.categoryId, userId: FINANCE_USER_ID, type: "INCOME" },
+            const account = await db.financialAccount.findFirst({
+              where: { id: input.accountId, userId: FINANCE_USER_ID },
             });
-            if (!category || (!category.active && current?.categoryId !== category.id))
+            if (
+              !account ||
+              (!account.active &&
+                current?.accountId !== account.id &&
+                input.transactionAction !== "LINK")
+            )
               throw new FinanceValidationError(
-                "Choose an active income category belonging to you.",
+                "Choose an active deposit account belonging to you.",
               );
-            if (input.accountId !== null) {
-              const account = await db.financialAccount.findFirst({
-                where: { id: input.accountId, userId: FINANCE_USER_ID },
-              });
-              if (!account || (!account.active && current?.accountId !== account.id))
-                throw new FinanceValidationError(
-                  "Choose an active deposit account belonging to you.",
-                );
-            }
+            if (account.currency !== input.currency)
+              throw new FinanceValidationError(
+                "The income currency must match the deposit account currency.",
+              );
             for (const line of input.deductions) {
               const type = await db.financialDeductionType.findFirst({
                 where: { id: line.typeId, userId: FINANCE_USER_ID },
@@ -244,6 +252,25 @@ export async function saveIncome(
             const paidOn = new Date(`${input.date}T00:00:00Z`),
               netAmount = new Prisma.Decimal(input.netAmount);
             if (input.transactionAction === "LINK") {
+              if (input.syncMovement) {
+                const { syncActivityMovement } = await import("./activity-movement");
+                await syncActivityMovement(
+                  db,
+                  "INCOME",
+                  current?.id ?? null,
+                  input.transactionId!,
+                  {
+                    amount: input.netAmount,
+                    accountId: input.accountId,
+                    currency: input.currency,
+                    date: input.date,
+                    description: input.description,
+                    categoryId: current?.categoryId ?? null,
+                    counterparty: source.name,
+                    notes: input.notes,
+                  },
+                );
+              }
               const transaction = await db.financialTransaction.findFirst({
                 where: { id: input.transactionId!, userId: FINANCE_USER_ID },
               });
@@ -257,6 +284,32 @@ export async function saveIncome(
                 throw new FinanceValidationError(
                   "Link an income deposit belonging to you with the same account, currency and net amount. Pay and deposit dates may differ.",
                 );
+              const alreadyLinked = await db.financialIncomeRecord.findFirst({
+                where: {
+                  userId: FINANCE_USER_ID,
+                  ...(current ? { id: { not: current.id } } : {}),
+                  OR: [
+                    { transactionId: transaction.id },
+                    {
+                      matches: {
+                        some: {
+                          userId: FINANCE_USER_ID,
+                          kind: "INCOME",
+                          status: "CONFIRMED",
+                          transactionId: transaction.id,
+                        },
+                      },
+                    },
+                  ],
+                },
+                select: { id: true },
+              });
+              if (alreadyLinked)
+                throw new IncomeConflict(
+                  "This deposit is already linked to an income record. Review that record instead of recording it twice.",
+                  "DUPLICATE_INCOME",
+                  alreadyLinked.id,
+                );
               transactionId = transaction.id;
             } else if (input.transactionAction === "CREATE") {
               if (current?.transactionId)
@@ -267,7 +320,7 @@ export async function saveIncome(
                 );
               if (netAmount.isZero())
                 throw new FinanceValidationError(
-                  "A zero-net record can stay unmatched but cannot create a zero-value deposit.",
+                  "Net income must be greater than zero to create a deposit.",
                 );
               const duplicate = await db.financialTransaction.findFirst({
                 where: {
@@ -296,7 +349,7 @@ export async function saveIncome(
                     currency: input.currency,
                     type: "INCOME",
                     accountId: input.accountId,
-                    categoryId: input.categoryId,
+                    categoryId: null,
                     counterparty: source.name,
                     notes: input.notes,
                     requestKey: randomUUID(),
@@ -311,7 +364,7 @@ export async function saveIncome(
               periodStart: input.periodStart ? new Date(`${input.periodStart}T00:00:00Z`) : null,
               periodEnd: input.periodEnd ? new Date(`${input.periodEnd}T00:00:00Z`) : null,
               accountId: input.accountId,
-              categoryId: input.categoryId,
+              categoryId: current?.categoryId ?? null,
               currency: input.currency,
               grossAmount: input.grossAmount,
               netAmount,
@@ -340,6 +393,11 @@ export async function saveIncome(
                 data: input.deductions.map((line) => ({ incomeRecordId: saved.id, ...line })),
               });
             await syncSupportingMatch(db, "INCOME", saved, current?.transactionId ?? null);
+            if (input.syncMovement && transactionId)
+              await db.financialTransaction.update({
+                where: { id: transactionId, userId: FINANCE_USER_ID },
+                data: { updatedAt: new Date() },
+              });
             const oldKeys: string[] = [];
             if (file && storageKey) {
               if (current?.documents.length) {
@@ -395,6 +453,7 @@ export async function deleteIncome(
   const keys = await prisma.$transaction(
     async (db) => {
       const row = await rowById(db, id);
+      await assertSupportingUnmatched(db, "INCOME", row.id, row.transactionId);
       if (!expectedUpdatedAt || Date.parse(expectedUpdatedAt) !== row.updatedAt.getTime())
         throw new FinanceValidationError(
           "This income record changed. Reload before deleting.",

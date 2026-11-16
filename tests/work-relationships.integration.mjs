@@ -219,7 +219,7 @@ test(
       await t.test(
         "parent closure requires fresh descendant acknowledgement and never cascades rewards or states",
         async () => {
-          const parent = await create({ rewardXp: 12, rewardCoins: 3 }),
+          const parent = await create({ rewardXp: 0, rewardCoins: 0 }),
             child = await create({ parentId: parent.id, parentRevision: parent.revision }),
             grandchild = await create({ parentId: child.id, parentRevision: child.revision });
           const before = await count();
@@ -246,7 +246,7 @@ test(
           assert.equal(closed.status, "DONE");
           assert.equal((await fresh(child)).status, "NEW");
           assert.equal((await fresh(grandchild)).status, "CANCELLED");
-          assert.equal((await count()).balance.totalXp, before.balance.totalXp + 12);
+          assert.equal((await count()).balance.totalXp, before.balance.totalXp);
           assert.equal(
             await db.workActivity.count({
               where: { todoId: parent.id, action: "UNFINISHED_CHILDREN_ACKNOWLEDGED" },
@@ -264,7 +264,7 @@ test(
       await t.test(
         "changed/ABA prerequisites and newly added links invalidate confirmation without partial reward/history writes",
         async () => {
-          const a = await create({ rewardXp: 40 }),
+          const a = await create({ rewardXp: 0 }),
             b = await create(),
             c = await create();
           await link(a, b);

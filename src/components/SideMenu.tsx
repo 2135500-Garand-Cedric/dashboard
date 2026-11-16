@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import {
   HomeIcon,
+  Cog6ToothIcon,
   DocumentTextIcon,
   FolderIcon,
   ChartPieIcon,
@@ -11,11 +12,9 @@ import {
   Bars3Icon,
   BanknotesIcon,
 } from "@heroicons/react/24/solid";
-import { useMemory } from "@/context/MemoryContext";
 
 export default function SideMenu() {
   const [isOpen, setIsOpen] = useState(false);
-  const { clear } = useMemory();
 
   const menuItems = [
     { name: "Main Dashboard", href: "/", icon: HomeIcon },
@@ -27,10 +26,10 @@ export default function SideMenu() {
     { name: "Finance", href: "/finance", icon: BanknotesIcon },
     { name: "Japanese Statistics", href: "/japanese/statistics", icon: ChartPieIcon },
     { name: "Japanese Practice", href: "/japanese/practice", icon: DocumentTextIcon },
+    { name: "Settings", href: "/settings", icon: Cog6ToothIcon },
   ];
 
   const onMenuClick = () => {
-    clear();
     setIsOpen(false);
   };
 
@@ -47,8 +46,8 @@ export default function SideMenu() {
 
       {/* Sidebar */}
       <div
-        className={`fixed top-0 left-0 w-64 shrink-0 z-30 transform transition-transform duration-300
-          ${isOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0 md:static md:shadow-none flex flex-col h-screen justify-between`}
+        className={`fixed top-[var(--shell-top,0px)] left-0 w-64 shrink-0 z-30 transform transition-transform duration-300
+          ${isOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0 md:sticky md:top-[var(--shell-top,0px)] md:shadow-none flex flex-col h-[calc(100dvh-var(--shell-top,0px))] overflow-y-auto justify-between`}
         style={{
           backgroundColor: "var(--color-card-bg)",
           borderRight: "1px solid var(--color-card-border)",
@@ -63,6 +62,7 @@ export default function SideMenu() {
               Dashboard Menu
             </h1>
             <button
+              aria-label="Close navigation"
               className="md:hidden"
               style={{ color: "var(--color-foreground)" }}
               onClick={() => setIsOpen(false)}
@@ -96,7 +96,8 @@ export default function SideMenu() {
       {/* Mobile hamburger button */}
       {!isOpen && (
         <button
-          className="fixed top-4 left-4 z-40 p-2 rounded shadow md:hidden"
+          aria-label="Open navigation"
+          className="fixed top-[calc(var(--shell-top,0px)+1rem)] left-4 z-40 p-2 rounded shadow md:hidden"
           style={{
             backgroundColor: "var(--color-card-bg)",
             color: "var(--color-foreground)",

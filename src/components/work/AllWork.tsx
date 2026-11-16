@@ -1,5 +1,10 @@
 "use client";
+import { useDateTime } from "@/context/SettingsContext";
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import FilterPanel from "@/components/shared/FilterPanel";
+import { usePersistentQuery, newTaskHref } from "./usePersistentQuery";
 import { useSearchParams } from "next/navigation";
 import { createWorkWriter, workRead } from "@/lib/work-management/client";
 import {
@@ -14,49 +19,43 @@ import {
   isClosed,
   taskReference,
   type WorkContact,
-  type WorkContext,
+  type WorkActivityType,
   type WorkResults,
   type WorkTodo,
   type WorkStatus,
 } from "@/lib/work-management/types";
-import { describeWorkDate } from "@/lib/work-management/date-format";
 import ProjectPicker from "@/components/projects/ProjectPicker";
 import TodoBoard from "@/components/todos/TodoBoard";
 import TaskClosureDialog from "@/components/todos/TaskClosureDialog";
-import WorkContextManager from "@/components/todos/WorkContextManager";
-import ContactManager from "./ContactManager";
 import ContactPicker from "./ContactPicker";
 import TaskQuickPanel from "./TaskQuickPanel";
-import { useWorkDraftGuard } from "./useWorkDraftGuard";
 const inputClass =
   "scroll-mt-24 w-full min-w-0 rounded-lg border border-card-border bg-card-bg px-3 py-2 text-sm";
 const buttonClass =
   "scroll-mt-24 rounded-lg border border-card-border px-3 py-2 text-sm disabled:opacity-50";
 
-const captureWriter = createWorkWriter();
-type CaptureDraft = { title: string; company: string; contextId: number | null };
-const captureDrafts = new Map<string, CaptureDraft>();
-
 export default function AllWork({
   projectId,
-  projectContextId,
   basePath = "/todos",
   onTasksChanged,
   projectStages,
   allowCapture = true,
+  projectActivityType,
   refreshSignal = 0,
 }: {
   projectId?: number;
-  projectContextId?: number | null;
   basePath?: string;
   onTasksChanged?: () => void;
   projectStages?: { id: number; name: string; active: boolean }[];
   allowCapture?: boolean;
+  projectActivityType?: WorkActivityType | null;
   refreshSignal?: number;
 }) {
-  const captureDraft = captureDrafts.get(basePath) ?? null;
+  const { describeWorkDate } = useDateTime();
+  const router = useRouter();
   const params = useSearchParams(),
     serialized = params.toString();
+  usePersistentQuery(`all-work:${basePath}`, basePath, serialized);
   const query = new URLSearchParams(serialized);
   if (projectId) query.set("project", String(projectId));
   query.delete("mode");
@@ -67,43 +66,23 @@ export default function AllWork({
   const selectedId =
     params.get("task") && /^\d+$/.test(params.get("task")!) ? Number(params.get("task")) : null;
   const [data, setData] = useState<WorkResults | null>(null),
-    [contexts, setContexts] = useState<WorkContext[] | null>(null),
+    [activityTypes, setActivityTypes] = useState<WorkActivityType[] | null>(null),
     [person, setPerson] = useState<WorkContact[]>([]);
   const [refresh, setRefresh] = useState(0),
     [error, setError] = useState(""),
     [catalogError, setCatalogError] = useState(""),
     [actionError, setActionError] = useState("");
-  const [creating, setCreating] = useState(!!captureDraft),
-    [title, setTitle] = useState(captureDraft?.title ?? ""),
-    [captureContext, setCaptureContext] = useState<number | null>(captureDraft?.contextId ?? null),
-    [captureCompany, setCaptureCompany] = useState(captureDraft?.company ?? "");
   const [busy, setBusy] = useState(false),
     [closure, setClosure] = useState<{
       task: WorkTodo;
       status: "IN_PROGRESS" | "DONE" | "CANCELLED";
     } | null>(null),
     [notice, setNotice] = useState("");
-  const write = useRef(captureWriter),
+  const write = useRef(createWorkWriter()),
     lock = useRef(false),
     lastOpened = useRef<number | null>(null);
-  const captureRef = useRef<typeof captureDraft>(null);
-  captureRef.current =
-    creating && (!!title || !!captureCompany)
-      ? { title, company: captureCompany, contextId: captureContext }
-      : null;
-  const confirmLeave = useWorkDraftGuard(creating && (!!title || !!captureCompany), () => {
-    captureDrafts.delete(basePath);
-    captureRef.current = null;
-  });
-  useEffect(
-    () => () => {
-      if (captureRef.current) captureDrafts.set(basePath, captureRef.current);
-      else captureDrafts.delete(basePath);
-    },
-    [basePath],
-  );
-  const contextValue = params.get("context") || "",
-    personId = params.get("person") || "";
+  const personId = params.get("person") || "";
+  const activityValue = params.get("activityType") || "";
   function navigate(changes: Record<string, string | null>, replace = false) {
     const next = new URLSearchParams(window.location.search);
     if (changes.view && changes.view !== "active") next.delete("planning");
@@ -151,21 +130,18 @@ export default function AllWork({
   }, [queryString, refresh, refreshSignal]);
   useEffect(() => {
     let active = true;
-    void workRead<WorkContext[]>("/api/work-contexts")
+    void workRead<WorkActivityType[]>("/api/activity-types")
       .then((value) => {
         if (active) {
-          setContexts(value);
-          setCaptureContext((previous) =>
-            previous !== null && !value.some((context) => context.id === previous && context.active)
-              ? null
-              : previous,
-          );
+          setActivityTypes(value);
           setCatalogError("");
         }
       })
       .catch((error) => {
         if (active)
-          setCatalogError(error instanceof Error ? error.message : "Unable to load contexts.");
+          setCatalogError(
+            error instanceof Error ? error.message : "Unable to load activity types.",
+          );
       });
     return () => {
       active = false;
@@ -199,10 +175,6 @@ export default function AllWork({
     return () => cancelAnimationFrame(frame);
   }, [selectedId, data]);
   function open(task: WorkTodo) {
-    if (!confirmLeave()) return;
-    setCreating(false);
-    setTitle("");
-    setCaptureCompany("");
     lastOpened.current = task.id;
     navigate({ task: String(task.id) });
   }
@@ -253,403 +225,321 @@ export default function AllWork({
             {data ? `${data.total} matching ${data.total === 1 ? "task" : "tasks"}` : "Tasks"}
           </p>
         </div>
-        <button
-          type="button"
-          disabled={!contexts || busy || !allowCapture}
-          className={`${buttonClass} bg-blue-600 text-white`}
-          onClick={() => {
-            if (creating) {
-              if (confirmLeave()) {
-                setCreating(false);
-                setTitle("");
-                setCaptureCompany("");
-              }
-              return;
-            }
-            setCaptureContext(
-              projectId
-                ? (projectContextId ?? null)
-                : contextValue === "none"
-                  ? null
-                  : contextValue
-                    ? (contexts?.find(
-                        (context) => context.id === Number(contextValue) && context.active,
-                      )?.id ?? null)
-                    : (contexts?.find((context) => context.key === "personal" && context.active)
-                        ?.id ?? null),
-            );
-            setCreating(true);
-            setActionError("");
-          }}
-        >
-          + New task
-        </button>
       </header>
-      {projectStages && (
-        <label className="mb-4 block max-w-xl text-sm">
-          Stage filter
-          <select
-            aria-label="Stage filter"
-            value={params.get("stage") || ""}
-            onChange={(event) => filter("stage", event.target.value)}
-            className={inputClass}
-          >
-            <option value="">All stages</option>
-            {projectStages.map((row) => (
-              <option key={row.id} value={row.id}>
-                {row.name}
-                {row.active ? "" : " (inactive)"}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      {!projectId && (
-        <div className="mb-4 max-w-xl">
-          <ProjectPicker
-            value={params.get("project") || ""}
-            onChange={(value) => filter("project", value)}
-            label="Project filter"
-          />
-        </div>
-      )}
-      {creating && (
-        <form
-          aria-label="Quick capture"
-          className="mb-5 space-y-3 rounded-xl border border-card-border bg-card-bg p-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void perform(async () => {
-              const row = await write.current<WorkTodo>("/api/todos", "POST", {
-                title,
-                ...(projectId ? { projectId } : {}),
-                contextId: captureContext,
-                ...(captureCompany ? { company: captureCompany } : {}),
-              });
-              captureDrafts.delete(basePath);
-              captureRef.current = null;
-              setTitle("");
-              setCaptureCompany("");
-              setCreating(false);
-              setNotice(`${row.reference ?? taskReference(row.id)} created.`);
-              setRefresh((value) => value + 1);
-            });
-          }}
+      <FilterPanel
+        name={`all-work:${basePath}`}
+        actions={
+          <>
+            {!projectId && (
+              <Link href="/todos/manage" className={buttonClass}>
+                Contexts & contacts
+              </Link>
+            )}
+            <button
+              type="button"
+              disabled={busy || !allowCapture}
+              className={`${buttonClass} bg-blue-600 text-white`}
+              onClick={() => {
+                const capture = new URLSearchParams(serialized);
+                if (projectId) {
+                  capture.set("project", String(projectId));
+                  if (projectActivityType)
+                    capture.set("activityType", String(projectActivityType.id));
+                  else capture.delete("activityType");
+                }
+                router.push(
+                  newTaskHref(capture, `${basePath}${serialized ? `?${serialized}` : ""}`),
+                );
+              }}
+            >
+              + New task
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate({ mode: mode === "board" ? null : "board" })}
+              title={`Switch to ${mode === "board" ? "list" : "board"} view`}
+              className={buttonClass}
+            >
+              {mode === "board" ? "List" : "Board"}
+            </button>
+          </>
+        }
+      >
+        {projectStages && (
+          <label className="mb-4 block max-w-xl text-sm">
+            Stage filter
+            <select
+              aria-label="Stage filter"
+              value={params.get("stage") || ""}
+              onChange={(event) => filter("stage", event.target.value)}
+              className={inputClass}
+            >
+              <option value="">All stages</option>
+              {projectStages.map((row) => (
+                <option key={row.id} value={row.id}>
+                  {row.name}
+                  {row.active ? "" : " (inactive)"}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {!projectId && (
+          <div className="mb-4 max-w-xl">
+            <ProjectPicker
+              value={params.get("project") || ""}
+              onChange={(value) => filter("project", value)}
+              label="Project filter"
+            />
+          </div>
+        )}
+        <section
+          aria-label="Work filters"
+          className="mb-5 space-y-4 rounded-xl border border-card-border bg-card-bg p-4"
         >
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="min-w-0 flex-1 text-sm">
-              Title
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2" aria-label="Work views">
+              {[
+                ["active", "Active"],
+                ["history", "Completed history"],
+                ["archived", "Archived"],
+                ["all", "All unarchived"],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={view === key}
+                  onClick={() =>
+                    navigate({ view: key === "active" ? null : key, page: null, status: null })
+                  }
+                  className={`${buttonClass} ${view === key ? "bg-blue-600 text-white" : ""}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+            <label className="text-sm">
+              Search
               <input
-                aria-label="New todo title"
-                autoFocus
-                required
+                aria-label="Search work"
+                placeholder="Reference, title or description"
                 maxLength={500}
-                disabled={busy}
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
+                value={params.get("q") || ""}
+                onChange={(event) => filter("q", event.target.value)}
                 className={`${inputClass} mt-1`}
               />
             </label>
-            <label className="max-w-full text-sm">
-              Capture context
+            <label className="text-sm">
+              Activity type
               <select
-                aria-label="Capture context"
-                disabled={busy}
-                value={captureContext ?? ""}
-                onChange={(event) =>
-                  setCaptureContext(event.target.value ? Number(event.target.value) : null)
-                }
+                aria-label="Filter activity type"
+                value={activityValue}
+                onChange={(event) => filter("activityType", event.target.value)}
                 className={`${inputClass} mt-1`}
               >
-                <option value="">Unclassified</option>
-                {contexts
-                  ?.filter((context) => context.active)
-                  .map((context) => (
-                    <option key={context.id} value={context.id}>
-                      {context.name}
-                    </option>
-                  ))}
+                <option value="">All activity types</option>
+                <option value="none">Unclassified</option>
+                {activityTypes?.map((context) => (
+                  <option key={context.id} value={context.id}>
+                    {context.name}
+                    {!context.active ? " (inactive)" : ""}
+                  </option>
+                ))}
               </select>
             </label>
-            <span className="py-2 text-sm text-gray-500">New · Normal</span>
-            <button
-              type="submit"
-              disabled={busy || !title.trim()}
-              className={`${buttonClass} bg-blue-600 text-white`}
-            >
-              {busy ? "Saving…" : "Add task"}
-            </button>
-          </div>
-          <details>
-            <summary className="cursor-pointer text-sm text-gray-500">Optional details</summary>
-            <label className="mt-3 block text-sm">
-              Company
-              <input
-                aria-label="Capture company"
-                maxLength={120}
-                disabled={busy}
-                value={captureCompany}
-                onChange={(event) => setCaptureCompany(event.target.value)}
+            <label className="text-sm">
+              Sort
+              <select
+                aria-label="Sort work"
+                value={params.get("sort") || "updated"}
+                onChange={(event) => filter("sort", event.target.value)}
                 className={`${inputClass} mt-1`}
-              />
+              >
+                <option value="updated">Recently updated</option>
+                <option value="created">Recently created</option>
+                <option value="priority">Priority: Urgent first</option>
+                <option value="title">Title: A–Z</option>
+                <option value="deadline">Deadline: earliest first</option>
+                <option value="followup">Follow-up: earliest first</option>
+              </select>
             </label>
-          </details>
-        </form>
-      )}
-      <section
-        aria-label="Work filters"
-        className="mb-5 space-y-4 rounded-xl border border-card-border bg-card-bg p-4"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-2" aria-label="Work views">
-            {[
-              ["active", "Active"],
-              ["history", "Completed history"],
-              ["archived", "Archived"],
-              ["all", "All unarchived"],
-            ].map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                aria-pressed={view === key}
-                onClick={() =>
-                  navigate({ view: key === "active" ? null : key, page: null, status: null })
+          </div>
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <label className="text-sm">
+              Planning section
+              <select
+                aria-label="Filter planning section"
+                value={params.get("planning") || ""}
+                onChange={(event) =>
+                  navigate(
+                    {
+                      planning: event.target.value || null,
+                      ...(event.target.value ? { view: null, status: null } : {}),
+                      page: null,
+                    },
+                    true,
+                  )
                 }
-                className={`${buttonClass} ${view === key ? "bg-blue-600 text-white" : ""}`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="flex gap-2" aria-label="Presentation">
-            {["list", "board"].map((value) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={mode === value}
-                onClick={() => navigate({ mode: value === "list" ? null : value })}
-                className={`${buttonClass} capitalize ${mode === value ? "bg-blue-600 text-white" : ""}`}
-              >
-                {value}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
-          <label className="text-sm">
-            Search
-            <input
-              aria-label="Search work"
-              placeholder="Reference, title or description"
-              maxLength={500}
-              value={params.get("q") || ""}
-              onChange={(event) => filter("q", event.target.value)}
-              className={`${inputClass} mt-1`}
-            />
-          </label>
-          <label className="text-sm">
-            Context
-            <select
-              aria-label="Filter context"
-              value={contextValue}
-              onChange={(event) => filter("context", event.target.value)}
-              className={`${inputClass} mt-1`}
-            >
-              <option value="">All contexts</option>
-              <option value="none">Unclassified</option>
-              {contexts?.map((context) => (
-                <option key={context.id} value={context.id}>
-                  {context.name}
-                  {!context.active ? " (inactive)" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm">
-            Sort
-            <select
-              aria-label="Sort work"
-              value={params.get("sort") || "updated"}
-              onChange={(event) => filter("sort", event.target.value)}
-              className={`${inputClass} mt-1`}
-            >
-              <option value="updated">Recently updated</option>
-              <option value="created">Recently created</option>
-              <option value="priority">Priority: Urgent first</option>
-              <option value="title">Title: A–Z</option>
-              <option value="deadline">Deadline: earliest first</option>
-              <option value="followup">Follow-up: earliest first</option>
-            </select>
-          </label>
-        </div>
-        <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <label className="text-sm">
-            Planning section
-            <select
-              aria-label="Filter planning section"
-              value={params.get("planning") || ""}
-              onChange={(event) =>
-                navigate(
-                  {
-                    planning: event.target.value || null,
-                    ...(event.target.value ? { view: null, status: null } : {}),
-                    page: null,
-                  },
-                  true,
-                )
-              }
-              className={`${inputClass} mt-1`}
-            >
-              <option value="">All planning sections</option>
-              {Object.entries(PLANNING_LABELS).map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm">
-            Deadline
-            <select
-              aria-label="Filter deadline"
-              value={params.get("due") || ""}
-              onChange={(event) => filter("due", event.target.value)}
-              className={`${inputClass} mt-1`}
-            >
-              <option value="">All deadlines</option>
-              <option value="overdue">Overdue (open tasks)</option>
-              <option value="today">Today (open tasks)</option>
-              <option value="upcoming">Upcoming (open tasks)</option>
-              <option value="none">No deadline</option>
-            </select>
-          </label>
-          <label className="text-sm">
-            Follow-up
-            <select
-              aria-label="Filter follow-up"
-              value={params.get("followup") || ""}
-              onChange={(event) => filter("followup", event.target.value)}
-              className={`${inputClass} mt-1`}
-            >
-              <option value="">All follow-ups</option>
-              <option value="due">Due (open tasks)</option>
-              <option value="scheduled">Active (open tasks)</option>
-              <option value="none">No active follow-up</option>
-            </select>
-          </label>
-          {[
-            ["deadlineFrom", "Deadline from"],
-            ["deadlineTo", "Deadline through"],
-          ].map(([key, label]) => (
-            <label key={key} className="text-sm">
-              {label}
-              <input
-                type="date"
-                aria-label={label}
-                value={params.get(key) || ""}
-                onChange={(event) => filter(key, event.target.value)}
                 className={`${inputClass} mt-1`}
-              />
+              >
+                <option value="">All planning sections</option>
+                {Object.entries(PLANNING_LABELS).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
             </label>
-          ))}
-        </div>
-        <details>
-          <summary className="cursor-pointer text-sm font-medium">
-            More filters
-            {["company", "course", "person", "kind", "system", "tag", "status", "priority"].some(
-              (key) => params.get(key),
-            )
-              ? " · Active"
-              : ""}
-          </summary>
-          <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {(
-              [
-                ["status", "Status", WORK_STATUSES, STATUS_LABELS],
-                ["priority", "Priority", WORK_PRIORITIES, PRIORITY_LABELS],
-                ["kind", "Kind", WORK_KINDS, KIND_LABELS],
-              ] as const
-            ).map(([key, label, values, labels]) => (
-              <label key={key} className="text-sm">
-                {label}
-                <select
-                  aria-label={`Filter ${key}`}
-                  value={params.get(key) || ""}
-                  onChange={(event) => filter(key, event.target.value)}
-                  className={`${inputClass} mt-1`}
-                >
-                  <option value="">All</option>
-                  {key !== "status" && (
-                    <option value="none">
-                      {key === "priority" ? "Unmapped legacy" : "Not recorded"}
-                    </option>
-                  )}
-                  {values.map((value) => (
-                    <option key={value} value={value}>
-                      {(labels as Record<string, string>)[value]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
+            <label className="text-sm">
+              Deadline
+              <select
+                aria-label="Filter deadline"
+                value={params.get("due") || ""}
+                onChange={(event) => filter("due", event.target.value)}
+                className={`${inputClass} mt-1`}
+              >
+                <option value="">All deadlines</option>
+                <option value="overdue">Overdue (open tasks)</option>
+                <option value="today">Today (open tasks)</option>
+                <option value="upcoming">Upcoming (open tasks)</option>
+                <option value="none">No deadline</option>
+              </select>
+            </label>
+            <label className="text-sm">
+              Follow-up
+              <select
+                aria-label="Filter follow-up"
+                value={params.get("followup") || ""}
+                onChange={(event) => filter("followup", event.target.value)}
+                className={`${inputClass} mt-1`}
+              >
+                <option value="">All follow-ups</option>
+                <option value="due">Due (open tasks)</option>
+                <option value="scheduled">Active (open tasks)</option>
+                <option value="none">No active follow-up</option>
+              </select>
+            </label>
             {[
-              ["company", "Company", 120],
-              ["course", "Course", 120],
-              ["system", "System", 120],
-              ["tag", "Tag (exact)", 50],
-            ].map(([key, label, max]) => (
+              ["deadlineFrom", "Deadline from"],
+              ["deadlineTo", "Deadline through"],
+            ].map(([key, label]) => (
               <label key={key} className="text-sm">
                 {label}
                 <input
-                  aria-label={`Filter ${key}`}
-                  maxLength={Number(max)}
-                  value={params.get(String(key)) || ""}
-                  onChange={(event) => filter(String(key), event.target.value)}
+                  type="date"
+                  aria-label={label}
+                  value={params.get(key) || ""}
+                  onChange={(event) => filter(key, event.target.value)}
                   className={`${inputClass} mt-1`}
                 />
               </label>
             ))}
-            <ContactPicker
-              allowInactive
-              label="Person"
-              value={person}
-              onChange={(contacts) => {
-                setPerson(contacts);
-                filter("person", contacts[0] ? String(contacts[0].id) : "");
-              }}
-            />
           </div>
-        </details>
-        <button
-          type="button"
-          onClick={() =>
-            navigate(
-              {
-                due: null,
-                followup: null,
-                deadlineFrom: null,
-                deadlineTo: null,
-                q: null,
-                context: null,
-                company: null,
-                course: null,
-                person: null,
-                kind: null,
-                system: null,
-                tag: null,
-                status: null,
-                priority: null,
-                page: null,
-                sort: null,
-              },
-              true,
-            )
-          }
-          className="text-sm text-blue-500 underline"
-        >
-          Clear filters
-        </button>
-      </section>
+          <details>
+            <summary className="cursor-pointer text-sm font-medium">
+              More filters
+              {["person", "kind", "system", "status", "priority"].some((key) => params.get(key))
+                ? " · Active"
+                : ""}
+            </summary>
+            <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {(
+                [
+                  ["status", "Status", WORK_STATUSES, STATUS_LABELS],
+                  ["priority", "Priority", WORK_PRIORITIES, PRIORITY_LABELS],
+                  ["kind", "Kind", WORK_KINDS, KIND_LABELS],
+                ] as const
+              ).map(([key, label, values, labels]) => (
+                <label key={key} className="text-sm">
+                  {label}
+                  <select
+                    aria-label={`Filter ${key}`}
+                    value={params.get(key) || ""}
+                    onChange={(event) => filter(key, event.target.value)}
+                    className={`${inputClass} mt-1`}
+                  >
+                    <option value="">All</option>
+                    {key !== "status" && (
+                      <option value="none">
+                        {key === "priority" ? "Unmapped legacy" : "Not recorded"}
+                      </option>
+                    )}
+                    {values.map((value) => (
+                      <option key={value} value={value}>
+                        {(labels as Record<string, string>)[value]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+              {[["system", "System", 120]].map(([key, label, max]) => (
+                <label key={key} className="text-sm">
+                  {label}
+                  <input
+                    aria-label={`Filter ${key}`}
+                    maxLength={Number(max)}
+                    value={params.get(String(key)) || ""}
+                    onChange={(event) => filter(String(key), event.target.value)}
+                    className={`${inputClass} mt-1`}
+                  />
+                </label>
+              ))}
+              <ContactPicker
+                allowInactive
+                label="Person"
+                value={person}
+                onChange={(contacts) => {
+                  setPerson(contacts);
+                  filter("person", contacts[0] ? String(contacts[0].id) : "");
+                }}
+              />
+            </div>
+          </details>
+        </section>
+      </FilterPanel>
+      <div className="my-3 flex flex-wrap items-center gap-2" aria-label="Active work filters">
+        {Array.from(params.entries())
+          .filter(([key]) => !["mode", "page", "task"].includes(key))
+          .map(([key, value]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() =>
+                navigate(
+                  { [key]: null, ...(key === "project" ? { stage: null } : {}), page: null },
+                  true,
+                )
+              }
+              className="rounded-full border border-card-border px-3 py-1 text-sm"
+              aria-label={`Remove ${key} filter`}
+            >
+              {key === "planning"
+                ? `Planning: ${PLANNING_LABELS[value as keyof typeof PLANNING_LABELS] || value}`
+                : `${key}: ${key === "activityType" ? activityTypes?.find((row) => String(row.id) === value)?.name || value : value}`}{" "}
+              ×
+            </button>
+          ))}
+        {Array.from(params.keys()).some((key) => !["mode", "page", "task"].includes(key)) && (
+          <button
+            type="button"
+            className={buttonClass}
+            onClick={() =>
+              navigate(
+                Object.fromEntries(
+                  Array.from(params.keys())
+                    .filter((key) => key !== "mode")
+                    .map((key) => [key, null]),
+                ),
+                true,
+              )
+            }
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
       {catalogError && (
         <p role="alert" className="mb-4 text-rose-500">
           {catalogError}{" "}
@@ -658,7 +548,7 @@ export default function AllWork({
             className="underline"
             onClick={() => setRefresh((value) => value + 1)}
           >
-            Retry contexts
+            Retry activity types
           </button>
         </p>
       )}
@@ -708,7 +598,7 @@ export default function AllWork({
                 <span>Task / next action</span>
                 <span>Status</span>
                 <span>Priority</span>
-                <span>Context / people</span>
+                <span>Activity type / people</span>
               </div>
               <ul className="divide-y divide-card-border">
                 {data.items.map((task) => {
@@ -724,8 +614,6 @@ export default function AllWork({
                         <span className="min-w-0">
                           <span className="mb-1 block text-xs text-gray-500">
                             {task.reference ?? taskReference(task.id)}
-                            {task.company ? ` · ${task.company}` : ""}
-                            {task.course ? ` · ${task.course}` : ""}
                           </span>
                           <span className="block break-words font-medium [overflow-wrap:anywhere]">
                             {task.title}
@@ -738,9 +626,7 @@ export default function AllWork({
                           {task.status === "WAITING" && (
                             <span className="mt-1 block break-words text-xs text-amber-500">
                               Waiting
-                              {task.waitingOnContact || task.waitingOn
-                                ? ` on ${task.waitingOnContact?.name ?? task.waitingOn}`
-                                : ""}
+                              {task.waitingOn ? ` on ${task.waitingOn}` : ""}
                               {task.waitingReason ? ` · ${task.waitingReason}` : ""}
                             </span>
                           )}
@@ -788,7 +674,7 @@ export default function AllWork({
                           {priority ? PRIORITY_LABELS[priority] : "Unmapped"}
                         </span>
                         <span className="min-w-0 break-words text-xs text-gray-500">
-                          {task.context?.name ?? "Unclassified"}
+                          {task.activityType?.name ?? "Unclassified"}
                           {task.requester && (
                             <span className="mt-1 block">Requested by {task.requester.name}</span>
                           )}
@@ -836,15 +722,6 @@ export default function AllWork({
           </nav>
         </>
       )}
-      <div className="mt-6 grid min-w-0 gap-3">
-        <WorkContextManager
-          contexts={contexts ?? []}
-          onRefresh={async () => {
-            setRefresh((value) => value + 1);
-          }}
-        />
-        <ContactManager />
-      </div>
       {closure && (
         <TaskClosureDialog
           task={closure.task}

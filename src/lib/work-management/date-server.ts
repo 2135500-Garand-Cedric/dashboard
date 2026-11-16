@@ -1,5 +1,6 @@
+import { readSnapshot } from "./read-snapshot";
 import { prisma } from "@/lib/prisma";
-import { APP_TIME_ZONE } from "@/lib/app-time-zone";
+import { getAppTimeZone } from "@/lib/time-zone-context";
 import { mutation, todoRow, getTodoInDb, version } from "./server";
 import { appendTaskActivity } from "./activity-server";
 import { parseWorkDate, workDateState } from "./dates";
@@ -7,60 +8,52 @@ import { isClosed } from "./types";
 import { WorkValidationError, workBody, workId, workText, type WorkCommand } from "./validation";
 export async function readTaskDates(id: number, params: URLSearchParams) {
   const requested = params.has("page") ? workId(params.get("page")) : 1,
-    keyRequested = params.has("keyPage") ? workId(params.get("keyPage")) : 1,
     pageSize = 20;
-  return prisma.$transaction(
-    async (db) => {
-      const task = await todoRow(db, id),
-        actionable = !isClosed(task.status) && !task.archivedAt;
-      const total = await db.workFollowUp.count({ where: { todoId: id } }),
-        page = Math.min(requested, Math.max(1, Math.ceil(total / pageSize)));
-      const keyTotal = await db.workKeyDate.count({ where: { todoId: id, removedAt: null } }),
-        keyPage = Math.min(keyRequested, Math.max(1, Math.ceil(keyTotal / pageSize)));
-      const active = await db.workFollowUp.findFirst({ where: { todoId: id, status: "ACTIVE" } });
-      return {
-        timeZone: APP_TIME_ZONE,
-        taskRevision: task.revision,
+  return readSnapshot(prisma, async (db) => {
+    const task = await todoRow(db, id),
+      actionable = !isClosed(task.status) && !task.archivedAt;
+    const total = await db.workFollowUp.count({ where: { todoId: id } }),
+      page = Math.min(requested, Math.max(1, Math.ceil(total / pageSize)));
+    const active = await db.workFollowUp.findFirst({ where: { todoId: id, status: "ACTIVE" } });
+    return {
+      timeZone: getAppTimeZone(),
+      taskRevision: task.revision,
+      actionable,
+      deadline: { date: task.deadlineDate, at: task.deadlineAt, timeZone: task.deadlineTimeZone },
+      deadlineState: workDateState(
+        { date: task.deadlineDate, at: task.deadlineAt, timeZone: task.deadlineTimeZone },
+        "deadline",
+        new Date(),
+        getAppTimeZone(),
         actionable,
-        deadline: { date: task.deadlineDate, at: task.deadlineAt, timeZone: task.deadlineTimeZone },
-        deadlineState: workDateState(
-          { date: task.deadlineDate, at: task.deadlineAt, timeZone: task.deadlineTimeZone },
-          "deadline",
-          new Date(),
-          APP_TIME_ZONE,
-          actionable,
-        ),
-        activeFollowUp: active
-          ? {
-              ...active,
-              state: workDateState(active, "followup", new Date(), APP_TIME_ZONE, actionable),
-            }
-          : null,
-        followUps: await db.workFollowUp.findMany({
-          where: { todoId: id },
-          orderBy: { id: "desc" },
-          take: pageSize,
-          skip: (page - 1) * pageSize,
-        }),
-        total,
-        page,
-        pageSize,
-        keyDates: await db.workKeyDate.findMany({
-          where: { todoId: id, removedAt: null },
-          orderBy: { id: "asc" },
-          take: pageSize,
-          skip: (keyPage - 1) * pageSize,
-        }),
-        keyTotal,
-        keyPage,
-      };
-    },
-    { isolationLevel: "RepeatableRead" },
-  );
+      ),
+      activeFollowUp: active
+        ? {
+            ...active,
+            state: workDateState(active, "followup", new Date(), getAppTimeZone(), actionable),
+          }
+        : null,
+      followUps: await db.workFollowUp.findMany({
+        where: { todoId: id },
+        orderBy: { id: "desc" },
+        take: pageSize,
+        skip: (page - 1) * pageSize,
+      }),
+      total,
+      page,
+      pageSize,
+      // Retained response fields for old clients; task key dates are retired.
+      keyDates: [],
+      keyTotal: 0,
+      keyPage: 1,
+    };
+  });
 }
 export async function taskDateCommand(id: number, value: unknown, command: WorkCommand) {
   const body = workBody(value, ["action", "id", "date", "reason", "label"]);
   const action = String(body.action);
+  if (action.startsWith("key-"))
+    throw new WorkValidationError("Task key dates have been retired.", 410);
   if (
     ![
       "deadline",
@@ -68,38 +61,21 @@ export async function taskDateCommand(id: number, value: unknown, command: WorkC
       "followup-complete",
       "followup-snooze",
       "followup-cancel",
-      "key-create",
-      "key-edit",
-      "key-remove",
     ].includes(action)
   )
     throw new WorkValidationError("Choose a valid date action.");
-  const needsDate = [
-    "deadline",
-    "followup-create",
-    "followup-snooze",
-    "key-create",
-    "key-edit",
-  ].includes(action);
+  const needsDate = ["deadline", "followup-create", "followup-snooze"].includes(action);
   const date = needsDate
-    ? parseWorkDate(body.date, APP_TIME_ZONE, action === "deadline")
+    ? parseWorkDate(body.date, getAppTimeZone(), action === "deadline")
     : undefined;
   if (!needsDate && body.date !== undefined)
     throw new WorkValidationError("This action does not change its original date.");
-  const needsId = [
-      "followup-complete",
-      "followup-snooze",
-      "followup-cancel",
-      "key-edit",
-      "key-remove",
-    ].includes(action),
+  const needsId = ["followup-complete", "followup-snooze", "followup-cancel"].includes(action),
     recordId = needsId ? workId(body.id) : null;
   if (!needsId && body.id !== undefined)
     throw new WorkValidationError("This action creates a new date record.");
-  const key = action.startsWith("key-"),
-    label = key && action !== "key-remove" ? workText(body.label, "key date label", 120)! : null;
-  if ((!key || action === "key-remove") && body.label !== undefined)
-    throw new WorkValidationError("Only a key date has a label.");
+  if (body.label !== undefined)
+    throw new WorkValidationError("This action does not accept a label.");
   const reason =
     body.reason === undefined
       ? null
@@ -121,18 +97,6 @@ export async function taskDateCommand(id: number, value: unknown, command: WorkC
         where: { id },
         data: { deadlineDate: date!.date, deadlineAt: date!.at, deadlineTimeZone: date!.timeZone },
       });
-    } else if (key) {
-      if (recordId !== null) {
-        const row = await db.workKeyDate.findFirst({
-          where: { id: recordId, todoId: id, removedAt: null },
-        });
-        if (!row) throw new WorkValidationError("Key date not found.", 404);
-        before = row;
-        after = await db.workKeyDate.update({
-          where: { id: row.id },
-          data: action === "key-remove" ? { removedAt: new Date() } : { ...date!, label: label! },
-        });
-      } else after = await db.workKeyDate.create({ data: { todoId: id, ...date!, label: label! } });
     } else {
       if (["followup-create", "followup-snooze"].includes(action) && isClosed(task.status))
         throw new WorkValidationError("Reopen this task before scheduling a follow-up.", 409);

@@ -154,8 +154,8 @@ export default function TaskClosureDialog({
               Blocked by {review.blockingCount} prerequisite(s)
             </h3>
             <p>
-              Only Done resolves a prerequisite. Waiting, Cancelled, archived tasks and available
-              workarounds do not clear blocking.
+              Only Done clears a dependency. Cancelling or archiving unfinished work does not clear
+              blocking.
             </p>
             <ul className="space-y-2">
               {review.blockers.map((item) => (

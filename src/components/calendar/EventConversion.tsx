@@ -1,11 +1,12 @@
 "use client";
+import { useDateTime } from "@/context/SettingsContext";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { workRead, createWorkWriter } from "@/lib/work-management/client";
-import { describeWorkDate, type StoredWorkDate } from "@/lib/work-management/date-format";
+import { type StoredWorkDate } from "@/lib/work-management/date-format";
 import { localParts } from "@/lib/work-management/date-format";
 import type { CalendarEvent } from "@/lib/work-management/calendar-types";
-import type { WorkContext, WorkResults, WorkTodo } from "@/lib/work-management/types";
+import type { WorkActivityType, WorkResults, WorkTodo } from "@/lib/work-management/types";
 const input =
     "scroll-mt-24 w-full min-w-0 rounded-lg border border-card-border bg-card-bg p-2 text-sm",
   button =
@@ -15,7 +16,7 @@ type Preview = {
   event: CalendarEvent;
   task: { id: number; title: string; status: string } | null;
   title: string;
-  contextId: number | null;
+  activityTypeId: number | null;
   beforeDeadline: StoredWorkDate;
   afterDeadline: StoredWorkDate;
   mode: string;
@@ -29,6 +30,7 @@ export default function EventConversion({
   event: CalendarEvent;
   onChanged: (event: CalendarEvent) => void;
 }) {
+  const { describeWorkDate } = useDateTime();
   const [open, setOpen] = useState(false),
     [mode, setMode] = useState("RELATED"),
     [title, setTitle] = useState(event.title),
@@ -37,15 +39,13 @@ export default function EventConversion({
     );
   const [q, setQ] = useState(""),
     [choices, setChoices] = useState<WorkTodo[]>([]),
-    [contexts, setContexts] = useState<WorkContext[]>([]),
-    [contextId, setContextId] = useState("");
+    [activityTypes, setActivityTypes] = useState<WorkActivityType[]>([]),
+    [activityTypeId, setActivityTypeId] = useState("");
   const [changeDeadline, setChangeDeadline] = useState(false),
     [kind, setKind] = useState(event.allDayStart ? "DATE" : event.date ? "TIME" : "NONE"),
     [date, setDate] = useState(event.allDayStart ?? ""),
-    [local, setLocal] = useState(
-      event.date ? localParts(event.date, event.timeZone ?? event.appTimeZone) : "",
-    ),
-    [zone, setZone] = useState(event.timeZone ?? event.appTimeZone),
+    [local, setLocal] = useState(event.date ? localParts(event.date, event.appTimeZone) : ""),
+    [zone] = useState(event.appTimeZone),
     [occurrence, setOccurrence] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null),
     [error, setError] = useState(""),
@@ -57,17 +57,19 @@ export default function EventConversion({
     previewBody = useRef<Record<string, unknown> | null>(null),
     lock = useRef(false);
   useEffect(() => {
-    void workRead<WorkContext[]>("/api/work-contexts")
+    void workRead<WorkActivityType[]>("/api/activity-types")
       .then((data) => {
-        setContexts(data);
-        setContextId(
-          data.find((item) => item.key === "personal" && item.active)
-            ? String(data.find((item) => item.key === "personal" && item.active)!.id)
-            : "",
+        setActivityTypes(data);
+        setActivityTypeId(
+          String(
+            data.find(
+              (item) => item.name.toLowerCase() === event.type?.toLowerCase() && item.active,
+            )?.id ?? "",
+          ),
         );
       })
-      .catch(() => setError("Unable to load contexts."));
-  }, []);
+      .catch(() => setError("Unable to load activity types."));
+  }, [event.type]);
   useEffect(() => {
     if (!open) return;
     let active = true;
@@ -221,7 +223,7 @@ export default function EventConversion({
                     mode,
                     taskId: taskId ? Number(taskId) : null,
                     title,
-                    contextId: contextId ? Number(contextId) : null,
+                    activityTypeId: activityTypeId ? Number(activityTypeId) : null,
                     changeDeadline,
                     deadline: changeDeadline ? value : null,
                   };
@@ -298,15 +300,15 @@ export default function EventConversion({
                     />
                   </label>
                   <label className="block text-sm">
-                    New task context
+                    New task activity type
                     <select
-                      aria-label="Converted task context"
-                      value={contextId}
-                      onChange={(e) => setContextId(e.target.value)}
+                      aria-label="Converted task activity type"
+                      value={activityTypeId}
+                      onChange={(e) => setActivityTypeId(e.target.value)}
                       className={input}
                     >
                       <option value="">Unclassified</option>
-                      {contexts
+                      {activityTypes
                         .filter((item) => item.active)
                         .map((item) => (
                           <option key={item.id} value={item.id}>
@@ -367,19 +369,7 @@ export default function EventConversion({
                           className={input}
                         />
                       </label>
-                      <label className="block text-sm">
-                        Deadline time zone
-                        <input
-                          aria-label="Converted deadline zone"
-                          required
-                          value={zone}
-                          onChange={(e) => {
-                            setZone(e.target.value);
-                            setOccurrence("");
-                          }}
-                          className={input}
-                        />
-                      </label>
+
                       <select
                         aria-label="Converted repeated time"
                         value={occurrence}

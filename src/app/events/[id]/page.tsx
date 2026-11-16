@@ -3,11 +3,15 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { workRead, createWorkWriter } from "@/lib/work-management/client";
-import { eventTiming, type CalendarEvent } from "@/lib/work-management/calendar-types";
+import { type CalendarEvent } from "@/lib/work-management/calendar-types";
+import EventOverview from "@/components/calendar/EventOverview";
+import { useSettings } from "@/context/SettingsContext";
+import { writtenEventDate } from "@/lib/work-management/event-display";
 import EventForm from "@/components/calendar/EventForm";
 import EventConversion from "@/components/calendar/EventConversion";
 const button = "rounded-lg border border-card-border px-3 py-2 text-sm disabled:opacity-50";
 export default function EventPage() {
+  const { timeZone } = useSettings();
   const params = useParams(),
     router = useRouter(),
     id = Number(params.id),
@@ -124,94 +128,22 @@ export default function EventPage() {
         />
       ) : (
         <>
-          <article className="space-y-5 rounded-xl border border-card-border bg-card-bg p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h1
-                className={`min-w-0 break-words text-2xl font-semibold ${event.completed ? "line-through text-gray-500" : ""}`}
-              >
-                {event.title}
-              </h1>
-              <span className="rounded-full bg-blue-500/10 px-3 py-1 text-sm">
-                {event.kind === "WORK_SESSION"
-                  ? "▣ Work session"
-                  : event.kind === "INFORMATIONAL"
-                    ? "ⓘ Informational event"
-                    : "○ Event"}
-              </span>
-            </div>
-            <p className="break-words">{eventTiming(event)}</p>
-            <p className="text-sm text-gray-500">
-              Activity label: {event.type || "None"} · Availability:{" "}
-              {event.busy === null ? "Not specified" : event.busy ? "Busy" : "Free"}
-            </p>
-            <p className="whitespace-pre-wrap break-words text-sm">
-              {event.description || "No description"}
-            </p>
-            {event.kind === "WORK_SESSION" && (
-              <p className="text-sm text-gray-500">
-                This reserves time to work. Passing its end or marking the session completed never
-                completes the task.
-              </p>
-            )}
-            <div className="flex flex-wrap items-center gap-3">
-              <span>{event.completed ? "✓ Completed" : "Open"}</span>
-              <button
-                type="button"
-                disabled={busy}
-                aria-pressed={event.completed}
-                onClick={() =>
-                  void perform(async () =>
-                    setEvent(
-                      await writer.current<CalendarEvent>(
-                        `/api/events/${id}`,
-                        "PATCH",
-                        { completed: !event.completed },
-                        event.revision,
-                      ),
-                    ),
-                  )
-                }
-                className={button}
-              >
-                {event.completed ? "Mark incomplete" : "Mark completed"}
-              </button>
-            </div>
-            <section
-              aria-label="Linked tasks"
-              className="space-y-3 border-t border-card-border pt-4"
-            >
-              <h2 className="font-medium">Linked tasks</h2>
-              {!event.taskLinks.length && (
-                <p className="text-sm text-gray-500">
-                  No linked tasks. Edit the event to link existing tasks.
-                </p>
-              )}
-              <ul className="space-y-3">
-                {event.taskLinks.map((link) => (
-                  <li key={link.todoId} className="space-y-1">
-                    <p className="text-xs text-gray-500">
-                      {link.role === "SESSION_TARGET" ? "Session task" : "Related task"}
-                      {link.reviewReason ? ` · Needs review: ${link.reviewReason}` : ""}
-                    </p>
-                    {link.task.status ? (
-                      <Link
-                        href={`/todos/${link.todoId}`}
-                        className="break-words text-sm text-blue-400 underline"
-                      >
-                        {link.task.reference} · {link.task.title}
-                      </Link>
-                    ) : (
-                      <p>Unavailable legacy task</p>
-                    )}
-                    <p className="text-xs text-gray-500">
-                      {link.task.status}
-                      {link.task.archivedAt ? " · Archived" : ""}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          </article>
+          <EventOverview
+            event={event}
+            busy={busy}
+            onToggleCompleted={() =>
+              void perform(async () =>
+                setEvent(
+                  await writer.current<CalendarEvent>(
+                    `/api/events/${id}`,
+                    "PATCH",
+                    { completed: !event.completed },
+                    event.revision,
+                  ),
+                ),
+              )
+            }
+          />
           <EventConversion
             key={`${event.id}-${event.revision}`}
             event={event}
@@ -231,7 +163,7 @@ export default function EventPage() {
             <ul className="mt-3 space-y-2 text-sm">
               {activity.map((item) => (
                 <li key={item.id}>
-                  {item.action.replaceAll("_", " ")} · {new Date(item.createdAt).toISOString()}
+                  {item.action.replaceAll("_", " ")} · {writtenEventDate(item.createdAt, timeZone)}
                 </li>
               ))}
             </ul>

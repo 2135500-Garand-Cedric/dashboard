@@ -1,19 +1,15 @@
 "use client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { workRead } from "@/lib/work-management/client";
-import type { WorkProject, WorkContext } from "@/lib/work-management/types";
-import ProjectEditor from "./ProjectEditor";
+import type { WorkProject, WorkActivityType } from "@/lib/work-management/types";
 export default function ProjectList() {
-  const router = useRouter();
   const [q, setQ] = useState(""),
     [view, setView] = useState("active"),
-    [context, setContext] = useState(""),
+    [activityType, setActivityType] = useState(""),
     [page, setPage] = useState(1),
     [refresh, setRefresh] = useState(0),
-    [creating, setCreating] = useState(false),
-    [contexts, setContexts] = useState<WorkContext[]>([]),
+    [activityTypes, setActivityTypes] = useState<WorkActivityType[]>([]),
     [data, setData] = useState<{
       items: WorkProject[];
       total: number;
@@ -23,9 +19,9 @@ export default function ProjectList() {
     [error, setError] = useState("");
   useEffect(() => {
     let active = true;
-    void workRead<WorkContext[]>("/api/work-contexts")
+    void workRead<WorkActivityType[]>("/api/activity-types")
       .then((rows) => {
-        if (active) setContexts(rows);
+        if (active) setActivityTypes(rows);
       })
       .catch((e) => {
         if (active) setError(e.message);
@@ -40,7 +36,7 @@ export default function ProjectList() {
     setError("");
     const timer = setTimeout(() => {
       void workRead<NonNullable<typeof data>>(
-        `/api/projects?${new URLSearchParams({ q, view, context, page: String(page) })}`,
+        `/api/projects?${new URLSearchParams({ q, view, activityType, page: String(page) })}`,
       )
         .then((rows) => {
           if (active) setData(rows);
@@ -53,27 +49,15 @@ export default function ProjectList() {
       active = false;
       clearTimeout(timer);
     };
-  }, [q, view, context, page, refresh]);
+  }, [q, view, activityType, page, refresh]);
   return (
     <div className="min-w-0 space-y-5 pb-8 pt-12 md:pt-2">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">Projects</h1>
-        <button
-          type="button"
-          onClick={() => setCreating(true)}
-          className="rounded bg-blue-600 px-4 py-2 text-sm text-white"
-        >
+        <Link href="/projects/new" className="rounded bg-blue-600 px-4 py-2 text-sm text-white">
           New project
-        </button>
+        </Link>
       </header>
-      {creating && (
-        <ProjectEditor
-          onSaved={(row) => {
-            router.push(`/projects/${row.id}`);
-          }}
-          onCancel={() => setCreating(false)}
-        />
-      )}
       <section
         aria-label="Project search and filters"
         className="grid gap-3 rounded-xl border border-card-border bg-card-bg p-4 sm:grid-cols-3"
@@ -111,19 +95,19 @@ export default function ProjectList() {
           </select>
         </label>
         <label className="text-sm">
-          Context
+          Activity type
           <select
-            aria-label="Project list context"
-            value={context}
+            aria-label="Project list activity type"
+            value={activityType}
             onChange={(e) => {
-              setContext(e.target.value);
+              setActivityType(e.target.value);
               setPage(1);
             }}
             className="mt-1 w-full rounded border border-card-border bg-card-bg p-2"
           >
-            <option value="">All contexts</option>
+            <option value="">All activity types</option>
             <option value="none">Unclassified</option>
-            {contexts.map((row) => (
+            {activityTypes.map((row) => (
               <option key={row.id} value={row.id}>
                 {row.name}
               </option>
@@ -158,6 +142,16 @@ export default function ProjectList() {
                   {row.archivedAt ? " · Archived" : ""}
                 </p>
                 <h2 className="break-words text-lg font-semibold">{row.name}</h2>
+                {row.activityType && (
+                  <span className="inline-flex items-center gap-2 rounded-full border border-card-border px-2.5 py-1 text-xs">
+                    <span
+                      aria-hidden="true"
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: row.activityType.color }}
+                    />
+                    {row.activityType.name}
+                  </span>
+                )}
                 <p className="whitespace-pre-wrap break-words text-sm text-gray-400">
                   {row.objective}
                 </p>

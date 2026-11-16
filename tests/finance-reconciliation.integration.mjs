@@ -1,3 +1,4 @@
+import { timeZoneTestDependency } from "./helpers/time-zone.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
@@ -14,7 +15,10 @@ function load(file, deps = {}) {
     },
   }).outputText;
   const exports = {};
-  new Function("exports", "require", compiled)(exports, (name) => deps[name] ?? require(name));
+  new Function("exports", "require", compiled)(
+    exports,
+    (name) => deps[name] ?? timeZoneTestDependency(name) ?? require(name),
+  );
   return exports;
 }
 test(
@@ -274,6 +278,12 @@ test(
               "delayed posting dates are suggested",
             );
             await decide(await command("INCOME", pay.id, deposit, "CONFIRM", "1000"));
+            await decide(await command("INCOME", pay.id, deposit, "UNLINK", "1000"), 409);
+            assert.equal(
+              (await detail("INCOME", pay.id)).links.filter((link) => link.status === "CONFIRMED")
+                .length,
+              1,
+            );
             await decide(
               await command("INCOME", pay.id, deposit2, "CONFIRM", "500", {
                 acknowledgeAccountDifference: true,
@@ -304,6 +314,11 @@ test(
             const duplicateBefore = await tx.financialTransaction.count();
             await decide(await command("DUPLICATE", manual.id, imported, "CONFIRM", "18.75"));
             assert.equal((await transactions.getTransaction(manual.id)).ledgerAmount, "0.0000");
+            const canonicalExpenses = await transactions.listTransactions(
+              new URLSearchParams({ activity: "expenses", search: tag }),
+            );
+            assert.ok(!canonicalExpenses.transactions.some((row) => row.id === manual.id));
+            assert.ok(canonicalExpenses.transactions.some((row) => row.id === imported.id));
             assert.equal((await transactions.getTransaction(imported.id)).ledgerAmount, "-18.7500");
             assert.equal(
               (await tx.financialReceipt.findUnique({ where: { id: evidence.id } })).transactionId,

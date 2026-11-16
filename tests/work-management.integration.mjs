@@ -1,3 +1,4 @@
+import { timeZoneTestDependency } from "./helpers/time-zone.mjs";
 import { loadTaskFoundation } from "./helpers/task-foundation.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -11,12 +12,15 @@ function load(file, dependencies = {}) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2017 },
   }).outputText;
   const exports = {};
-  new Function("exports", "require", code)(exports, (name) => dependencies[name] ?? require(name));
+  new Function("exports", "require", code)(
+    exports,
+    (name) => dependencies[name] ?? timeZoneTestDependency(name) ?? require(name),
+  );
   return exports;
 }
 
 test(
-  "Phase 01: owner scope, atomic/replay-safe rewards, graph races, safe deletion, checklist and event commands",
+  "Work commands: owner scope, retired rewards, atomic/replay-safe lifecycle, graph races, safe deletion, checklist and events",
   { skip: process.env.RUN_WORK_MANAGEMENT_DB_TEST !== "1" },
   async (t) => {
     assert.equal(process.env.WORK_MANAGEMENT_DISPOSABLE, "1");
@@ -147,29 +151,26 @@ test(
         },
       );
       await t.test(
-        "completion/reopen, snapshot amounts, exact retries and stale/conflicting keys",
+        "completion/reopen preserve balances and legacy snapshots, exact retries and stale/conflicting keys",
         async () => {
           const row = await task({ rewardXp: 20, rewardCoins: 7 }),
             key = command(row);
           const before = await balances();
           const done = await api.patchTodo(row.id, { status: "DONE" }, key);
           assert.deepEqual(await balances(), {
-            totalXp: before.totalXp + 20,
-            coins: before.coins + 7,
+            totalXp: before.totalXp,
+            coins: before.coins,
           });
           assert.deepEqual(await api.patchTodo(row.id, { status: "DONE" }, key), done);
           await rejects(api.patchTodo(row.id, { status: "TODO" }, key), 409);
           await rejects(api.patchTodo(row.id, { status: "DONE" }, command(row)), 409);
-          const edited = await api.patchTodo(
-            row.id,
-            { rewardXp: 90, rewardCoins: 12 },
-            command(done),
-          );
+          await rejects(api.patchTodo(row.id, { rewardXp: 50 }, command(done)), 400);
+          const edited = await api.patchTodo(row.id, { title: `${prefix} updated` }, command(done));
           await api.patchTodo(row.id, { status: "TODO" }, command(edited));
           assert.deepEqual(
             await balances(),
             before,
-            "reversal uses the amount applied at completion, not edited rewards",
+            "neither completion nor reopening changes balances",
           );
           const legacy = await task({
             status: "DONE",
@@ -180,9 +181,11 @@ test(
             rewardAccountingBasis: "LEGACY_BASELINE",
           });
           await api.patchTodo(legacy.id, { status: "TODO" }, command(legacy));
+          assert.equal((await fresh(legacy)).rewardAppliedXp, 9);
+          assert.equal((await fresh(legacy)).rewardAppliedCoins, 3);
           assert.deepEqual(await balances(), {
-            totalXp: before.totalXp - 9,
-            coins: before.coins - 3,
+            totalXp: before.totalXp,
+            coins: before.coins,
           });
         },
       );
@@ -205,13 +208,13 @@ test(
           ]);
           assert.equal(statuses.filter((row) => row.status === "fulfilled").length, 1);
           assert.deepEqual(await balances(), {
-            totalXp: before.totalXp + 11,
-            coins: before.coins + 4,
+            totalXp: before.totalXp,
+            coins: before.coins,
           });
         },
       );
       await t.test(
-        "a write failure after balance increment rolls back both accounting and receipt",
+        "a write failure rolls back task status and receipt without touching balances",
         async () => {
           const row = await task({ rewardXp: 22, rewardCoins: 6 }),
             key = command(row),

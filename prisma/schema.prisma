@@ -29,6 +29,7 @@ model User {
   id        Int       @id @default(autoincrement())
   email     String    @unique
   name      String?
+  timeZone  String? @db.VarChar(100)
   
   // Gamification
   totalXp    Int       @default(0)     // total XP accumulated
@@ -100,8 +101,11 @@ model Todo {
   stageId Int?
   project WorkProject? @relation(fields: [projectId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
   stage WorkProjectStage? @relation(fields: [stageId, projectId], references: [id, projectId], onDelete: Restrict, onUpdate: NoAction)
+  activityTypeId Int?
+  activityType ActivityType? @relation(fields: [activityTypeId], references: [id], onDelete: Restrict)
   contextId Int?
   context WorkContext? @relation(fields: [contextId], references: [id], onDelete: Restrict)
+  // Retired task metadata; preserve existing values and historical records.
   company String?
   course String?
   system String?
@@ -172,6 +176,7 @@ model Todo {
   @@index([deadlineDate])
   @@index([deadlineAt])
   @@index([userId, archivedAt, status])
+  @@index([activityTypeId])
   @@index([contextId])
   @@index([requesterId])
   @@index([waitingOnContactId])
@@ -294,6 +299,8 @@ model WorkMutationReceipt {
 }
 
 model ActivityType {
+  projects WorkProject[]
+  tasks Todo[]
   id        Int      @id @default(autoincrement())
   name      String   @unique
   color     String
@@ -341,6 +348,8 @@ model Practice {
   startedAt     DateTime?
   completedAt   DateTime?
   durationSeconds Int?
+  xpEarned      Int?
+  goldEarned    Int?
   averageBefore Float?
   averageAfter  Float?
   selectedCategories Json?
@@ -642,6 +651,9 @@ model FinancialDocument {
 }
 
 model FinancialImport {
+  periodStart DateTime? @db.Date
+  periodEnd DateTime? @db.Date
+  matchingOnly Boolean @default(false)
   id          Int                  @id @default(autoincrement())
   userId      Int
   accountId   Int
@@ -1033,6 +1045,8 @@ model WorkProject {
   name String @db.VarChar(500)
   objective String?
   summary String?
+  activityTypeId Int?
+  activityType ActivityType? @relation(fields: [activityTypeId], references: [id], onDelete: Restrict)
   contextId Int?
   context WorkContext? @relation(fields: [contextId], references: [id], onDelete: Restrict)
   status String @default("ACTIVE") @db.VarChar(20)
@@ -1052,6 +1066,7 @@ model WorkProject {
   activity WorkActivity[]
   milestones WorkKeyDate[]
   @@unique([id, userId])
+  @@index([activityTypeId])
   @@index([userId, archivedAt, status])
 }
 

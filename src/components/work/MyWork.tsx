@@ -1,20 +1,21 @@
 "use client";
+import { useDateTime } from "@/context/SettingsContext";
+import FilterPanel from "@/components/shared/FilterPanel";
+import { usePersistentQuery, newTaskHref } from "./usePersistentQuery";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createWorkWriter, workRead } from "@/lib/work-management/client";
-import { describeWorkDate } from "@/lib/work-management/date-format";
 import {
   STATUS_LABELS,
   PRIORITY_LABELS,
   PLANNING_LABELS as labels,
   priorityOf,
   type WorkTodo,
-  type WorkContext,
+  type WorkActivityType,
 } from "@/lib/work-management/types";
 import TaskQuickPanel from "./TaskQuickPanel";
 import ProjectPicker from "@/components/projects/ProjectPicker";
-import { useWorkDraftGuard } from "./useWorkDraftGuard";
 type Data = {
   date: string;
   timeZone: string;
@@ -40,36 +41,25 @@ type Data = {
 const button = "rounded-lg border border-card-border px-3 py-2 text-sm disabled:opacity-50",
   input = "mt-1 w-full min-w-0 rounded border border-card-border bg-card-bg p-2 text-sm";
 export default function MyWork() {
+  const { describeWorkDate } = useDateTime();
   const params = useSearchParams(),
     serialized = params.toString(),
     selected = params.get("task"),
     taskId = selected && /^[1-9]\d*$/.test(selected) ? Number(selected) : null;
-  const contextFilter = params.get("context") || "";
+  usePersistentQuery("my-work", "/my-work", serialized);
   const filterQuery = new URLSearchParams(serialized);
   filterQuery.delete("task");
   const query = filterQuery.toString();
   const [data, setData] = useState<Data | null>(null),
-    [contexts, setContexts] = useState<WorkContext[]>([]),
+    [activityTypes, setActivityTypes] = useState<WorkActivityType[]>([]),
     [catalogError, setCatalogError] = useState(""),
     [catalogRefresh, setCatalogRefresh] = useState(0),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [refresh, setRefresh] = useState(0),
-    [busy, setBusy] = useState(false),
-    [title, setTitle] = useState(""),
-    [captureContext, setCaptureContext] = useState(""),
-    [captureCompany, setCaptureCompany] = useState(params.get("company") || ""),
-    [captureCourse, setCaptureCourse] = useState(params.get("course") || "");
+    [busy, setBusy] = useState(false);
   const writer = useRef(createWorkWriter()),
-    lock = useRef(false),
-    clean = useRef(false);
-  const leave = useWorkDraftGuard(
-    () => !!title && !clean.current,
-    () => {
-      setTitle("");
-      clean.current = true;
-    },
-  );
+    lock = useRef(false);
   const reload = useCallback(() => setRefresh((value) => value + 1), []);
   useEffect(() => {
     let active = true;
@@ -92,9 +82,9 @@ export default function MyWork() {
   useEffect(() => {
     let active = true;
     setCatalogError("");
-    void workRead<WorkContext[]>("/api/work-contexts")
+    void workRead<WorkActivityType[]>("/api/activity-types")
       .then((rows) => {
-        if (active) setContexts(rows);
+        if (active) setActivityTypes(rows);
       })
       .catch((error) => {
         if (active) setCatalogError(error.message);
@@ -103,14 +93,6 @@ export default function MyWork() {
       active = false;
     };
   }, [catalogRefresh]);
-  useEffect(() => {
-    const value = contextFilter;
-    setCaptureContext(
-      value && value !== "none" && contexts.some((row) => row.active && row.id === Number(value))
-        ? value
-        : "",
-    );
-  }, [contextFilter, contexts]);
   useEffect(() => {
     const timer = setInterval(() => {
       if (document.visibilityState === "visible" && !lock.current) reload();
@@ -172,153 +154,54 @@ export default function MyWork() {
         <div>
           <h1 className="text-2xl font-bold">My Work</h1>
           <p className="mt-1 text-sm text-gray-500">
-            {data
-              ? `${data.date} · ${data.timeZone} · ${data.totalActive} active tasks`
-              : "Daily planning"}
+            {data ? `${data.date} · ${data.totalActive} active tasks` : "Daily planning"}
           </p>
         </div>
-        <div className="flex gap-2">
-          <button type="button" disabled={busy} onClick={reload} className={button}>
-            Refresh My Work
-          </button>
-          <Link href={allWork()} className={button}>
-            All Work
-          </Link>
-        </div>
       </header>
-      <section
-        aria-label="My Work filters"
-        className="grid min-w-0 gap-3 rounded-xl border border-card-border bg-card-bg p-4 sm:grid-cols-2 xl:grid-cols-4"
+      <FilterPanel
+        name="my-work"
+        actions={
+          <>
+            <Link
+              href={newTaskHref(filters, `/my-work${query ? `?${query}` : ""}`)}
+              className={`${button} bg-blue-600 text-white`}
+            >
+              New task
+            </Link>
+            <button type="button" disabled={busy} onClick={reload} className={button}>
+              Refresh My Work
+            </button>
+          </>
+        }
       >
-        <label className="text-sm">
-          Context
-          <select
-            aria-label="My Work context"
-            value={params.get("context") || ""}
-            onChange={(e) => navigate("context", e.target.value)}
-            className={input}
-          >
-            <option value="">All contexts</option>
-            <option value="none">Unclassified</option>
-            {contexts.map((row) => (
-              <option key={row.id} value={row.id}>
-                {row.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {["company", "course"].map((key) => (
-          <label key={key} className="text-sm capitalize">
-            {key}
-            <input
-              aria-label={`My Work ${key}`}
-              maxLength={120}
-              value={params.get(key) || ""}
-              onChange={(e) => navigate(key, e.target.value)}
+        <section
+          aria-label="My Work filters"
+          className="grid min-w-0 gap-3 rounded-xl border border-card-border bg-card-bg p-4 sm:grid-cols-2 xl:grid-cols-4"
+        >
+          <label className="text-sm">
+            Activity type
+            <select
+              aria-label="My Work activity type"
+              value={params.get("activityType") || ""}
+              onChange={(e) => navigate("activityType", e.target.value)}
               className={input}
-            />
-          </label>
-        ))}
-        <ProjectPicker
-          value={params.get("project") || ""}
-          onChange={(value) => navigate("project", value)}
-          label="My Work project"
-        />
-      </section>
-      <form
-        aria-label="My Work capture"
-        className="flex flex-wrap items-end gap-3 rounded-xl border border-card-border bg-card-bg p-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void perform(async () => {
-            const task = await writer.current<WorkTodo>("/api/todos", "POST", {
-              title,
-              contextId: captureContext ? Number(captureContext) : null,
-              ...(captureCompany ? { company: captureCompany } : {}),
-              ...(captureCourse ? { course: captureCourse } : {}),
-              ...(/^\d+$/.test(params.get("project") || "")
-                ? { projectId: Number(params.get("project")) }
-                : {}),
-            });
-            clean.current = true;
-            setTitle("");
-            setNotice(`${task.reference} created.`);
-          });
-        }}
-      >
-        <label className="min-w-0 flex-1 text-sm">
-          Quick capture
-          <input
-            aria-label="Capture task title"
-            required
-            maxLength={500}
-            value={title}
-            disabled={busy}
-            onChange={(e) => {
-              clean.current = false;
-              setTitle(e.target.value);
-            }}
-            className={input}
-          />
-        </label>
-        <label className="text-sm">
-          Capture context
-          <select
-            aria-label="My Work capture context"
-            value={captureContext}
-            disabled={busy}
-            onChange={(e) => setCaptureContext(e.target.value)}
-            className={input}
-          >
-            <option value="">Unclassified</option>
-            {contexts
-              .filter((row) => row.active)
-              .map((row) => (
+            >
+              <option value="">All activity types</option>
+              <option value="none">Unclassified</option>
+              {activityTypes.map((row) => (
                 <option key={row.id} value={row.id}>
                   {row.name}
                 </option>
               ))}
-          </select>
-        </label>
-        <details className="w-full" open={!!params.get("company") || !!params.get("course")}>
-          <summary className="cursor-pointer text-sm">Capture company / course (optional)</summary>
-          <div className="mt-2 grid gap-3 sm:grid-cols-2">
-            <label className="text-sm">
-              Company
-              <input
-                aria-label="Capture company"
-                maxLength={120}
-                value={captureCompany}
-                disabled={busy}
-                onChange={(event) => setCaptureCompany(event.target.value)}
-                className={input}
-              />
-            </label>
-            <label className="text-sm">
-              Course
-              <input
-                aria-label="Capture course"
-                maxLength={120}
-                value={captureCourse}
-                disabled={busy}
-                onChange={(event) => setCaptureCourse(event.target.value)}
-                className={input}
-              />
-            </label>
-          </div>
-        </details>
-        <button
-          type="submit"
-          disabled={busy || !title.trim()}
-          className={`${button} bg-blue-600 text-white`}
-        >
-          Add task
-        </button>
-        <span className="text-xs text-gray-500">
-          New · Normal
-          {params.get("project") && params.get("project") !== "none" ? " · Selected project" : ""}
-        </span>
-      </form>
+            </select>
+          </label>
+          <ProjectPicker
+            value={params.get("project") || ""}
+            onChange={(value) => navigate("project", value)}
+            label="My Work project"
+          />
+        </section>
+      </FilterPanel>
       {catalogError && (
         <p role="alert" className="rounded border border-rose-500/40 p-3 text-rose-500">
           {catalogError}{" "}
@@ -327,7 +210,7 @@ export default function MyWork() {
             onClick={() => setCatalogRefresh((value) => value + 1)}
             className="underline"
           >
-            Retry contexts
+            Retry activity types
           </button>
         </p>
       )}
@@ -348,11 +231,6 @@ export default function MyWork() {
         !error && <p role="status">Loading My Work…</p>
       ) : (
         <>
-          <p className="text-xs text-gray-500">
-            Sections can contain the same task. Their counts overlap; each list shows up to six.
-            Priority sorts tasks within each section. Focus is a choice for this date, not a
-            deadline.
-          </p>
           <div className="grid min-w-0 items-start gap-4 lg:grid-cols-2 2xl:grid-cols-3">
             {Object.entries(labels).map(([key, label]) => {
               const section = data.sections[key];
@@ -386,14 +264,14 @@ export default function MyWork() {
                           <button
                             type="button"
                             onClick={() => {
-                              if (leave()) navigate("task", String(task.id));
+                              navigate("task", String(task.id));
                             }}
                             className="w-full break-words text-left text-sm font-medium text-blue-400"
                           >
                             {task.reference} · {task.title}
                           </button>
                           <p className="text-xs text-gray-500">
-                            {task.context?.name || "Unclassified"} ·{" "}
+                            {task.activityType?.name || "Unclassified"} ·{" "}
                             {STATUS_LABELS[task.status] ?? task.status} ·{" "}
                             {priorityOf(task)
                               ? PRIORITY_LABELS[priorityOf(task)!]

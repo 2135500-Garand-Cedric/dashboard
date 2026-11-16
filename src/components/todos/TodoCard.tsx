@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { ChevronRightIcon, FlagIcon, CurrencyDollarIcon } from "@heroicons/react/24/solid";
+import { ChevronRightIcon, FlagIcon } from "@heroicons/react/24/solid";
 
 import {
   type WorkTodo as Todo,
@@ -46,7 +46,7 @@ export default function TodoCard({ todo, onOpen }: { todo: Todo; onOpen: () => v
       <div className="flex min-w-0 justify-between items-start">
         <div className="min-w-0">
           <p className="mb-1 text-xs text-gray-500">
-            {todo.reference ?? taskReference(todo.id)} · {todo.context?.name ?? "Unclassified"}
+            {todo.reference ?? taskReference(todo.id)} · {todo.activityType?.name ?? "Unclassified"}
           </p>
           <div className="flex flex-wrap items-center gap-2">
             {priority && (
@@ -61,15 +61,6 @@ export default function TodoCard({ todo, onOpen }: { todo: Todo; onOpen: () => v
             >
               {todo.title}
             </div>
-            {(!todo.context || todo.context.key === "personal") && (
-              <div className="text-xs text-gray-500 flex items-center gap-1 flex-nowrap whitespace-nowrap">
-                <span>+{todo.rewardXp ?? 0} XP</span>
-                <span className="flex items-center gap-0.5">
-                  +{todo.rewardCoins ?? 0}{" "}
-                  <CurrencyDollarIcon className="w-3 h-3 text-yellow-600" />
-                </span>
-              </div>
-            )}
           </div>
           {todo.requester && (
             <p className="mt-1 break-words text-xs text-gray-500">
@@ -81,9 +72,7 @@ export default function TodoCard({ todo, onOpen }: { todo: Todo; onOpen: () => v
           {todo.status === "WAITING" && (
             <p className="mt-1 break-words text-sm text-amber-500">
               Waiting
-              {todo.waitingOnContact?.name || todo.waitingOn
-                ? ` on ${todo.waitingOnContact?.name ?? todo.waitingOn}`
-                : ""}
+              {todo.waitingOn ? ` on ${todo.waitingOn}` : ""}
               {todo.waitingReason ? ` · ${todo.waitingReason}` : ""}
             </p>
           )}

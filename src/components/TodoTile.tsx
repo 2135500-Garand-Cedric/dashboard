@@ -1,7 +1,7 @@
 "use client";
+import { useDateTime } from "@/context/SettingsContext";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { describeWorkDate } from "@/lib/work-management/date-format";
 import { useMemory } from "@/context/MemoryContext";
 import { workRead } from "@/lib/work-management/client";
 import {
@@ -13,6 +13,7 @@ import {
   type WorkTodo,
 } from "@/lib/work-management/types";
 export default function TodoDashboardTile() {
+  const { describeWorkDate } = useDateTime();
   const { pageRouter } = useMemory();
   const [todos, setTodos] = useState<WorkTodo[]>([]),
     [error, setError] = useState(""),
@@ -93,7 +94,7 @@ export default function TodoDashboardTile() {
                 >
                   <p className="mb-1 text-xs text-gray-500">
                     {task.reference ?? taskReference(task.id)} ·{" "}
-                    {task.context?.name ?? "Unclassified"}
+                    {task.activityType?.name ?? "Unclassified"}
                   </p>
                   <p className="break-words font-medium">{task.title}</p>
                   <div className="mt-1 flex flex-wrap gap-x-3 text-sm">

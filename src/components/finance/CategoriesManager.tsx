@@ -1,12 +1,23 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
-import { CATEGORY_TYPES, type CategoryType, type FinanceCategory } from "@/lib/finance/validation";
+import { useState, type FormEvent } from "react";
+import { type CategoryType, type FinanceCategory } from "@/lib/finance/validation";
+import Link from "next/link";
+import TaskModal from "@/components/shared/TaskModal";
+import {
+  ArrowLeftIcon,
+  PlusIcon,
+  PencilSquareIcon,
+  PauseCircleIcon,
+  PlayCircleIcon,
+  CheckIcon,
+  XMarkIcon,
+  TrashIcon,
+} from "@heroicons/react/24/outline";
 import { useSnackbar } from "@/context/SnackbarContext";
 import {
   fieldClass,
-  primaryButton,
-  secondaryButton,
+  settingsButton,
   FinanceLoadError,
   FinanceStatus,
   financeRequest,
@@ -23,9 +34,10 @@ export default function CategoriesManager() {
   const [draft, setDraft] = useState(emptyCategory);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
-  const formRef = useRef<HTMLFormElement>(null);
+  const [modalOpen, setModalOpen] = useState(false);
   const { showMessage } = useSnackbar();
   const reset = () => {
+    setModalOpen(false);
     setEditingId(null);
     setDraft(emptyCategory());
     setActionError("");
@@ -103,11 +115,33 @@ export default function CategoriesManager() {
     }
   }
 
+  const categories = (data?.categories ?? []).filter((category) => category.type === "EXPENSE");
+
   return (
     <div className="space-y-5">
-      <h2 className="text-2xl font-semibold">Income & expense categories</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-2xl font-semibold">Expense categories</h2>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/finance/settings" className={`${settingsButton} border-card-border`}>
+            <ArrowLeftIcon className="h-4 w-4" aria-hidden="true" />
+            Finance settings
+          </Link>
+          <button
+            type="button"
+            className={`${settingsButton} border-blue-500/40`}
+            disabled={busy || loading}
+            onClick={() => {
+              reset();
+              setModalOpen(true);
+            }}
+          >
+            <PlusIcon className="h-4 w-4" aria-hidden="true" />
+            New category
+          </button>
+        </div>
+      </div>
       {error && <FinanceLoadError error={error} retry={retry} />}
-      {actionError && (
+      {actionError && !modalOpen && (
         <p
           role="alert"
           className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-4 text-rose-500"
@@ -115,137 +149,126 @@ export default function CategoriesManager() {
           {actionError}
         </p>
       )}
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)]">
-        <form ref={formRef} onSubmit={save} className="card space-y-4">
-          <h3 className="text-lg font-semibold">
-            {editingId === null ? "New category" : "Edit category"}
-          </h3>
-          <fieldset disabled={busy || loading} className="space-y-4">
-            <label className="block space-y-2">
-              <span className="text-sm font-medium">Category name</span>
-              <input
-                className={fieldClass}
-                value={draft.name}
-                maxLength={100}
-                required
-                autoComplete="off"
-                onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-              />
-            </label>
-            <label className="block space-y-2">
-              <span className="text-sm font-medium">Category type</span>
-              <select
-                className={fieldClass}
-                value={draft.type}
-                onChange={(event) =>
-                  setDraft({ ...draft, type: event.target.value as CategoryType })
-                }
+      <div className="space-y-5">
+        <TaskModal
+          open={modalOpen}
+          title={editingId === null ? "New category" : "Edit category"}
+          busy={busy}
+          onClose={reset}
+        >
+          <form onSubmit={save} className="space-y-4">
+            {actionError && (
+              <p
+                role="alert"
+                className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-rose-500"
               >
-                {Object.entries(CATEGORY_TYPES).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={draft.active}
-                onChange={(event) => setDraft({ ...draft, active: event.target.checked })}
-              />
-              Active
-            </label>
-            <div className="flex flex-wrap gap-2">
-              <button type="submit" className={primaryButton}>
-                {busy ? "Saving…" : editingId === null ? "Create category" : "Save category"}
-              </button>
-              {editingId !== null && (
-                <button type="button" className={secondaryButton} onClick={reset}>
+                {actionError}
+              </p>
+            )}
+            <fieldset disabled={busy || loading} className="space-y-4">
+              <label className="block space-y-2">
+                <span className="text-sm font-medium">Category name</span>
+                <input
+                  className={fieldClass}
+                  value={draft.name}
+                  maxLength={100}
+                  required
+                  autoComplete="off"
+                  onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                />
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={draft.active}
+                  onChange={(event) => setDraft({ ...draft, active: event.target.checked })}
+                />
+                Active
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button type="submit" className={`${settingsButton} border-blue-500/40`}>
+                  <CheckIcon className="h-4 w-4" aria-hidden="true" />
+                  {busy ? "Saving…" : editingId === null ? "Create category" : "Save category"}
+                </button>
+                <button
+                  type="button"
+                  className={`${settingsButton} border-card-border`}
+                  onClick={reset}
+                >
+                  <XMarkIcon className="h-4 w-4" aria-hidden="true" />
                   Cancel
                 </button>
-              )}
-            </div>
-          </fieldset>
-        </form>
+              </div>
+            </fieldset>
+          </form>
+        </TaskModal>
         <section className="min-w-0 space-y-4" aria-label="Category list">
           {loading && (
             <p role="status" className="card text-gray-500">
               Loading categories…
             </p>
           )}
-          <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-            {(Object.keys(CATEGORY_TYPES) as CategoryType[]).map((type) => {
-              const categories = (data?.categories ?? []).filter(
-                (category) => category.type === type,
-              );
-              return (
-                <section key={type} className="card min-w-0 space-y-4">
-                  <h3
-                    className={`text-lg font-semibold ${type === "EXPENSE" ? "text-rose-500" : "text-emerald-500"}`}
+          {!loading && data && categories.length === 0 && (
+            <p className="text-sm text-gray-500">No expense categories yet.</p>
+          )}
+          <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            {categories.map((category) => (
+              <li
+                key={category.id}
+                className="card flex min-w-0 flex-col gap-4 border-t-2 border-t-rose-500/60"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className="min-w-0 break-words font-medium">{category.name}</span>
+                  <FinanceStatus active={category.active} />
+                </div>
+                <div className="mt-auto flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className={`${settingsButton} border-sky-500/40`}
+                    aria-label={`Edit expense category ${category.name}`}
+                    onClick={() => {
+                      setEditingId(category.id);
+                      setDraft({
+                        name: category.name,
+                        type: category.type,
+                        active: category.active,
+                      });
+                      setActionError("");
+                      setModalOpen(true);
+                    }}
                   >
-                    {CATEGORY_TYPES[type]} ({categories.length})
-                  </h3>
-                  {!loading && data && categories.length === 0 && (
-                    <p className="text-sm text-gray-500">
-                      No {CATEGORY_TYPES[type].toLowerCase()} categories yet.
-                    </p>
-                  )}
-                  <ul className="divide-y divide-card-border">
-                    {categories.map((category) => (
-                      <li key={category.id} className="space-y-3 py-4">
-                        <div className="flex items-start justify-between gap-2">
-                          <span className="min-w-0 break-words font-medium">{category.name}</span>
-                          <FinanceStatus active={category.active} />
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            disabled={busy}
-                            className={secondaryButton}
-                            aria-label={`Edit ${CATEGORY_TYPES[type].toLowerCase()} category ${category.name}`}
-                            onClick={() => {
-                              setEditingId(category.id);
-                              setDraft({
-                                name: category.name,
-                                type: category.type,
-                                active: category.active,
-                              });
-                              setActionError("");
-                              formRef.current?.scrollIntoView({
-                                behavior: "smooth",
-                                block: "center",
-                              });
-                            }}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            className={secondaryButton}
-                            aria-label={`${category.active ? "Deactivate" : "Reactivate"} ${CATEGORY_TYPES[type].toLowerCase()} category ${category.name}`}
-                            onClick={() => void change(category)}
-                          >
-                            {category.active ? "Deactivate" : "Reactivate"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            className={`${secondaryButton} text-rose-500`}
-                            aria-label={`Delete ${CATEGORY_TYPES[type].toLowerCase()} category ${category.name}`}
-                            onClick={() => void change(category, true)}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              );
-            })}
-          </div>
+                    <PencilSquareIcon className="h-4 w-4" aria-hidden="true" />
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className={`${settingsButton} ${category.active ? "border-amber-500/40" : "border-emerald-500/40"}`}
+                    aria-label={`${category.active ? "Deactivate" : "Reactivate"} expense category ${category.name}`}
+                    onClick={() => void change(category)}
+                  >
+                    {category.active ? (
+                      <PauseCircleIcon className="h-4 w-4" aria-hidden="true" />
+                    ) : (
+                      <PlayCircleIcon className="h-4 w-4" aria-hidden="true" />
+                    )}
+                    {category.active ? "Deactivate" : "Reactivate"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className={`${settingsButton} border-rose-500/40`}
+                    aria-label={`Delete expense category ${category.name}`}
+                    onClick={() => void change(category, true)}
+                  >
+                    <TrashIcon className="h-4 w-4" aria-hidden="true" />
+                    Delete
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
         </section>
       </div>
     </div>

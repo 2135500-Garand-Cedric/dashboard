@@ -33,13 +33,15 @@ test(
     };
     const original = await captureInventory(db);
     const report = {};
+    let fixtureType;
     try {
+      fixtureType = await db.activityType.create({ data: { name: prefix, color: "#3b82f6" } });
       await db.todo.createMany({
         data: Array.from({ length: 1000 }, (_, index) => ({
           userId: 1,
           title: `${prefix} ${index} ${"readable long title ".repeat(6)}`,
           description: "Synthetic volume fixture. ".repeat(80),
-          company: prefix,
+          activityTypeId: fixtureType.id,
           status: index % 5 === 0 ? "DONE" : index % 3 === 0 ? "WAITING" : "NEW",
           priorityLevel: index % 7 === 0 ? "URGENT" : "NORMAL",
           rewardXp: 0,
@@ -47,9 +49,12 @@ test(
         })),
       });
       ids.push(
-        ...(await db.todo.findMany({ where: { company: prefix }, select: { id: true } })).map(
-          (row) => row.id,
-        ),
+        ...(
+          await db.todo.findMany({
+            where: { activityTypeId: fixtureType.id },
+            select: { id: true },
+          })
+        ).map((row) => row.id),
       );
       const root = await api.server.getTodo(ids[1]);
       for (let i = 0; i < 55; i++)
@@ -68,13 +73,17 @@ test(
           const started = performance.now();
           for (const sort of ["updated", "deadline", "followup"]) {
             const first = await api.server.searchWork(
-              new URLSearchParams({ company: prefix, sort }),
+              new URLSearchParams({ activityType: String(fixtureType.id), sort }),
             );
             const second = await api.server.searchWork(
-              new URLSearchParams({ company: prefix, sort, page: "2" }),
+              new URLSearchParams({ activityType: String(fixtureType.id), sort, page: "2" }),
             );
             const last = await api.server.searchWork(
-              new URLSearchParams({ company: prefix, sort, page: "2147483647" }),
+              new URLSearchParams({
+                activityType: String(fixtureType.id),
+                sort,
+                page: "2147483647",
+              }),
             );
             assert.equal(first.total, 800);
             assert.equal(first.items.length, 30);
@@ -84,7 +93,9 @@ test(
             assert.equal(last.items.length, 20);
             assert.ok(Buffer.byteLength(JSON.stringify(first)) < 256 * 1024);
           }
-          const planning = await api.myWork.myWork(new URLSearchParams({ company: prefix }));
+          const planning = await api.myWork.myWork(
+            new URLSearchParams({ activityType: String(fixtureType.id) }),
+          );
           assert.equal(planning.totalActive, 800);
           for (const section of Object.values(planning.sections))
             assert.ok(section.items.length <= 6);
@@ -192,7 +203,7 @@ test(
         const saved = await api.server.getTodo(root.id);
         const project = projects.find((project) => project.id === saved.projectId);
         assert.equal(saved.stageId, project.stages[0].id);
-        assert.equal(await db.todo.count({ where: { company: prefix } }), 1000);
+        assert.equal(await db.todo.count({ where: { activityTypeId: fixtureType.id } }), 1000);
       });
       console.log(
         `Synthetic volume checks: 1,000 tasks, 55 long notes; bounded read batch ${report.readMilliseconds} ms. Not an enterprise-scale benchmark.`,
@@ -221,6 +232,7 @@ test(
         });
         await tx.workProject.deleteMany({ where: { id: { in: projects.map((row) => row.id) } } });
         await tx.workMutationReceipt.deleteMany({ where: { requestKey: { in: keys } } });
+        if (fixtureType) await tx.activityType.delete({ where: { id: fixtureType.id } });
       });
       assertOriginalRows(original, await captureInventory(db));
       await db.$disconnect();

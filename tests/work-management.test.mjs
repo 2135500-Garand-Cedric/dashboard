@@ -1,3 +1,4 @@
+import { timeZoneTestDependency } from "./helpers/time-zone.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
@@ -8,7 +9,10 @@ function load(file, deps = {}) {
   const code = ts.transpileModule(fs.readFileSync(new URL(file, import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2017 },
   }).outputText;
-  new Function("exports", "require", code)(exports, (name) => deps[name]);
+  new Function("exports", "require", code)(
+    exports,
+    (name) => deps[name] ?? timeZoneTestDependency(name),
+  );
   return exports;
 }
 const validation = load("../src/lib/work-management/validation.ts", {

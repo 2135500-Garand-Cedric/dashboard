@@ -6,6 +6,8 @@ export interface CalendarEvent {
   title: string;
   description: string | null;
   type: string | null;
+  activityLabel?: string | null;
+  activityColor?: string;
   date: string | null;
   endDate: string | null;
   completed: boolean;
@@ -40,7 +42,7 @@ export function eventTiming(event: CalendarEvent): string {
     describeWorkDate({
       date: null,
       at: value,
-      timeZone: event.timeZone || event.appTimeZone || "America/Toronto",
+      timeZone: event.appTimeZone || event.timeZone || "UTC",
     });
   return `${format(event.date)}${event.endDate ? ` → ${format(event.endDate)}` : ""}`;
 }
@@ -58,6 +60,9 @@ export interface CalendarFeed {
     borderColor?: string;
     extendedProps: {
       layer: string;
+      plainTitle?: string;
+      activityType?: string | null;
+      kind?: string;
       href: string;
       eventId?: number;
       revision?: number;
@@ -73,3 +78,5 @@ export interface CalendarFeed {
   tbdPage: number;
   tbdPageSize: number;
 }
+
+export type CalendarItem = CalendarFeed["items"][number];

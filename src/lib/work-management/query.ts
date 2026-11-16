@@ -2,7 +2,7 @@ import type { Prisma } from "@/generated/prisma";
 import { WORK_KINDS, WORK_PRIORITIES, WORK_STATUSES } from "./types";
 import { WorkValidationError, workId } from "./validation";
 
-import { APP_TIME_ZONE } from "@/lib/app-time-zone";
+import { getAppTimeZone } from "@/lib/time-zone-context";
 import { calendarDate, localToday, dayStart, nextCalendarDate } from "./dates";
 
 import { PLANNING_SECTIONS, planningWhere } from "./planning-rules";
@@ -26,12 +26,11 @@ export function parseWorkQuery(params: URLSearchParams) {
     q: text("q", 500),
     planning: choice("planning", ["", ...PLANNING_SECTIONS], ""),
     view: choice("view", ["active", "history", "archived", "all"], "active"),
+    activityType: id("activityType", true),
     context: id("context", true),
     project: id("project", true),
     stage: id("stage"),
     person: id("person"),
-    company: text("company", 120),
-    course: text("course", 120),
     system: text("system", 120),
     tag: text("tag", 50),
     status: choice("status", ["", ...WORK_STATUSES], ""),
@@ -54,11 +53,13 @@ export function workQueryWhere(
   query: WorkQuery,
   userId: number,
   now = new Date(),
-  zone = APP_TIME_ZONE,
+  zone = getAppTimeZone(),
 ): Prisma.TodoWhereInput {
   const AND: Prisma.TodoWhereInput[] = [
     { userId },
-    { archivedAt: query.view === "archived" ? { not: null } : null },
+    ...(query.view === "history"
+      ? []
+      : [{ archivedAt: query.view === "archived" ? { not: null } : null }]),
   ];
   if (query.planning)
     AND.push(
@@ -80,9 +81,11 @@ export function workQueryWhere(
         : { projectId: Number(query.project), project: { userId } },
     );
   if (query.stage) AND.push({ stageId: Number(query.stage), stage: { project: { userId } } });
+  if (query.activityType)
+    AND.push({ activityTypeId: query.activityType === "none" ? null : Number(query.activityType) });
   if (query.context)
     AND.push({ contextId: query.context === "none" ? null : Number(query.context) });
-  for (const field of ["company", "course", "system"] as const)
+  for (const field of ["system"] as const)
     if (query[field]) AND.push({ [field]: { contains: query[field], mode: "insensitive" } });
   if (query.tag) AND.push({ tags: { has: query.tag } });
   if (query.status) AND.push({ status: query.status as Prisma.EnumTodoStatusFilter["equals"] });

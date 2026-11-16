@@ -8,6 +8,34 @@ deployment checklist are in [HANDOVER.md](HANDOVER.md). Opt-in isolated examples
 are in [SYNTHETIC_EXAMPLES.md](SYNTHETIC_EXAMPLES.md). Earlier sections below retain
 their phase-specific history; PROGRESS.md records what actually ran.
 
+## Current task-page and reward behavior
+
+The subsequent usability redesign retired task XP/coin rewards. Completion and
+reopening now leave User balances and historical applied-reward snapshots alone.
+Nonzero reward configuration is rejected; zero-valued old requests remain
+compatible. Quest rewards are unchanged; Japanese practice now has separate
+per-session XP/gold rewards. This supersedes the original
+phase-specific payout/reversal behavior described below; historical migrations
+and baseline evidence must not be rewritten to remove the old columns.
+
+Current task layout, combined management routes and display settings are described
+in [Display and navigation](../DISPLAY_AND_NAVIGATION.md). Task details prioritize
+description, files and notes; relationships are a single typed scrolling list,
+and project/stage selection is compact. The later Japanese practice reward fields
+require the additive
+`20261115120000_japanese_practice_rewards` migration. Task closure now archives
+automatically; reopening returns the task to active work. Completed history and
+project progress retain closed tasks. Inline session scheduling uses the existing
+event command and supports the saved display timezone and clock changes.
+
+Task scheduling and focus now live in the task header. Deadline/follow-up cards
+are directly below the title; edits use centered dialogs with backdrop/Escape
+cancellation. Sessions/events remain an always-open list below relationships.
+Notes only now includes resolved follow-ups, with owner-scoped SQL pagination
+across both record types and no duplicated note writes. Task key-date commands
+are retired (410), old records stay intact, and project milestones retain their
+own calendar layer. See the display/navigation document for current UI behavior.
+
 ## What changed
 
 - `src/lib/work-management/server.ts` owns the current seven-status task/event/

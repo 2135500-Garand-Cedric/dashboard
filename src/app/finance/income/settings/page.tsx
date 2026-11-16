@@ -1,4 +1,5 @@
-import IncomeSettings from "@/components/finance/IncomeSettings";
-export default function IncomeSettingsPage() {
-  return <IncomeSettings />;
+import { redirect } from "next/navigation";
+
+export default function LegacyIncomeSettingsPage() {
+  redirect("/finance/settings");
 }

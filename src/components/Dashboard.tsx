@@ -28,11 +28,11 @@ export default function Home() {
 
   return (
     <div
-      className="dashboard-page p-4 md:p-8"
+      className="dashboard-page p-4 md:p-4"
       style={{ background: "var(--background)", color: "var(--foreground)" }}
     >
       {/* Header with title + progress */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-4">
+      <div className="dashboard-header flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-3">
         <h1 className="text-3xl font-bold" style={{ color: "var(--color-foreground)" }}>
           My Dashboard
         </h1>

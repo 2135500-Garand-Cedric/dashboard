@@ -10,8 +10,8 @@ import {
 
 export const IMPORT_ACTIONS = {
   REVIEW: "Needs review",
-  CREATE: "Create new transaction",
-  MATCH: "Link existing transaction",
+  CREATE: "Create income / expense / transfer",
+  MATCH: "Match existing income / expense / transfer",
   SKIP: "Skip row",
 } as const;
 export type ImportAction = keyof typeof IMPORT_ACTIONS;
@@ -76,6 +76,7 @@ export interface ImportRow {
   warnings: string[];
   candidates: ImportCandidate[];
   duplicateOf: number | null;
+  candidateOptions?: ImportCandidate[];
 }
 export interface ImportBatch {
   id: number;
@@ -91,9 +92,17 @@ export interface ImportBatch {
   mapping: ImportMapping | null;
   rows: ImportRow[];
   documentAvailable: boolean;
+  periodStart: string | null;
+  periodEnd: string | null;
+  matchingOnly: boolean;
 }
 export interface ImportSummary {
+  periodStart?: string | null;
+  periodEnd?: string | null;
   id: number;
+  matchedCount: number;
+  selectedCount: number;
+  remainingCount: number;
   account: FinanceAccount;
   status: "DRAFT" | "COMPLETED";
   originalName: string | null;
@@ -119,7 +128,17 @@ function optionalId(value: unknown) {
   return value == null ? null : statementId(value);
 }
 export function importUploadInput(value: unknown) {
-  const body = strictObject(value, ["accountId", "delimiter", "encoding", "headerRow"]);
+  const body = strictObject(value, [
+    "accountId",
+    "delimiter",
+    "encoding",
+    "headerRow",
+    "periodStart",
+    "periodEnd",
+  ]);
+  body.delimiter ??= "AUTO";
+  body.encoding ??= "AUTO";
+  body.headerRow ??= 1;
   if (!["AUTO", ",", ";", "\t", "|"].includes(String(body.delimiter)))
     throw new FinanceValidationError("Choose a supported CSV separator.");
   if (!["AUTO", "UTF-8", "WINDOWS-1252"].includes(String(body.encoding)))
@@ -132,6 +151,8 @@ export function importUploadInput(value: unknown) {
     throw new FinanceValidationError("Header row must be between 1 and 20.");
   return {
     accountId: statementId(body.accountId),
+    periodStart: body.periodStart,
+    periodEnd: body.periodEnd,
     parsing: {
       delimiter: body.delimiter,
       encoding: body.encoding,

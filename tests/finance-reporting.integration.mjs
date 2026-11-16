@@ -1,3 +1,4 @@
+import { timeZoneTestDependency } from "./helpers/time-zone.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
@@ -18,7 +19,10 @@ function load(file, deps = {}) {
     },
   }).outputText;
   const exports = {};
-  new Function("exports", "require", compiled)(exports, (name) => deps[name] ?? require(name));
+  new Function("exports", "require", compiled)(
+    exports,
+    (name) => deps[name] ?? timeZoneTestDependency(name) ?? require(name),
+  );
   return exports;
 }
 test(
@@ -73,7 +77,9 @@ test(
               "next/server": require("next/server"),
               "./validation": validation,
             });
+            const overview = load("../src/lib/finance/overview.ts", { "./reporting": reporting });
             const api = load("../src/lib/finance/reporting-server.ts", {
+              "./overview": overview,
               "@/lib/prisma": { prisma: fake },
               "./server": { ...server, FINANCE_USER_ID: owner.id },
               "./reporting": reporting,

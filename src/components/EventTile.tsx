@@ -1,13 +1,15 @@
 "use client";
+import { useSettings } from "@/context/SettingsContext";
 import { useEffect, useState } from "react";
 import { CalendarDaysIcon } from "@heroicons/react/24/outline";
 import { useMemory } from "@/context/MemoryContext";
 import { localToday, localParts } from "@/lib/work-management/date-format";
 import { eventTiming, type CalendarEvent } from "@/lib/work-management/calendar-types";
 export default function EventDashboardTile() {
+  const { timeZone: selectedZone } = useSettings();
   const { pageRouter } = useMemory();
   const [events, setEvents] = useState<CalendarEvent[]>([]),
-    [zone, setZone] = useState("America/Toronto"),
+    [zone, setZone] = useState(selectedZone),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true),
     [refresh, setRefresh] = useState(0);
@@ -22,7 +24,7 @@ export default function EventDashboardTile() {
         if (!response.ok) throw new Error(data?.error || "Unable to load events.");
         const values = data as CalendarEvent[],
           timeZone =
-            response.headers.get("X-App-Time-Zone") || values[0]?.appTimeZone || "America/Toronto",
+            response.headers.get("X-App-Time-Zone") || values[0]?.appTimeZone || selectedZone,
           now = new Date();
         const upcoming = values
           .filter(
@@ -57,7 +59,7 @@ export default function EventDashboardTile() {
       active = false;
       clearInterval(timer);
     };
-  }, [refresh]);
+  }, [refresh, selectedZone]);
   const now = new Date(),
     date = localToday(now, zone),
     month = new Intl.DateTimeFormat("en", { month: "short", timeZone: zone }).format(now),

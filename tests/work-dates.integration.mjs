@@ -215,13 +215,11 @@ test(
       await t.test(
         "closure retires active follow-ups without erasing history; reopen recomputes original deadline without reminders",
         async () => {
-          const row = await create({ rewardXp: 13, rewardCoins: 2 });
+          const row = await create({ rewardXp: 0, rewardCoins: 0 });
           await act(row, { action: "deadline", date: date("2020-01-01") });
           await act(row, { action: "followup-create", date: date("2020-01-02") });
-          await act(row, {
-            action: "key-create",
-            date: date("2020-01-03"),
-            label: "Expected delivery",
+          const legacy = await db.workKeyDate.create({
+            data: { todoId: row.id, date: "2020-01-03", label: "Expected delivery" },
           });
           assert.equal((await fresh(row)).deadlineState, "OVERDUE");
           await patch(row, { status: "DONE" });
@@ -231,7 +229,8 @@ test(
           let view = await read(row);
           assert.equal(view.followUps[0].status, "CANCELLED");
           assert.equal(view.followUps[0].outcome, "TASK_CLOSED");
-          assert.equal(view.keyDates.length, 1);
+          assert.equal(view.keyDates.length, 0);
+          assert.deepEqual(await db.workKeyDate.findUnique({ where: { id: legacy.id } }), legacy);
           await reject(act(row, { action: "followup-create", date: date("2027-01-01") }));
           await patch(row, { status: "TODO" });
           const reopened = await fresh(row);
@@ -253,21 +252,22 @@ test(
         },
       );
       await t.test(
-        "key dates are informational, editable, owner-scoped and retained after removal",
+        "retired task key dates reject writes and preserve existing records privately",
         async () => {
           const row = await create();
-          await act(row, { action: "key-create", label: "Launch", date: date("2020-01-01") });
-          let view = await read(row),
-            item = view.keyDates[0];
-          assert.equal((await fresh(row)).deadlineState, null);
-          assert.equal((await fresh(row)).status, "NEW");
-          await act(row, {
-            action: "key-edit",
-            id: item.id,
-            label: "Delivery",
-            date: { kind: "TIME", local: "2027-01-01T12:00", timeZone: "UTC" },
+          const legacy = await db.workKeyDate.create({
+            data: { todoId: row.id, label: "Legacy delivery", date: "2020-01-01" },
           });
-          assert.equal((await read(row)).keyDates[0].label, "Delivery");
+          const before = await snapshot(row);
+          for (const body of [
+            { action: "key-create", label: "New", date: date("2027-01-01") },
+            { action: "key-edit", id: legacy.id, label: "Changed", date: date("2027-01-02") },
+            { action: "key-remove", id: legacy.id },
+          ])
+            await reject(act(row, body), 410);
+          assert.deepEqual(await snapshot(row), before);
+          assert.equal((await read(row)).keyDates.length, 0);
+          assert.deepEqual(await db.workKeyDate.findUnique({ where: { id: legacy.id } }), legacy);
           foreign = await db.user.create({
             data: { email: `${prefix}@invalid.test`, name: prefix },
           });
@@ -282,18 +282,6 @@ test(
             ),
             404,
           );
-          await reject(
-            act(row, {
-              action: "key-edit",
-              id: 2147483647,
-              label: "Foreign",
-              date: date("2026-11-10"),
-            }),
-            404,
-          );
-          await act(row, { action: "key-remove", id: item.id });
-          assert.equal((await read(row)).keyDates.length, 0);
-          assert.ok((await db.workKeyDate.findUnique({ where: { id: item.id } })).removedAt);
           await reject(api.deleteTodo(row.id, command(await fresh(row))));
         },
       );
@@ -381,10 +369,8 @@ test(
               action: "followup-complete",
               id: (await read(row)).activeFollowUp.id,
             });
-            await act(row, {
-              action: "key-create",
-              label: `Delivery ${index}`,
-              date: date("2027-01-01"),
+            await db.workKeyDate.create({
+              data: { todoId: row.id, label: `Legacy delivery ${index}`, date: "2027-01-01" },
             });
           }
           const first = await read(row),
@@ -393,11 +379,12 @@ test(
               new URLSearchParams({ page: "2", keyPage: "2" }),
             );
           assert.equal(first.total, 21);
-          assert.equal(first.keyTotal, 21);
+          assert.equal(first.keyTotal, 0);
           assert.equal(first.followUps.length, 20);
-          assert.equal(first.keyDates.length, 20);
+          assert.equal(first.keyDates.length, 0);
           assert.equal(last.followUps.length, 1);
-          assert.equal(last.keyDates.length, 1);
+          assert.equal(last.keyDates.length, 0);
+          assert.equal(await db.workKeyDate.count({ where: { todoId: row.id } }), 21);
           assert.ok(!first.followUps.some((item) => item.id === last.followUps[0].id));
           assert.equal((await fresh(row)).status, "NEW");
         },
@@ -405,7 +392,7 @@ test(
       await t.test(
         "late audit failure rolls back deadline, follow-up replacement, retirement and rewards",
         async () => {
-          const row = await create({ rewardXp: 30 });
+          const row = await create({ rewardXp: 0 });
           await act(row, { action: "followup-create", date: date("2026-11-10") });
           const failDb = {
             $transaction: (action, options) =>

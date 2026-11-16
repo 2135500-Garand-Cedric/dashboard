@@ -1,3 +1,4 @@
+import { timeZoneTestDependency } from "./helpers/time-zone.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
@@ -9,8 +10,11 @@ function load(file, dependencies = {}) {
   }).outputText;
   const exports = {};
   new Function("exports", "require", code)(exports, (name) => {
-    assert.ok(name in dependencies, `Missing test dependency ${name}`);
-    return dependencies[name];
+    assert.ok(
+      name in dependencies || timeZoneTestDependency(name),
+      `Missing test dependency ${name}`,
+    );
+    return dependencies[name] ?? timeZoneTestDependency(name);
   });
   return exports;
 }

@@ -6,17 +6,15 @@ import {
   PRIORITY_LABELS,
   KIND_LABELS,
   priorityOf,
-  type WorkContext,
+  type WorkActivityType,
   type WorkTodo,
 } from "@/lib/work-management/types";
 export type TaskFoundationDraft = {
   priorityLevel: WorkTodo["priorityLevel"];
   contextId: number | null;
+  activityTypeId: number | null;
   kind: WorkTodo["kind"];
-  company: string;
-  course: string;
   system: string;
-  tags: string;
   desiredOutcome: string;
   nextAction: string;
   waitingOn: string;
@@ -27,11 +25,9 @@ export function foundationDraft(task: WorkTodo): TaskFoundationDraft {
   return {
     priorityLevel: priorityOf(task),
     contextId: task.contextId ?? null,
+    activityTypeId: task.activityTypeId ?? null,
     kind: task.kind ?? null,
-    company: task.company ?? "",
-    course: task.course ?? "",
     system: task.system ?? "",
-    tags: (task.tags ?? []).join(", "),
     desiredOutcome: task.desiredOutcome ?? "",
     nextAction: task.nextAction ?? "",
     waitingOn: task.waitingOn ?? "",
@@ -40,13 +36,19 @@ export function foundationDraft(task: WorkTodo): TaskFoundationDraft {
   };
 }
 export function foundationPayload(draft: TaskFoundationDraft) {
-  return {
-    ...draft,
-    tags: draft.tags
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean),
-  };
+  const fields: (keyof TaskFoundationDraft)[] = [
+    "priorityLevel",
+    "contextId",
+    "activityTypeId",
+    "kind",
+    "system",
+    "desiredOutcome",
+    "nextAction",
+    "waitingOn",
+    "waitingReason",
+    "workaround",
+  ];
+  return Object.fromEntries(fields.map((field) => [field, draft[field]]));
 }
 const inputClass =
   "min-w-0 w-full rounded-lg border border-card-border bg-card-bg px-3 py-2 text-foreground";
@@ -54,7 +56,7 @@ export default function TaskFoundationFields({
   task,
   draft,
   onChange,
-  contexts,
+  activityTypes,
   editing,
   disabled,
   section = "all",
@@ -62,22 +64,22 @@ export default function TaskFoundationFields({
   task: WorkTodo;
   draft: TaskFoundationDraft;
   onChange: (value: TaskFoundationDraft) => void;
-  contexts: WorkContext[];
+  activityTypes: WorkActivityType[];
   editing: boolean;
   disabled: boolean;
   section?: "all" | "main" | "metadata";
 }) {
   const textFields: {
-    key: Exclude<keyof TaskFoundationDraft, "contextId" | "priorityLevel" | "kind">;
+    key: Exclude<
+      keyof TaskFoundationDraft,
+      "contextId" | "activityTypeId" | "priorityLevel" | "kind"
+    >;
     label: string;
     multiline?: boolean;
   }[] = [
     { key: "desiredOutcome", label: "Desired outcome", multiline: true },
     { key: "nextAction", label: "Next action" },
-    { key: "company", label: "Company" },
-    { key: "course", label: "Course" },
     { key: "system", label: "System" },
-    { key: "tags", label: "Tags (comma separated)" },
     { key: "waitingOn", label: "Waiting on" },
     { key: "waitingReason", label: "Waiting reason", multiline: true },
     { key: "workaround", label: "Workaround", multiline: true },
@@ -119,23 +121,23 @@ export default function TaskFoundationFields({
             )}
           </label>
           <label className="block text-sm">
-            Context
+            Activity type
             {editing ? (
               <select
-                aria-label="Context"
-                value={draft.contextId ?? ""}
+                aria-label="Activity type"
+                value={draft.activityTypeId ?? ""}
                 disabled={disabled}
                 onChange={(event) =>
                   onChange({
                     ...draft,
-                    contextId: event.target.value ? Number(event.target.value) : null,
+                    activityTypeId: event.target.value ? Number(event.target.value) : null,
                   })
                 }
                 className={inputClass}
               >
                 <option value="">Unclassified</option>
-                {contexts
-                  .filter((context) => context.active || context.id === draft.contextId)
+                {activityTypes
+                  .filter((context) => context.active || context.id === draft.activityTypeId)
                   .map((context) => (
                     <option key={context.id} value={context.id}>
                       {context.name}
@@ -144,7 +146,7 @@ export default function TaskFoundationFields({
                   ))}
               </select>
             ) : (
-              <p className="mt-1 font-medium">{task.context?.name ?? "Unclassified"}</p>
+              <p className="mt-1 font-medium">{task.activityType?.name ?? "Unclassified"}</p>
             )}
           </label>
           <label className="block text-sm">
@@ -219,9 +221,7 @@ export default function TaskFoundationFields({
                   />
                 )
               ) : (
-                <p className="mt-1 whitespace-pre-wrap break-words">
-                  {field.key === "tags" ? task.tags?.join(", ") : task[field.key]}
-                </p>
+                <p className="mt-1 whitespace-pre-wrap break-words">{task[field.key]}</p>
               )}
             </label>
           ))}

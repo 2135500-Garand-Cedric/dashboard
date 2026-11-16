@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
-import { APP_TIME_ZONE } from "@/lib/app-time-zone";
+import { getAppTimeZone } from "@/lib/time-zone-context";
 import { mutation, version, todoRow, getTodoInDb, WORK_USER_ID } from "./server";
 import { appendTaskActivity } from "./activity-server";
 import { projectRow, projectReference, appendProjectActivity } from "./project-core";
@@ -29,8 +29,8 @@ export async function projectCounts(db: DB, id: number) {
     archived = 0;
   for (const group of groups) {
     if (group.archivedAt) archived += group._count;
-    else if (group.status === "CANCELLED") cancelled += group._count;
-    else {
+    if (group.status === "CANCELLED") cancelled += group._count;
+    else if (!group.archivedAt || group.status === "DONE") {
       total += group._count;
       if (group.status === "DONE") completed += group._count;
     }
@@ -42,7 +42,7 @@ export async function getProjectInDb(db: DB, id: number) {
   return {
     ...row,
     reference: projectReference(id),
-    timeZone: APP_TIME_ZONE,
+    timeZone: getAppTimeZone(),
     counts: await projectCounts(db, id),
     stages: await db.workProjectStage.findMany({
       where: { projectId: id },
@@ -55,7 +55,7 @@ export const getProject = (id: number) =>
 export async function listProjects(params: URLSearchParams) {
   const q = (params.get("q") || "").trim(),
     view = params.get("view") || "active",
-    context = params.get("context"),
+    activityType = params.get("activityType"),
     requested = params.has("page") ? workId(params.get("page")) : 1;
   if (q.length > 500 || !["active", "history", "archived", "all"].includes(view))
     throw new WorkValidationError("Choose valid project search filters.");
@@ -71,7 +71,9 @@ export async function listProjects(params: URLSearchParams) {
       : view === "history"
         ? { status: { in: ["COMPLETED", "CANCELLED"] } }
         : {}),
-    ...(context ? { contextId: context === "none" ? null : workId(context) } : {}),
+    ...(activityType
+      ? { activityTypeId: activityType === "none" ? null : workId(activityType) }
+      : {}),
     ...(q
       ? {
           OR: [
@@ -90,6 +92,7 @@ export async function listProjects(params: URLSearchParams) {
         page = Math.min(requested, Math.max(1, Math.ceil(total / 30)));
       const rows = await db.workProject.findMany({
         where,
+        include: { activityType: true },
         orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
         take: 30,
         skip: (page - 1) * 30,
@@ -110,7 +113,15 @@ export async function listProjects(params: URLSearchParams) {
     { isolationLevel: "RepeatableRead" },
   );
 }
-const fields = ["name", "objective", "summary", "contextId", "startDate", "targetDate"];
+const fields = [
+  "name",
+  "objective",
+  "summary",
+  "contextId",
+  "activityTypeId",
+  "startDate",
+  "targetDate",
+];
 function projectFields(body: Record<string, unknown>) {
   const result: Record<string, unknown> = {};
   for (const field of ["name", "objective", "summary"])
@@ -123,6 +134,8 @@ function projectFields(body: Record<string, unknown>) {
       );
   if (body.contextId !== undefined)
     result.contextId = body.contextId === null ? null : workId(body.contextId);
+  if (body.activityTypeId !== undefined)
+    result.activityTypeId = body.activityTypeId === null ? null : workId(body.activityTypeId);
   for (const field of ["startDate", "targetDate"])
     if (body[field] !== undefined)
       result[field] = body[field] === null ? null : calendarDate(body[field]);
@@ -145,6 +158,14 @@ async function validateFields(
     }))
   )
     throw new WorkValidationError("Choose an active context belonging to the owner.");
+  const activityTypeId =
+    data.activityTypeId === undefined ? previous?.activityTypeId : data.activityTypeId;
+  if (
+    activityTypeId != null &&
+    activityTypeId !== previous?.activityTypeId &&
+    !(await db.activityType.count({ where: { id: Number(activityTypeId), active: true } }))
+  )
+    throw new WorkValidationError("Choose an active calendar activity type.");
   const start = data.startDate === undefined ? previous?.startDate : data.startDate,
     end = data.targetDate === undefined ? previous?.targetDate : data.targetDate;
   if (start && end && String(start) > String(end))
@@ -372,7 +393,7 @@ export async function projectMilestones(id: number) {
       const row = await projectRow(db, id);
       return {
         projectRevision: row.revision,
-        timeZone: APP_TIME_ZONE,
+        timeZone: getAppTimeZone(),
         items: await db.workKeyDate.findMany({
           where: { projectId: id, todoId: null, removedAt: null },
           orderBy: { id: "asc" },
@@ -389,7 +410,9 @@ export async function projectMilestoneCommand(id: number, value: unknown, comman
   if (!["create", "edit", "remove", "complete"].includes(action))
     throw new WorkValidationError("Choose a valid milestone action.");
   const recordId = action === "create" ? null : workId(body.id);
-  const date = ["create", "edit"].includes(action) ? parseWorkDate(body.date, APP_TIME_ZONE) : null;
+  const date = ["create", "edit"].includes(action)
+    ? parseWorkDate(body.date, getAppTimeZone())
+    : null;
   const label = date ? workText(body.label, "milestone label", 120)! : null;
   if (action === "complete" && typeof body.completed !== "boolean")
     throw new WorkValidationError("Choose the milestone completion state.");

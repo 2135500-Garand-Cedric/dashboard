@@ -1,6 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
+import ActivityNotes from "./ActivityNotes";
+import type { StatementPrefill } from "@/lib/finance/statement-prefill";
+import { localToday } from "@/lib/work-management/date-format";
+import { useSettings } from "@/context/SettingsContext";
 import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
 import { useSnackbar } from "@/context/SnackbarContext";
@@ -11,9 +16,9 @@ import {
   type DeductionType,
   type FinanceIncome,
 } from "@/lib/finance/income";
-import { MAX_RECEIPT_BYTES, receiptMoney } from "@/lib/finance/receipts";
-import type { FinanceAccount, FinanceCategory } from "@/lib/finance/validation";
-import { displayAmount, type TransactionPage } from "@/lib/finance/transactions";
+import { MAX_RECEIPT_BYTES } from "@/lib/finance/receipts";
+import type { FinanceAccount } from "@/lib/finance/validation";
+import { displayAmount, type FinanceTransaction } from "@/lib/finance/transactions";
 import FinanceDocumentPanel from "./FinanceDocumentPanel";
 import {
   fieldClass,
@@ -25,32 +30,113 @@ import {
   useFinanceData,
 } from "./shared";
 
+// Keep the server-provided currency list identical during hydration.
+export function NewIncomeEditor({
+  currencies,
+  prefill,
+}: {
+  currencies: string[];
+  prefill?: StatementPrefill;
+}) {
+  const { timeZone } = useSettings();
+  return (
+    <IncomeEditor
+      initialDate={localToday(new Date(), timeZone)}
+      currencies={currencies}
+      unified
+      prefill={prefill}
+    />
+  );
+}
+
 export default function IncomeEditor({
   id,
   initialDate,
   currencies,
+  initialTransaction,
+  prefill,
+  unified = false,
+  onSaved,
+  readOnly,
+  headerMeta,
+  headerActions,
+  notesTransaction,
 }: {
+  initialTransaction?: FinanceTransaction;
+  prefill?: StatementPrefill;
+  unified?: boolean;
+  onSaved?: () => void;
+  readOnly?: boolean;
+  headerMeta?: ReactNode;
+  headerActions?: ReactNode;
+  notesTransaction?: FinanceTransaction;
   id?: string;
   initialDate?: string;
   currencies: string[];
 }) {
   return id ? (
-    <ExistingIncome id={id} currencies={currencies} />
+    <ExistingIncome
+      id={id}
+      currencies={currencies}
+      unified={unified}
+      onSaved={onSaved}
+      readOnly={readOnly}
+      headerMeta={headerMeta}
+      headerActions={headerActions}
+      notesTransaction={notesTransaction}
+    />
   ) : (
-    <IncomeForm initialDate={initialDate!} currencies={currencies} />
+    <IncomeForm
+      readOnly={readOnly}
+      headerMeta={headerMeta}
+      headerActions={headerActions}
+      notesTransaction={notesTransaction}
+      initialDate={initialDate!}
+      currencies={currencies}
+      initialTransaction={initialTransaction}
+      prefill={prefill}
+      refresh={onSaved}
+      unified={unified}
+    />
   );
 }
-function ExistingIncome({ id, currencies }: { id: string; currencies: string[] }) {
+function ExistingIncome({
+  id,
+  currencies,
+  unified,
+  onSaved,
+  readOnly,
+  headerMeta,
+  headerActions,
+  notesTransaction,
+}: {
+  onSaved?: () => void;
+  readOnly?: boolean;
+  headerMeta?: ReactNode;
+  headerActions?: ReactNode;
+  notesTransaction?: FinanceTransaction;
+  id: string;
+  currencies: string[];
+  unified: boolean;
+}) {
   const result = useFinanceData<{ record: FinanceIncome }>(`/api/finance/income/${id}`);
   if (result.error) return <FinanceLoadError error={result.error} retry={result.retry} />;
   if (result.loading || !result.data) return <p role="status">Loading income record…</p>;
   return (
     <IncomeForm
       key={result.data.record.updatedAt}
+      readOnly={readOnly}
+      headerMeta={headerMeta}
+      headerActions={headerActions}
+      notesTransaction={notesTransaction}
       existing={result.data.record}
+      unified={unified}
       initialDate={result.data.record.date}
       currencies={currencies}
-      refresh={result.retry}
+      refresh={() => {
+        result.retry();
+        onSaved?.();
+      }}
     />
   );
 }
@@ -59,30 +145,45 @@ function IncomeForm({
   initialDate,
   currencies,
   refresh,
+  readOnly,
+  headerMeta,
+  headerActions,
+  notesTransaction,
+  initialTransaction,
+  prefill,
+  unified,
 }: {
+  initialTransaction?: FinanceTransaction;
+  prefill?: StatementPrefill;
+  unified: boolean;
   existing?: FinanceIncome;
   initialDate: string;
   currencies: string[];
   refresh?: () => void;
+  readOnly?: boolean;
+  headerMeta?: ReactNode;
+  headerActions?: ReactNode;
+  notesTransaction?: FinanceTransaction;
 }) {
   const accounts = useFinanceData<{ accounts: FinanceAccount[] }>("/api/finance/accounts");
-  const categories = useFinanceData<{ categories: FinanceCategory[] }>("/api/finance/categories");
   const sources = useFinanceData<{ sources: IncomeSource[] }>("/api/finance/income-sources");
   const types = useFinanceData<{ types: DeductionType[] }>("/api/finance/deduction-types");
   const [draft, setDraft] = useState(() => ({
     sourceId: String(existing?.source?.id ?? ""),
-    description: existing?.description ?? "",
-    date: initialDate,
+    description:
+      existing?.description ?? initialTransaction?.description ?? prefill?.description ?? "",
+    date: initialTransaction?.date ?? prefill?.date ?? initialDate,
     periodStart: existing?.periodStart ?? "",
     periodEnd: existing?.periodEnd ?? "",
-    accountId: String(existing?.account?.id ?? ""),
-    categoryId: String(existing?.category?.id ?? ""),
-    currency: existing?.currency ?? "CAD",
+    accountId: String(
+      existing?.account?.id ?? initialTransaction?.account.id ?? prefill?.accountId ?? "",
+    ),
+    currency: existing?.currency ?? initialTransaction?.currency ?? prefill?.currency ?? "CAD",
     grossAmount: existing?.grossAmount ?? "",
-    netAmount: existing?.netAmount ?? "",
-    notes: existing?.notes ?? "",
-    transactionAction: existing?.transaction ? "LINK" : "UNMATCHED",
-    transactionId: String(existing?.transaction?.id ?? ""),
+    netAmount: existing?.netAmount ?? initialTransaction?.amount ?? prefill?.amount ?? "",
+    notes: existing?.notes ?? initialTransaction?.notes ?? "",
+    transactionAction: existing?.transaction || initialTransaction ? "LINK" : "CREATE",
+    transactionId: String(existing?.transaction?.id ?? initialTransaction?.id ?? ""),
   }));
   const [deductions, setDeductions] = useState(
     () =>
@@ -94,8 +195,6 @@ function IncomeForm({
     [failure, setFailure] = useState<FinanceRequestError | null>(null);
   const [acknowledge, setAcknowledge] = useState(false),
     [confirmation, setConfirmation] = useState<"record" | "document" | null>(null);
-  const [depositSearch, setDepositSearch] = useState(""),
-    [depositDate, setDepositDate] = useState("");
   const requestKey = useRef<string | null>(null),
     guard = useRef(false),
     router = useRouter(),
@@ -109,10 +208,6 @@ function IncomeForm({
   const accountOptions =
     accounts.data?.accounts.filter((item) => item.active || item.id === existing?.account?.id) ??
     [];
-  const categoryOptions =
-    categories.data?.categories.filter(
-      (item) => item.type === "INCOME" && (item.active || item.id === existing?.category?.id),
-    ) ?? [];
   const typeOptions =
     types.data?.types.filter(
       (item) => item.active || existing?.deductions.some((line) => line.typeId === item.id),
@@ -124,32 +219,7 @@ function IncomeForm({
     /* Wait for valid decimal fields. */
   }
   const mismatch = amounts?.difference != null && amounts.difference !== "0.0000";
-  const params = new URLSearchParams({
-    type: "INCOME",
-    account: draft.accountId,
-    currency: draft.currency,
-    search: depositSearch,
-  });
-  if (depositDate) {
-    params.set("from", depositDate);
-    params.set("to", depositDate);
-  }
-  const deposits = useFinanceData<TransactionPage>(`/api/finance/transactions?${params}`);
-  const eligible =
-    deposits.data?.transactions.filter((transaction) => {
-      try {
-        return (
-          transaction.type === "INCOME" &&
-          transaction.account.id === Number(draft.accountId) &&
-          transaction.currency === draft.currency &&
-          receiptMoney(transaction.amount) === receiptMoney(draft.netAmount)
-        );
-      } catch {
-        return false;
-      }
-    }) ?? [];
-  const selectedDeposit = eligible.find((item) => String(item.id) === draft.transactionId);
-  const loads = [accounts, categories, sources, types];
+  const loads = [accounts, sources, types];
   const disabled = busy || loads.some((result) => result.loading || !!result.error);
   const showFailure = (error: unknown) => {
     const failure =
@@ -172,8 +242,7 @@ function IncomeForm({
       const details = {
         ...draft,
         sourceId: Number(draft.sourceId),
-        accountId: draft.accountId ? Number(draft.accountId) : null,
-        categoryId: Number(draft.categoryId),
+        accountId: Number(draft.accountId),
         periodStart: draft.periodStart || null,
         periodEnd: draft.periodEnd || null,
         grossAmount: draft.grossAmount || null,
@@ -183,6 +252,7 @@ function IncomeForm({
         })),
         transactionId: draft.transactionAction === "LINK" ? Number(draft.transactionId) : null,
         acknowledgeMismatch: acknowledge,
+        syncMovement: unified,
         ...(existing
           ? { expectedUpdatedAt: existing.updatedAt }
           : { requestKey: requestKey.current }),
@@ -195,7 +265,10 @@ function IncomeForm({
         { method: existing ? "PATCH" : "POST", body },
       );
       showMessage("Income record saved successfully.");
-      if (existing) refresh?.();
+      refresh?.();
+      if (result.record.transaction)
+        router.push(`/finance/income/deposits/${result.record.transaction.id}`);
+      else if (existing) refresh?.();
       else router.push(`/finance/income/${result.record.id}`);
     } catch (error) {
       showFailure(error);
@@ -234,15 +307,9 @@ function IncomeForm({
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
   return (
-    <div className="space-y-5">
-      {existing && (
+    <div className="min-w-0 space-y-5">
+      {existing && !unified && (
         <section className="card space-y-3">
-          <Link
-            href={`/finance/reconciliation?kind=INCOME&source=${existing.id}`}
-            className={secondaryButton}
-          >
-            Reconcile income deposits
-          </Link>
           {!!existing.allocations?.length && (
             <div className="flex flex-wrap gap-3">
               {existing.allocations.map((allocation) => (
@@ -263,13 +330,14 @@ function IncomeForm({
         </section>
       )}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-2xl font-semibold">
-          {existing ? "Income details" : "New income record"}
-        </h2>
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <h2 className="text-2xl font-semibold">
+            {existing ? "Income details" : "New income record"}
+          </h2>
+          {headerMeta}
+        </div>
         <div className="flex flex-wrap gap-2">
-          <Link href="/finance/income/settings" className={secondaryButton}>
-            Sources & deductions
-          </Link>
+          {headerActions}
           <Link href="/finance/income" className={secondaryButton}>
             ← Income history
           </Link>
@@ -355,295 +423,286 @@ function IncomeForm({
         </div>
       )}
       <form onSubmit={save}>
-        <fieldset disabled={disabled} className="grid min-w-0 items-start gap-5 xl:grid-cols-2">
+        <fieldset
+          disabled={!readOnly && disabled}
+          className="grid min-w-0 items-start gap-5 xl:grid-cols-2"
+        >
           <section className="card min-w-0 space-y-4">
             <h3 className="text-lg font-semibold">Income information</h3>
-            <label className="block space-y-1">
-              Employer / income source
-              <select
-                aria-label="Employer / income source"
-                required
-                value={draft.sourceId}
-                className={fieldClass}
-                onChange={(event) => patch("sourceId", event.target.value)}
-              >
-                <option value="">Choose a source</option>
-                {sourceOptions.map((source) => (
-                  <option key={source.id} value={source.id}>
-                    {source.name} · {INCOME_KINDS[source.kind]}
-                    {source.active ? "" : " (inactive)"}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {!sources.loading && !sourceOptions.length && (
-              <Link href="/finance/income/settings" className={secondaryButton}>
-                Add an income source
-              </Link>
-            )}
-            <label className="block space-y-1">
-              Description
-              <input
-                aria-label="Income description"
-                required
-                maxLength={300}
-                value={draft.description}
-                className={fieldClass}
-                placeholder="Paycheque, gift, interest, reimbursement…"
-                onChange={(event) => patch("description", event.target.value)}
-              />
-            </label>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <fieldset disabled={readOnly} className="min-w-0 space-y-4">
               <label className="block space-y-1">
-                Pay date
-                <input
-                  aria-label="Pay date"
-                  type="date"
-                  required
-                  value={draft.date}
-                  className={fieldClass}
-                  onChange={(event) => patch("date", event.target.value)}
-                />
-              </label>
-              <label className="block space-y-1">
-                Currency
+                Employer / income source
                 <select
-                  aria-label="Income currency"
+                  aria-label="Employer / income source"
+                  required
+                  value={draft.sourceId}
                   className={fieldClass}
-                  value={draft.currency}
-                  onChange={(event) => patch("currency", event.target.value)}
+                  onChange={(event) => patch("sourceId", event.target.value)}
                 >
-                  {currencies.map((currency) => (
-                    <option key={currency}>{currency}</option>
+                  <option value="">Choose a source</option>
+                  {sourceOptions.map((source) => (
+                    <option key={source.id} value={source.id}>
+                      {source.name} · {INCOME_KINDS[source.kind]}
+                      {source.active ? "" : " (inactive)"}
+                    </option>
                   ))}
                 </select>
               </label>
+              {!sources.loading && !sourceOptions.length && (
+                <Link href="/finance/settings/income-sources" className={secondaryButton}>
+                  Add an income source
+                </Link>
+              )}
               <label className="block space-y-1">
-                Pay period start (optional)
+                Description
                 <input
-                  aria-label="Pay period start"
-                  type="date"
-                  required={!!draft.periodEnd}
-                  value={draft.periodStart}
-                  className={fieldClass}
-                  onChange={(event) => patch("periodStart", event.target.value)}
-                />
-              </label>
-              <label className="block space-y-1">
-                Pay period end (optional)
-                <input
-                  aria-label="Pay period end"
-                  type="date"
-                  required={!!draft.periodStart}
-                  min={draft.periodStart || undefined}
-                  value={draft.periodEnd}
-                  className={fieldClass}
-                  onChange={(event) => patch("periodEnd", event.target.value)}
-                />
-              </label>
-              <label className="block space-y-1">
-                Gross income (optional)
-                <input
-                  aria-label="Gross income"
-                  inputMode="decimal"
-                  maxLength={20}
-                  autoComplete="off"
-                  value={draft.grossAmount}
-                  className={fieldClass}
-                  onChange={(event) => patch("grossAmount", event.target.value)}
-                />
-              </label>
-              <label className="block space-y-1">
-                Net income
-                <input
-                  aria-label="Net income"
-                  inputMode="decimal"
+                  aria-label="Income description"
                   required
-                  maxLength={20}
-                  autoComplete="off"
-                  value={draft.netAmount}
+                  maxLength={300}
+                  value={draft.description}
                   className={fieldClass}
-                  onChange={(event) => patch("netAmount", event.target.value)}
+                  placeholder="Paycheque, gift, interest, reimbursement…"
+                  onChange={(event) => patch("description", event.target.value)}
                 />
               </label>
-            </div>
-            <section className="space-y-3 border-t border-card-border pt-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="font-semibold">Deductions</h3>
-                <button
-                  type="button"
-                  className={secondaryButton}
-                  disabled={
-                    deductions.length >= 30 ||
-                    !typeOptions.some(
-                      (type) =>
-                        type.active && !deductions.some((line) => Number(line.typeId) === type.id),
-                    )
-                  }
-                  onClick={() => {
-                    const type = typeOptions.find(
-                      (type) =>
-                        type.active && !deductions.some((line) => Number(line.typeId) === type.id),
-                    );
-                    setDeductions([...deductions, { typeId: String(type?.id ?? ""), amount: "0" }]);
-                    setAcknowledge(false);
-                  }}
-                >
-                  Add deduction
-                </button>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block space-y-1">
+                  Pay date
+                  <input
+                    aria-label="Pay date"
+                    type="date"
+                    required
+                    value={draft.date}
+                    className={fieldClass}
+                    onChange={(event) => patch("date", event.target.value)}
+                  />
+                </label>
+                <label className="block space-y-1">
+                  Currency
+                  <select
+                    aria-label="Income currency"
+                    className={fieldClass}
+                    value={draft.currency}
+                    onChange={(event) => patch("currency", event.target.value)}
+                  >
+                    {currencies.map((currency) => (
+                      <option key={currency}>{currency}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block space-y-1">
+                  Pay period start (optional)
+                  <input
+                    aria-label="Pay period start"
+                    type="date"
+                    required={!!draft.periodEnd}
+                    value={draft.periodStart}
+                    className={fieldClass}
+                    onChange={(event) => patch("periodStart", event.target.value)}
+                  />
+                </label>
+                <label className="block space-y-1">
+                  Pay period end (optional)
+                  <input
+                    aria-label="Pay period end"
+                    type="date"
+                    required={!!draft.periodStart}
+                    min={draft.periodStart || undefined}
+                    value={draft.periodEnd}
+                    className={fieldClass}
+                    onChange={(event) => patch("periodEnd", event.target.value)}
+                  />
+                </label>
+                <label className="block space-y-1">
+                  Gross income (optional)
+                  <input
+                    aria-label="Gross income"
+                    inputMode="decimal"
+                    maxLength={20}
+                    autoComplete="off"
+                    value={draft.grossAmount}
+                    className={fieldClass}
+                    onChange={(event) => patch("grossAmount", event.target.value)}
+                  />
+                </label>
+                <label className="block space-y-1">
+                  Net income
+                  <input
+                    aria-label="Net income"
+                    inputMode="decimal"
+                    required
+                    maxLength={20}
+                    autoComplete="off"
+                    value={draft.netAmount}
+                    className={fieldClass}
+                    onChange={(event) => patch("netAmount", event.target.value)}
+                  />
+                </label>
               </div>
-              {deductions.map((line, index) => (
-                <div
-                  key={index}
-                  className="grid min-w-0 gap-2 rounded-lg border border-card-border p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
-                >
-                  <label className="block space-y-1 text-sm">
-                    Type
-                    <select
-                      aria-label={`Deduction ${index + 1} type`}
-                      required
-                      className={fieldClass}
-                      value={line.typeId}
-                      onChange={(event) => {
-                        setDeductions(
-                          deductions.map((item, i) =>
-                            i === index ? { ...item, typeId: event.target.value } : item,
-                          ),
-                        );
-                        setAcknowledge(false);
-                      }}
-                    >
-                      <option value="">Choose a type</option>
-                      {typeOptions
-                        .filter(
-                          (type) =>
-                            String(type.id) === line.typeId ||
-                            !deductions.some((item) => Number(item.typeId) === type.id),
-                        )
-                        .map((type) => (
-                          <option key={type.id} value={type.id}>
-                            {type.name}
-                            {type.active ? "" : " (inactive)"}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
-                  <label className="block space-y-1 text-sm">
-                    Amount
-                    <input
-                      aria-label={`Deduction ${index + 1} amount`}
-                      required
-                      inputMode="decimal"
-                      maxLength={20}
-                      autoComplete="off"
-                      className={fieldClass}
-                      value={line.amount}
-                      onChange={(event) => {
-                        setDeductions(
-                          deductions.map((item, i) =>
-                            i === index ? { ...item, amount: event.target.value } : item,
-                          ),
-                        );
-                        setAcknowledge(false);
-                      }}
-                    />
-                  </label>
+              <section className="space-y-3 border-t border-card-border pt-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-semibold">Deductions</h3>
                   <button
                     type="button"
-                    className={`${secondaryButton} self-end`}
-                    aria-label={`Remove deduction ${index + 1}`}
+                    className={secondaryButton}
+                    disabled={
+                      deductions.length >= 30 ||
+                      !typeOptions.some(
+                        (type) =>
+                          type.active &&
+                          !deductions.some((line) => Number(line.typeId) === type.id),
+                      )
+                    }
                     onClick={() => {
-                      setDeductions(deductions.filter((_, i) => i !== index));
+                      const type = typeOptions.find(
+                        (type) =>
+                          type.active &&
+                          !deductions.some((line) => Number(line.typeId) === type.id),
+                      );
+                      setDeductions([
+                        ...deductions,
+                        { typeId: String(type?.id ?? ""), amount: "0" },
+                      ]);
                       setAcknowledge(false);
                     }}
                   >
-                    Remove
+                    Add deduction
                   </button>
                 </div>
-              ))}
-              {!deductions.length && (
-                <p className="text-sm text-gray-400">No deductions. Add lines when applicable.</p>
-              )}
-              <Link href="/finance/income/settings" className={secondaryButton}>
-                Manage deduction types
-              </Link>
-              {amounts && (
-                <p className="text-sm">
-                  Total deductions:{" "}
-                  {displayAmount(amounts.deductionsTotal, draft.currency).replace(/^\+/, "")}
-                </p>
-              )}
-              {mismatch && (
-                <div
-                  role="alert"
-                  className="space-y-2 rounded-lg bg-amber-500/10 p-3 text-sm text-amber-500"
-                >
-                  <p>
-                    Gross minus deductions does not equal net. Difference: {amounts?.difference}{" "}
-                    {draft.currency}.
-                  </p>
-                  <label className="flex items-start gap-2">
-                    <input
-                      type="checkbox"
-                      required
-                      checked={acknowledge}
-                      onChange={(event) => setAcknowledge(event.target.checked)}
-                    />
-                    Keep these amounts despite the difference
-                  </label>
-                </div>
-              )}
-            </section>
-            <label className="block space-y-1">
-              Income category
-              <select
-                aria-label="Income category"
-                required
-                className={fieldClass}
-                value={draft.categoryId}
-                onChange={(event) => patch("categoryId", event.target.value)}
-              >
-                <option value="">Choose a category</option>
-                {categoryOptions.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                    {category.active ? "" : " (inactive)"}
-                  </option>
+                {deductions.map((line, index) => (
+                  <div
+                    key={index}
+                    className="grid min-w-0 gap-2 rounded-lg border border-card-border p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+                  >
+                    <label className="block space-y-1 text-sm">
+                      Type
+                      <select
+                        aria-label={`Deduction ${index + 1} type`}
+                        required
+                        className={fieldClass}
+                        value={line.typeId}
+                        onChange={(event) => {
+                          setDeductions(
+                            deductions.map((item, i) =>
+                              i === index ? { ...item, typeId: event.target.value } : item,
+                            ),
+                          );
+                          setAcknowledge(false);
+                        }}
+                      >
+                        <option value="">Choose a type</option>
+                        {typeOptions
+                          .filter(
+                            (type) =>
+                              String(type.id) === line.typeId ||
+                              !deductions.some((item) => Number(item.typeId) === type.id),
+                          )
+                          .map((type) => (
+                            <option key={type.id} value={type.id}>
+                              {type.name}
+                              {type.active ? "" : " (inactive)"}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <label className="block space-y-1 text-sm">
+                      Amount
+                      <input
+                        aria-label={`Deduction ${index + 1} amount`}
+                        required
+                        inputMode="decimal"
+                        maxLength={20}
+                        autoComplete="off"
+                        className={fieldClass}
+                        value={line.amount}
+                        onChange={(event) => {
+                          setDeductions(
+                            deductions.map((item, i) =>
+                              i === index ? { ...item, amount: event.target.value } : item,
+                            ),
+                          );
+                          setAcknowledge(false);
+                        }}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className={`${secondaryButton} self-end`}
+                      aria-label={`Remove deduction ${index + 1}`}
+                      onClick={() => {
+                        setDeductions(deductions.filter((_, i) => i !== index));
+                        setAcknowledge(false);
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
                 ))}
-              </select>
-            </label>
-            {!categories.loading && !categoryOptions.length && (
-              <Link href="/finance/categories" className={secondaryButton}>
-                Add an income category
-              </Link>
-            )}
-            <label className="block space-y-1">
-              Notes (optional)
-              <textarea
-                aria-label="Income notes"
-                rows={3}
-                maxLength={2000}
-                className={fieldClass}
-                value={draft.notes}
-                onChange={(event) => patch("notes", event.target.value)}
-              />
-            </label>
-            <section className="space-y-3 border-t border-card-border pt-4">
-              <h3 className="font-semibold">Bank deposit</h3>
-              <p className="text-sm text-gray-400">
-                Gross and deductions describe earnings. Only a transaction records money received.
-                Linking a deposit does not add income again.
-              </p>
+                {!deductions.length && (
+                  <p className="text-sm text-gray-400">No deductions. Add lines when applicable.</p>
+                )}
+                {amounts && (
+                  <p className="text-sm">
+                    Total deductions:{" "}
+                    {displayAmount(amounts.deductionsTotal, draft.currency).replace(/^\+/, "")}
+                  </p>
+                )}
+                {mismatch && (
+                  <div
+                    role="alert"
+                    className="space-y-2 rounded-lg bg-amber-500/10 p-3 text-sm text-amber-500"
+                  >
+                    <p>
+                      Gross minus deductions does not equal net. Difference: {amounts?.difference}{" "}
+                      {draft.currency}.
+                    </p>
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        required
+                        checked={acknowledge}
+                        onChange={(event) => setAcknowledge(event.target.checked)}
+                      />
+                      Keep these amounts despite the difference
+                    </label>
+                  </div>
+                )}
+              </section>
+            </fieldset>
+            {readOnly && notesTransaction ? (
+              <ActivityNotes inline transaction={notesTransaction} onSaved={() => refresh?.()} />
+            ) : (
               <label className="block space-y-1">
-                Deposit account (optional while unmatched)
+                Notes (optional)
+                <textarea
+                  aria-label="Income notes"
+                  rows={3}
+                  maxLength={2000}
+                  className={fieldClass}
+                  value={draft.notes}
+                  onChange={(event) => patch("notes", event.target.value)}
+                />
+              </label>
+            )}
+            <fieldset disabled={readOnly} className="min-w-0 space-y-4">
+              <label className="block space-y-1">
+                Deposit account
                 <select
                   aria-label="Deposit account"
-                  required={draft.transactionAction !== "UNMATCHED"}
+                  required
                   className={fieldClass}
                   value={draft.accountId}
-                  onChange={(event) => patch("accountId", event.target.value)}
+                  onChange={(event) => {
+                    setDraft((previous) => ({
+                      ...previous,
+                      accountId: event.target.value,
+                      ...(!existing?.transaction
+                        ? { transactionAction: "CREATE", transactionId: "" }
+                        : {}),
+                    }));
+                  }}
                 >
-                  <option value="">No deposit account selected</option>
+                  <option value="">Choose a deposit account</option>
                   {accountOptions.map((account) => (
                     <option key={account.id} value={account.id}>
                       {account.name} · {account.currency}
@@ -652,124 +711,55 @@ function IncomeForm({
                   ))}
                 </select>
               </label>
-              <select
-                aria-label="Associated deposit"
-                className={fieldClass}
-                value={draft.transactionAction}
-                onChange={(event) => patch("transactionAction", event.target.value)}
-              >
-                <option value="UNMATCHED">Keep unmatched — no deposit created</option>
-                <option value="LINK">Link an existing income deposit</option>
-                <option value="CREATE" disabled={!!existing?.transaction}>
-                  Create a deposit for the net amount
-                </option>
-              </select>
-              {draft.transactionAction === "CREATE" && (
-                <p className="text-sm text-gray-400">
-                  Creates one income transaction for the net amount. Account and record currencies
-                  must match. Existing deposits are checked before saving.
-                </p>
+              {!accounts.loading && !accountOptions.length && (
+                <Link href="/finance/settings/accounts" className={secondaryButton}>
+                  Add a deposit account
+                </Link>
               )}
-              {draft.transactionAction === "LINK" && (
-                <>
-                  <label className="block space-y-1 text-sm">
-                    Find a deposit
-                    <input
-                      aria-label="Find a deposit"
-                      maxLength={200}
-                      className={fieldClass}
-                      value={depositSearch}
-                      onChange={(event) => setDepositSearch(event.target.value)}
-                    />
-                  </label>
-                  <label className="block space-y-1 text-sm">
-                    Deposit date (optional)
-                    <input
-                      aria-label="Find deposit date"
-                      type="date"
-                      className={fieldClass}
-                      value={depositDate}
-                      onChange={(event) => setDepositDate(event.target.value)}
-                    />
-                  </label>
-                  {deposits.error && (
-                    <FinanceLoadError error={deposits.error} retry={deposits.retry} />
-                  )}
-                  <label className="block space-y-1 text-sm">
-                    Existing deposit
-                    <select
-                      aria-label="Existing deposit"
-                      required
-                      className={fieldClass}
-                      value={draft.transactionId}
-                      onChange={(event) => patch("transactionId", event.target.value)}
-                    >
-                      <option value="">
-                        Choose a deposit with the same account, currency and net amount
-                      </option>
-                      {draft.transactionId && !selectedDeposit && (
-                        <option value={draft.transactionId}>
-                          {existing?.transaction?.id === Number(draft.transactionId)
-                            ? `${existing.transaction.date} · ${existing.transaction.description}`
-                            : `Selected deposit #${draft.transactionId}`}
-                        </option>
-                      )}
-                      {eligible.map((transaction) => (
-                        <option key={transaction.id} value={transaction.id}>
-                          {transaction.date} · {transaction.description} ·{" "}
-                          {displayAmount(transaction.amount, transaction.currency)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <p className="text-sm text-gray-400">
-                    Matches among the latest 25 search results. Search or filter by date to find
-                    older deposits. Pay date and bank posting date may differ.
-                  </p>
-                  {existing?.transaction && (
-                    <Link
-                      href={`/finance/transactions/${existing.transaction.id}`}
-                      className={secondaryButton}
-                    >
-                      View linked deposit
-                    </Link>
-                  )}
-                </>
-              )}
-            </section>
-            <div className="flex flex-wrap gap-2 pt-3">
-              <button type="submit" className={primaryButton}>
-                {busy ? "Saving…" : "Save income record"}
-              </button>
-              <Link href="/finance/income" className={secondaryButton}>
-                Cancel
-              </Link>
-              {existing && (
-                <button
-                  type="button"
-                  className={`${secondaryButton} text-rose-500`}
-                  onClick={() => confirm("record")}
+              {existing?.transaction && !unified && (
+                <Link
+                  href={`/finance/transactions/${existing.transaction.id}`}
+                  className={secondaryButton}
                 >
-                  Delete income record
-                </button>
+                  View linked deposit
+                </Link>
               )}
-            </div>
+              <div className="flex flex-wrap gap-2 pt-3">
+                <button type="submit" hidden={readOnly} className={primaryButton}>
+                  {busy ? "Saving…" : "Save income record"}
+                </button>
+                <Link href="/finance/income" className={secondaryButton}>
+                  Cancel
+                </Link>
+                {existing && !unified && (
+                  <button
+                    type="button"
+                    className={`${secondaryButton} text-rose-500`}
+                    onClick={() => confirm("record")}
+                  >
+                    Delete income record
+                  </button>
+                )}
+              </div>
+            </fieldset>
           </section>
-          <FinanceDocumentPanel
-            document={existing?.document ?? null}
-            baseUrl={existing ? `/api/finance/income/${existing.id}/document` : ""}
-            title="Pay stub"
-            file={file}
-            onFile={(chosen) => {
-              if (chosen && (!chosen.size || chosen.size > MAX_RECEIPT_BYTES)) {
-                showFailure(new FinanceRequestError("Choose an image or PDF up to 15 MB."));
-                return;
-              }
-              setFile(chosen);
-              setFailure(null);
-            }}
-            onDelete={() => confirm("document")}
-          />
+          <fieldset disabled={readOnly} className="min-w-0">
+            <FinanceDocumentPanel
+              document={existing?.document ?? null}
+              baseUrl={existing ? `/api/finance/income/${existing.id}/document` : ""}
+              title="Pay stub"
+              file={file}
+              onFile={(chosen) => {
+                if (chosen && (!chosen.size || chosen.size > MAX_RECEIPT_BYTES)) {
+                  showFailure(new FinanceRequestError("Choose an image or PDF up to 15 MB."));
+                  return;
+                }
+                setFile(chosen);
+                setFailure(null);
+              }}
+              onDelete={() => confirm("document")}
+            />
+          </fieldset>
         </fieldset>
       </form>
     </div>

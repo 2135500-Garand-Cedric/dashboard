@@ -1,3 +1,4 @@
+import { timeZoneTestDependency } from "./helpers/time-zone.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
@@ -19,7 +20,10 @@ function load(file, deps = {}) {
     },
   }).outputText;
   const exports = {};
-  new Function("exports", "require", compiled)(exports, (name) => deps[name] ?? require(name));
+  new Function("exports", "require", compiled)(
+    exports,
+    (name) => deps[name] ?? timeZoneTestDependency(name) ?? require(name),
+  );
   return exports;
 }
 test(
@@ -180,7 +184,6 @@ test(
               periodStart: "2026-10-19",
               periodEnd: "2026-11-01",
               accountId: account.id,
-              categoryId: category.id,
               currency: "CAD",
               grossAmount: "2000",
               netAmount: "1500",
@@ -188,7 +191,7 @@ test(
                 { typeId: tax.id, amount: "400" },
                 { typeId: other.id, amount: "100" },
               ],
-              transactionAction: "UNMATCHED",
+              transactionAction: "CREATE",
             };
             const png = await sharp({
               create: { width: 3, height: 4, channels: 3, background: "white" },
@@ -223,9 +226,12 @@ test(
               return { body, ...result };
             }
             async function edit(original, patch = {}, buffer = null, status = 200) {
-              const { requestKey, ...body } = original.body;
+              const body = { ...original.body };
+              delete body.requestKey;
               const requestBody = {
                 ...body,
+                transactionAction: "LINK",
+                transactionId: original.record.transaction?.id,
                 expectedUpdatedAt: original.record.updatedAt,
                 ...patch,
               };
@@ -235,18 +241,22 @@ test(
               );
               const result = await response.json();
               assert.equal(response.status, status, result.error);
-              return { body: { ...original.body, ...patch }, ...result };
+              return { body: { ...requestBody, requestKey: original.body.requestKey }, ...result };
             }
             const before = await tx.financialTransaction.count({ where: { userId: 1 } });
-            const independent = await create({ accountId: null }, png);
-            assert.equal(independent.record.transaction, null);
+            await create({ accountId: null }, null, 400);
+            await create({ transactionAction: "UNMATCHED" }, null, 400);
+            const independent = await create({}, png);
+            const firstDepositId = independent.record.transaction.id;
+            assert.equal(independent.record.transaction.amount, "1500.0000");
+            assert.equal(independent.record.category, null);
             assert.ok(independent.record.document);
-            assert.equal(independent.record.account, null);
+            assert.equal(independent.record.account.id, account.id);
             assert.equal(independent.record.grossAmount, "2000.0000");
             assert.equal(independent.record.netAmount, "1500.0000");
             assert.equal(independent.record.deductionsTotal, "500.0000");
             assert.equal(independent.record.difference, "0.0000");
-            assert.equal(await tx.financialTransaction.count({ where: { userId: 1 } }), before);
+            assert.equal(await tx.financialTransaction.count({ where: { userId: 1 } }), before + 1);
             assert.equal(
               (await create(independent.body, png, 200)).record.id,
               independent.record.id,
@@ -301,15 +311,29 @@ test(
               false,
               receiptWithPdf.receipt.updatedAt,
             );
-            const created = await create({ transactionAction: "CREATE" });
+            const created = await create({ transactionAction: "CREATE", date: "2026-11-07" });
             const depositId = created.record.transaction.id;
+            const sameDeposit = await create(
+              { transactionAction: "LINK", transactionId: depositId },
+              null,
+              409,
+            );
+            assert.equal(sameDeposit.code, "DUPLICATE_INCOME");
+            await assert.rejects(
+              transactions.deleteTransaction(depositId),
+              /belongs to an income record/,
+            );
             assert.equal(created.record.transaction.amount, "1500.0000");
-            assert.equal(await tx.financialTransaction.count({ where: { userId: 1 } }), before + 1);
+            assert.equal(await tx.financialTransaction.count({ where: { userId: 1 } }), before + 2);
             assert.equal((await create(created.body, null, 200)).record.transaction.id, depositId);
             assert.equal(
               (
                 await create(
-                  { description: "Different bank wording", transactionAction: "CREATE" },
+                  {
+                    description: "Different bank wording",
+                    date: "2026-11-07",
+                    transactionAction: "CREATE",
+                  },
                   null,
                   409,
                 )
@@ -319,15 +343,15 @@ test(
             const linked = await edit(independent, {
               accountId: account.id,
               transactionAction: "LINK",
-              transactionId: depositId,
+              transactionId: firstDepositId,
             });
-            assert.equal(linked.record.transaction.id, depositId);
-            assert.equal(await tx.financialTransaction.count({ where: { userId: 1 } }), before + 1);
+            assert.equal(linked.record.transaction.id, firstDepositId);
+            assert.equal(await tx.financialTransaction.count({ where: { userId: 1 } }), before + 2);
             assert.deepEqual(
               (await transactions.getTransaction(depositId)).incomeRecords
                 .map((record) => record.id)
                 .sort((a, b) => a - b),
-              [independent.record.id, created.record.id].sort((a, b) => a - b),
+              [created.record.id],
             );
             // Future import rows must reference the same canonical deposit, never insert a second ledger movement.
             for (const index of [1, 2]) {
@@ -343,7 +367,7 @@ test(
                 },
               });
             }
-            assert.equal(await tx.financialTransaction.count({ where: { userId: 1 } }), before + 1);
+            assert.equal(await tx.financialTransaction.count({ where: { userId: 1 } }), before + 2);
             assert.equal((await income.getIncome(created.record.id)).transaction.id, depositId);
             assert.equal(
               await tx.financialImportEntry.count({ where: { transactionId: depositId } }),
@@ -367,7 +391,7 @@ test(
               transactionId: imported.id,
             });
             assert.equal(alreadyImported.record.transaction.date, "2026-11-08");
-            assert.equal(await tx.financialTransaction.count({ where: { userId: 1 } }), before + 2);
+            assert.equal(await tx.financialTransaction.count({ where: { userId: 1 } }), before + 3);
             const typesBefore = (await (await typeRoute.GET(jsonRequest("GET"))).json()).types;
             assert.ok(typesBefore.some((item) => item.id === tax.id));
             assert.equal(
@@ -403,7 +427,13 @@ test(
             await edit(linked, { notes: "Stale change" }, null, 409);
             await edit(adjusted, { netAmount: "1499", acknowledgeMismatch: true }, null, 400);
             const countAfter = await tx.financialTransaction.count({ where: { userId: 1 } });
-            for (const kind of ["GIFT", "INTEREST", "FREELANCE", "REIMBURSEMENT", "OTHER"]) {
+            for (const [index, kind] of [
+              "GIFT",
+              "INTEREST",
+              "FREELANCE",
+              "REIMBURSEMENT",
+              "OTHER",
+            ].entries()) {
               const otherSource = (
                 await (
                   await sourceRoute.POST(
@@ -415,27 +445,30 @@ test(
                 sourceId: otherSource.id,
                 description: `${kind} payment`,
                 grossAmount: null,
-                netAmount: "25.1234",
+                netAmount: `${25 + index}.1234`,
                 deductions: [],
                 periodStart: null,
                 periodEnd: null,
-                accountId: null,
+                accountId: account.id,
               });
               assert.equal(oneTime.record.source.kind, kind);
               assert.equal(oneTime.record.grossAmount, null);
               assert.equal(oneTime.record.document, null);
             }
-            assert.equal(await tx.financialTransaction.count({ where: { userId: 1 } }), countAfter);
+            assert.equal(
+              await tx.financialTransaction.count({ where: { userId: 1 } }),
+              countAfter + 5,
+            );
             await create({ deductions: [], grossAmount: "2000", netAmount: "1500" }, null, 400);
             const mismatch = await create({
               deductions: [],
               grossAmount: "2000",
               netAmount: "1500",
               acknowledgeMismatch: true,
+              date: "2026-11-09",
             });
             assert.equal(mismatch.record.difference, "500.0000");
-            const zero = await create({ grossAmount: "0", netAmount: "0", deductions: [] });
-            assert.equal(zero.record.netAmount, "0.0000");
+
             await create(
               { grossAmount: "0", netAmount: "0", deductions: [], transactionAction: "CREATE" },
               null,
@@ -517,7 +550,7 @@ test(
               ),
             );
             for (const method of ["GET", "PATCH", "DELETE"]) {
-              const { requestKey, ...editing } = base;
+              const editing = { ...base };
               const body =
                 method === "PATCH"
                   ? { ...editing, expectedUpdatedAt: foreignRecord.updatedAt.toISOString() }
@@ -600,7 +633,7 @@ test(
             assert.deepEqual(await readdir(root), []);
             const kept = await income.getIncome(retained.record.id);
             assert.equal(kept.document, null);
-            assert.equal(kept.transaction.id, depositId);
+            assert.equal(kept.transaction.id, firstDepositId);
             assert.equal(
               (await detail.DELETE(request("DELETE", null, null, kept.updatedAt), context(kept.id)))
                 .status,

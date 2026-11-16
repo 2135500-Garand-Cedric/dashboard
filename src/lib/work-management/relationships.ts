@@ -1,3 +1,4 @@
+import { readSnapshot } from "./read-snapshot";
 import { prisma } from "@/lib/prisma";
 import { mutation, getTodoInDb, version, WORK_USER_ID } from "./server";
 import {
@@ -80,68 +81,39 @@ export async function readRelationships(id: number, params: URLSearchParams) {
     pageSize = 20;
   if (!["children", "blocked-by", "blocks", "related"].includes(section))
     throw new WorkValidationError("Choose a valid relationship view.");
-  return prisma.$transaction(
-    async (db) => {
-      const task = await getTodoInDb(db, id);
-      if (section === "children") {
-        const where = { parentId: id, userId: WORK_USER_ID },
-          total = await db.todo.count({ where });
-        const page = Math.min(requested, Math.max(1, Math.ceil(total / pageSize)));
-        const rows = await db.todo.findMany({
-          where,
-          select: taskStubSelect,
-          orderBy: { id: "asc" },
-          take: pageSize,
-          skip: (page - 1) * pageSize,
-        });
-        return {
-          task,
-          total,
-          page,
-          pageSize,
-          items: rows.map((row) => ({ task: graphStub(row), origin: "USER", reviewReason: null })),
-        };
-      }
-      if (section === "related") {
-        const where = {
-            OR: [{ firstId: id }, { secondId: id }],
-            first: { userId: WORK_USER_ID },
-            second: { userId: WORK_USER_ID },
-          },
-          total = await db.todoRelation.count({ where });
-        const page = Math.min(requested, Math.max(1, Math.ceil(total / pageSize)));
-        const rows = await db.todoRelation.findMany({
-          where,
-          include: { first: { select: taskStubSelect }, second: { select: taskStubSelect } },
-          orderBy: [{ firstId: "asc" }, { secondId: "asc" }],
-          take: pageSize,
-          skip: (page - 1) * pageSize,
-        });
-        return {
-          task,
-          total,
-          page,
-          pageSize,
-          items: rows.map((row) => ({
-            task: graphStub(row.firstId === id ? row.second : row.first),
-            origin: "USER",
-            reviewReason: null,
-          })),
-        };
-      }
-      const where =
-        section === "blocked-by"
-          ? { dependentId: id }
-          : { prerequisiteId: id, dependent: { userId: WORK_USER_ID } };
-      const total = await db.todoDependency.count({ where }),
-        page = Math.min(requested, Math.max(1, Math.ceil(total / pageSize)));
-      const rows = await db.todoDependency.findMany({
+  return readSnapshot(prisma, async (db) => {
+    const task = await getTodoInDb(db, id);
+    if (section === "children") {
+      const where = { parentId: id, userId: WORK_USER_ID },
+        total = await db.todo.count({ where });
+      const page = Math.min(requested, Math.max(1, Math.ceil(total / pageSize)));
+      const rows = await db.todo.findMany({
         where,
-        include: {
-          dependent: { select: taskStubSelect },
-          prerequisite: { select: taskStubSelect },
+        select: taskStubSelect,
+        orderBy: { id: "asc" },
+        take: pageSize,
+        skip: (page - 1) * pageSize,
+      });
+      return {
+        task,
+        total,
+        page,
+        pageSize,
+        items: rows.map((row) => ({ task: graphStub(row), origin: "USER", reviewReason: null })),
+      };
+    }
+    if (section === "related") {
+      const where = {
+          OR: [{ firstId: id }, { secondId: id }],
+          first: { userId: WORK_USER_ID },
+          second: { userId: WORK_USER_ID },
         },
-        orderBy: [{ dependentId: "asc" }, { prerequisiteId: "asc" }],
+        total = await db.todoRelation.count({ where });
+      const page = Math.min(requested, Math.max(1, Math.ceil(total / pageSize)));
+      const rows = await db.todoRelation.findMany({
+        where,
+        include: { first: { select: taskStubSelect }, second: { select: taskStubSelect } },
+        orderBy: [{ firstId: "asc" }, { secondId: "asc" }],
         take: pageSize,
         skip: (page - 1) * pageSize,
       });
@@ -151,12 +123,38 @@ export async function readRelationships(id: number, params: URLSearchParams) {
         page,
         pageSize,
         items: rows.map((row) => ({
-          task: graphStub(section === "blocked-by" ? row.prerequisite : row.dependent),
-          origin: row.origin,
-          reviewReason: row.legacyReviewReason,
+          task: graphStub(row.firstId === id ? row.second : row.first),
+          origin: "USER",
+          reviewReason: null,
         })),
       };
-    },
-    { isolationLevel: "RepeatableRead" },
-  );
+    }
+    const where =
+      section === "blocked-by"
+        ? { dependentId: id }
+        : { prerequisiteId: id, dependent: { userId: WORK_USER_ID } };
+    const total = await db.todoDependency.count({ where }),
+      page = Math.min(requested, Math.max(1, Math.ceil(total / pageSize)));
+    const rows = await db.todoDependency.findMany({
+      where,
+      include: {
+        dependent: { select: taskStubSelect },
+        prerequisite: { select: taskStubSelect },
+      },
+      orderBy: [{ dependentId: "asc" }, { prerequisiteId: "asc" }],
+      take: pageSize,
+      skip: (page - 1) * pageSize,
+    });
+    return {
+      task,
+      total,
+      page,
+      pageSize,
+      items: rows.map((row) => ({
+        task: graphStub(section === "blocked-by" ? row.prerequisite : row.dependent),
+        origin: row.origin,
+        reviewReason: row.legacyReviewReason,
+      })),
+    };
+  });
 }

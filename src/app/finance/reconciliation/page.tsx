@@ -1,22 +1,15 @@
-import ReconciliationWorkspace from "@/components/finance/ReconciliationWorkspace";
-import { matchKind } from "@/lib/finance/reconciliation";
-export default async function ReconciliationPage({
+import { redirect } from "next/navigation";
+export default async function LegacyMatchingPage({
   searchParams,
 }: {
   searchParams: Promise<{ kind?: string; source?: string }>;
 }) {
-  const params = await searchParams;
-  let kind = "RECEIPT";
-  try {
-    kind = matchKind(params.kind ?? kind);
-  } catch {
-    /* Invalid optional links open the default list. */
+  const { kind, source } = await searchParams;
+  if (source && /^[1-9]\d*$/.test(source) && Number(source) <= 2147483647) {
+    if (kind === "RECEIPT") redirect(`/finance/expenses/documents/${source}?matches=1`);
+    if (kind === "INCOME") redirect(`/finance/income/${source}?matches=1`);
+    if (kind === "DUPLICATE" || kind === "REFUND")
+      redirect(`/finance/transactions/${source}?matches=1`);
   }
-  const source =
-    params.source && /^[1-9]\d*$/.test(params.source) && Number(params.source) <= 2147483647
-      ? Number(params.source)
-      : null;
-  return (
-    <ReconciliationWorkspace key={`${kind}:${source}`} initialKind={kind} initialSource={source} />
-  );
+  redirect("/finance/imports");
 }

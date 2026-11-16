@@ -25,6 +25,8 @@ export interface ReceiptInput {
   requestKey: string | null;
   expectedUpdatedAt: string | null;
   acknowledgeMismatch: boolean;
+  syncMovement?: boolean;
+  allowDuplicate?: boolean;
 }
 export interface ReceiptDocument {
   id: number;
@@ -107,6 +109,8 @@ export function receiptInput(value: unknown, editing = false): ReceiptInput {
     "transactionAction",
     "transactionId",
     "acknowledgeMismatch",
+    "syncMovement",
+    "allowDuplicate",
     editing ? "expectedUpdatedAt" : "requestKey",
   ];
   if (Object.keys(body).some((key) => !fields.includes(key)))
@@ -131,6 +135,10 @@ export function receiptInput(value: unknown, editing = false): ReceiptInput {
     throw new FinanceValidationError("Reload the receipt form before saving.");
   if (body.acknowledgeMismatch !== undefined && typeof body.acknowledgeMismatch !== "boolean")
     throw new FinanceValidationError("Total confirmation must be true or false.");
+  if (body.syncMovement !== undefined && typeof body.syncMovement !== "boolean")
+    throw new FinanceValidationError("Invalid financial-record save option.");
+  if (body.allowDuplicate !== undefined && typeof body.allowDuplicate !== "boolean")
+    throw new FinanceValidationError("Separate-purchase confirmation must be true or false.");
   return {
     merchant: text(body.merchant, "Merchant", 200, true)!,
     date: calendarDate(body.date),
@@ -147,5 +155,7 @@ export function receiptInput(value: unknown, editing = false): ReceiptInput {
     requestKey: editing ? null : (body.requestKey as string).toLowerCase(),
     expectedUpdatedAt: editing ? (body.expectedUpdatedAt as string) : null,
     acknowledgeMismatch: body.acknowledgeMismatch === true,
+    syncMovement: body.syncMovement === true,
+    allowDuplicate: body.allowDuplicate === true,
   };
 }

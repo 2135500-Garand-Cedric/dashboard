@@ -1,7 +1,13 @@
-import IncomeEditor from "@/components/finance/IncomeEditor";
+import { statementPrefill } from "@/lib/finance/statement-prefill";
+import { NewIncomeEditor } from "@/components/finance/IncomeEditor";
 import { CURRENCIES } from "@/lib/finance/validation";
-import { torontoDateKey } from "@/lib/japanese/dates";
+
 export const dynamic = "force-dynamic";
-export default function NewIncomePage() {
-  return <IncomeEditor initialDate={torontoDateKey(new Date())} currencies={CURRENCIES} />;
+
+export default async function NewIncomePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  return <NewIncomeEditor currencies={CURRENCIES} prefill={statementPrefill(await searchParams)} />;
 }

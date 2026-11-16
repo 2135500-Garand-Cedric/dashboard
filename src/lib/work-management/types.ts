@@ -121,11 +121,11 @@ export interface WorkTodo {
   dependents?: { id: number; title: string; status: string }[];
   dependentCount?: number;
   supportingRecordCount?: number;
+  activityTypeId?: number | null;
+  activityType?: WorkActivityType | null;
   contextId?: number | null;
   context?: WorkContext | null;
   kind?: WorkKind | null;
-  company?: string | null;
-  course?: string | null;
   system?: string | null;
   tags?: string[];
   desiredOutcome?: string | null;
@@ -283,6 +283,8 @@ export interface WorkProject {
   reference: string;
   objective: string | null;
   summary: string | null;
+  activityTypeId: number | null;
+  activityType: WorkActivityType | null;
   contextId: number | null;
   status: "ACTIVE" | "COMPLETED" | "CANCELLED";
   startDate: string | null;
@@ -309,3 +311,5 @@ export interface WorkProject {
     revision: number;
   }[];
 }
+
+export type WorkActivityType = { id: number; name: string; color: string; active: boolean };

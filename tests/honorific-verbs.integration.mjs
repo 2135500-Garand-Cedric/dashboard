@@ -1,3 +1,4 @@
+import { timeZoneTestDependency } from "./helpers/time-zone.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { createRequire } from "node:module";
@@ -10,7 +11,10 @@ function load(file, dependencies = {}) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2017 },
   }).outputText;
   const exports = {};
-  new Function("exports", "require", code)(exports, (name) => dependencies[name] ?? require(name));
+  new Function("exports", "require", code)(
+    exports,
+    (name) => dependencies[name] ?? timeZoneTestDependency(name) ?? require(name),
+  );
   return exports;
 }
 test(

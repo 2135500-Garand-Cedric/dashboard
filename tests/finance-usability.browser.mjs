@@ -46,11 +46,12 @@ test(
       };
       const noOverflow = () =>
         page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth + 1);
-      await page.goto(`${base}/finance/transactions?search=Grocery`);
-      await visible(page.getByLabel("Search transactions"));
+      await page.goto(`${base}/finance/expenses?search=Grocery`);
+      await page.getByRole("button", { name: /Search & filters/ }).click();
+      await visible(page.getByLabel("Search expenses"));
       await settled();
-      assert.equal(await page.getByLabel("Search transactions").inputValue(), "Grocery");
-      await page.getByLabel("Search transactions").fill("[Example]");
+      assert.equal(await page.getByLabel("Search expenses").inputValue(), "Grocery");
+      await page.getByLabel("Search expenses").fill("[Example]");
       await page.getByRole("button", { name: "Apply filters", exact: true }).click();
       await settled();
       assert.equal(new URL(page.url()).searchParams.get("search"), "[Example]");
@@ -58,11 +59,12 @@ test(
         .getByRole("link", { name: /View \/ edit|View transaction/ })
         .first()
         .click();
-      await page.waitForURL(/\/finance\/transactions\/\d+$/);
+      await page.waitForURL(/\/finance\/expenses\/\d+$/);
       await settled();
       await page.goBack();
-      await visible(page.getByLabel("Search transactions"));
-      assert.equal(await page.getByLabel("Search transactions").inputValue(), "[Example]");
+      await page.getByRole("button", { name: /Search & filters/ }).click();
+      await visible(page.getByLabel("Search expenses"));
+      assert.equal(await page.getByLabel("Search expenses").inputValue(), "[Example]");
       const original = await context.request.get(
         `${base}/api/finance/exports/transactions?search=${encodeURIComponent("[Example]")}`,
       );
@@ -71,11 +73,12 @@ test(
       assert.ok(csv.includes("Counted amount"));
       assert.ok(csv.split("\r\n").length > 25);
       for (const [kind, searchLabel] of [
-        ["transactions", "Search transactions"],
-        ["receipts", "Search receipts"],
+        ["expenses", "Search expenses"],
+        ["transfers", "Search transfers"],
         ["income", "Search income"],
       ]) {
         await page.goto(`${base}/finance/${kind}?search=${encodeURIComponent("[Example]")}`);
+        await page.getByRole("button", { name: /Search & filters/ }).click();
         await visible(page.getByLabel(searchLabel));
         await settled();
         await noOverflow();
@@ -86,7 +89,7 @@ test(
         assert.equal(await download.failure(), null);
       }
       let fail = true;
-      await page.route("**/api/finance/exports/income?**", (route) => {
+      await page.route("**/api/finance/exports/transactions?**", (route) => {
         if (fail) {
           fail = false;
           return route.fulfill({
@@ -101,20 +104,18 @@ test(
       const retry = page.waitForEvent("download");
       await page.getByRole("button", { name: "Export CSV", exact: true }).click();
       assert.equal(await (await retry).failure(), null);
-      await page.goto(`${base}/finance/receipts/new`);
+      await page.goto(`${base}/finance/expenses/new`);
       await visible(page.getByLabel("Take receipt photo", { exact: true }));
       await settled();
       assert.equal(
         await page.getByLabel("Take receipt photo", { exact: true }).getAttribute("capture"),
         "environment",
       );
-      await page
-        .getByLabel("Choose receipt file", { exact: true })
-        .setInputFiles({
-          name: "camera.heic",
-          mimeType: "image/heic",
-          buffer: Buffer.from("invalid"),
-        });
+      await page.getByLabel("Choose receipt file", { exact: true }).setInputFiles({
+        name: "camera.heic",
+        mimeType: "image/heic",
+        buffer: Buffer.from("invalid"),
+      });
       await visible(page.getByText(/Export HEIC photos as JPEG\./, { exact: false }).last());
       const png = await sharp({
         create: { width: 400, height: 1000, channels: 3, background: "white" },
@@ -130,8 +131,8 @@ test(
         await page.setViewportSize({ width, height: 844 });
         await noOverflow();
       }
-      await page.goto(`${base}/finance/transactions/new`);
-      await visible(page.getByRole("button", { name: "Save transaction", exact: true }));
+      await page.goto(`${base}/finance/transfers/new`);
+      await visible(page.getByRole("button", { name: "Save transfer", exact: true }));
       await settled();
       await page.setViewportSize({ width: 320, height: 844 });
       await noOverflow();
@@ -143,11 +144,11 @@ test(
         ) >= 16,
       );
       assert.ok(
-        (await page.getByRole("button", { name: "Save transaction", exact: true }).boundingBox())
+        (await page.getByRole("button", { name: "Save transfer", exact: true }).boundingBox())
           .height >= 44,
       );
       await page.getByLabel("Description", { exact: true }).fill("Unsaved phone test");
-      await page.getByLabel("Transaction type", { exact: true }).selectOption("TRANSFER");
+      assert.equal(await page.getByLabel("Transaction type", { exact: true }).count(), 0);
       await visible(page.getByLabel("To account", { exact: true }));
       await noOverflow();
       const anonymous = await browser.newContext();

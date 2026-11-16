@@ -216,7 +216,9 @@ export default function PracticePage() {
       setCompletedSession(null);
       setReview(null);
       finishingRef.current = false;
-      showMessage("Practice saved successfully!");
+      showMessage(
+        `Practice saved successfully! +${data.review?.xpEarned ?? 0} XP · +${data.review?.goldEarned ?? 0} gold`,
+      );
     } catch (error) {
       showMessage(
         `${error instanceof Error ? error.message : "Unable to save practice."} Your results are kept. Press Okay to retry.`,

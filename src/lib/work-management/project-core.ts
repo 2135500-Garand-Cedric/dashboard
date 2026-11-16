@@ -13,7 +13,10 @@ export function parentIdentity(parent: WorkParent) {
   return typeof parent === "number" ? `todo:${parent}` : `project:${parent.projectId}`;
 }
 export async function projectRow(db: Prisma.TransactionClient, id: number) {
-  const project = await db.workProject.findFirst({ where: { id, userId: OWNER_DATABASE_USER_ID } });
+  const project = await db.workProject.findFirst({
+    where: { id, userId: OWNER_DATABASE_USER_ID },
+    include: { activityType: true },
+  });
   if (!project) throw new WorkValidationError("Project not found.", 404);
   return project;
 }
@@ -55,4 +58,5 @@ export async function validateNewMembership(
     !(await db.workProjectStage.count({ where: { id: stageId, projectId, active: true } }))
   )
     throw new WorkValidationError("Choose an active stage belonging to this project.");
+  return project;
 }

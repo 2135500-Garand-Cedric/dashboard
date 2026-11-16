@@ -1,3 +1,4 @@
+import { timeZoneTestDependency } from "./helpers/time-zone.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { createRequire } from "node:module";
@@ -11,7 +12,10 @@ function load(file, deps = {}) {
   const code = ts.transpileModule(fs.readFileSync(new URL(file, import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2017 },
   }).outputText;
-  new Function("exports", "require", code)(exports, (name) => deps[name] ?? require(name));
+  new Function("exports", "require", code)(
+    exports,
+    (name) => deps[name] ?? timeZoneTestDependency(name) ?? require(name),
+  );
   return exports;
 }
 test(
@@ -115,7 +119,6 @@ test(
           const row = await create({
             contextId: context.id,
             priorityLevel: "HIGH",
-            company: "Example company",
             kind: "REQUEST",
             system: "Printer",
             tags: ["test", " test "],
@@ -248,7 +251,7 @@ test(
       await t.test(
         "replay/conflict and failure of audit insert cannot duplicate history or partially change balances",
         async () => {
-          const row = await create({ rewardXp: 21, rewardCoins: 4 }),
+          const row = await create({ rewardXp: 0, rewardCoins: 0 }),
             key = command(row);
           const completed = await api.patchTodo(row.id, { status: "DONE" }, key);
           const count = (await activity(row.id)).length;
@@ -256,7 +259,7 @@ test(
           assert.equal((await activity(row.id)).length, count);
           await reject(patch(row, { status: "DONE" }), 409);
           assert.equal((await activity(row.id)).length, count);
-          const second = await create({ rewardXp: 30, rewardCoins: 8 });
+          const second = await create({ rewardXp: 0, rewardCoins: 0 });
           const balance = await db.user.findUnique({
             where: { id: 1 },
             select: { totalXp: true, coins: true },

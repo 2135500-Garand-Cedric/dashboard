@@ -1,3 +1,4 @@
+import { getAppTimeZone } from "@/lib/time-zone-context";
 import { CURRENCIES, FinanceValidationError, financeId } from "./validation";
 import { calendarDate } from "./transactions";
 
@@ -11,6 +12,8 @@ export interface ReportFilters {
   dataset: "all" | "personal" | "examples";
 }
 export interface ReportTransaction {
+  transferId?: string | null;
+  statementMatched?: boolean;
   id: number;
   accountId: number;
   categoryId: number | null;
@@ -113,7 +116,7 @@ const day = (value: string) => new Date(`${value}T00:00:00Z`);
 const iso = (value: Date) => value.toISOString().slice(0, 10);
 export function reportingToday() {
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Toronto",
+    timeZone: getAppTimeZone(),
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -595,7 +598,8 @@ export function buildReport(data: ReportData, filters: ReportFilters, today = re
     coverage: {
       accounts: coverageAccounts,
       examplesIncluded:
-        scoped.some((row) => exampleAccounts.has(row.accountId)) && filters.dataset !== "personal",
+        selected.some((row) => exampleAccounts.has(row.accountId)) &&
+        filters.dataset !== "personal",
       hasExamples: data.examples.accountIds.length > 0,
       currencies: [...new Set(data.accounts.map((row) => row.currency))].sort(),
       otherCurrencyAccounts: data.accounts.filter((row) => row.currency !== filters.currency)

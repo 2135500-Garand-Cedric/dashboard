@@ -1,4 +1,4 @@
-import ReceiptHistory from "@/components/finance/ReceiptHistory";
-export default function ReceiptsPage() {
-  return <ReceiptHistory />;
+import { redirect } from "next/navigation";
+export default function LegacyPage() {
+  redirect("/finance/expenses");
 }

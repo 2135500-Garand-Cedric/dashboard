@@ -116,27 +116,22 @@ export async function seedWorkExamples(db, now = new Date()) {
     vendor = await createContact("Hardware vendor");
   const programming = await task("Submit programming assignment", {
       contextId: context("School"),
-      course: "CSI2101",
       status: "TODO",
     }),
     lab = await task("Submit lab report", {
       contextId: context("School"),
-      course: "CSI2101",
       status: "IN_PROGRESS",
     }),
     outline = await task("Submit project outline", {
       contextId: context("School"),
-      course: "CSI2101",
     });
   const study = await task("Prepare for midterm", {
     contextId: context("School"),
-    course: "CSI2101",
     nextAction: "Review practice questions before the exam.",
   });
   await dates("study:deadline", study, { action: "deadline", date: date(17) });
   const laptop = await task("Prepare an employee laptop", {
     contextId: context("Work"),
-    company: "POMPCO",
     requesterId: requester.id,
     status: "TODO",
   });
@@ -166,7 +161,6 @@ export async function seedWorkExamples(db, now = new Date()) {
   );
   const printer = await task("Follow replacement printer delivery", {
     contextId: context("Work"),
-    company: "Degrandpre",
     kind: "ISSUE",
     status: "WAITING",
     waitingOnContactId: vendor.id,

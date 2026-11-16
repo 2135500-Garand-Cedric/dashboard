@@ -22,7 +22,7 @@ test(
       tasks = [],
       events = [],
       keys = [];
-    let foreign;
+    let foreign, contextFixture;
     const command = (row) => {
       const requestKey = randomUUID();
       keys.push(requestKey);
@@ -162,8 +162,10 @@ test(
       await t.test(
         "bounded feed has stable typed IDs, labels, layers, context, TBD and date-only markers",
         async () => {
-          const contexts = await api.listWorkContexts(),
-            school = contexts.find((row) => row.key === "school"),
+          contextFixture = await db.workContext.create({
+            data: { userId: 1, key: prefix, name: prefix, normalizedName: prefix, active: true },
+          });
+          const school = contextFixture,
             row = await task({ contextId: school.id }),
             noContext = await task({ contextId: null });
           await dates.taskDateCommand(
@@ -176,11 +178,9 @@ test(
             { action: "followup-create", date: day("2026-11-12") },
             command(await api.getTodo(row.id)),
           );
-          await dates.taskDateCommand(
-            row.id,
-            { action: "key-create", label: "Delivery", date: day("2026-11-14") },
-            command(await api.getTodo(row.id)),
-          );
+          await db.workKeyDate.create({
+            data: { todoId: row.id, label: "Legacy delivery", date: "2026-11-14" },
+          });
           const ordinary = await event({
               date: "2026-11-18T14:00:00Z",
               links: [{ todoId: row.id, role: "RELATED" }],
@@ -191,9 +191,14 @@ test(
           for (const id of [`deadline:${row.id}`, `event:${ordinary.id}`])
             assert.ok(scoped.items.some((item) => item.id === id));
           assert.ok(scoped.items.some((item) => String(item.id).startsWith("followup:")));
-          assert.ok(scoped.items.some((item) => String(item.id).startsWith("keydate:")));
+          assert.ok(!scoped.items.some((item) => String(item.id).startsWith("keydate:")));
           const marker = scoped.items.find((item) => item.id === `deadline:${row.id}`);
           assert.equal(marker.start, "2026-11-13");
+          assert.equal(marker.extendedProps.plainTitle, row.title);
+          assert.equal(marker.borderColor, "#f43f5e");
+          const ordinaryItem = scoped.items.find((item) => item.id === `event:${ordinary.id}`);
+          assert.equal(ordinaryItem.extendedProps.plainTitle, ordinary.title);
+          assert.equal(ordinaryItem.backgroundColor, "#3b82f6");
           assert.equal(marker.display, "list-item");
           assert.equal(marker.extendedProps.busy, false);
           assert.ok(marker.extendedProps.href.startsWith(`/todos/${row.id}`));
@@ -233,7 +238,12 @@ test(
               links: [{ todoId: row.id, role: "SESSION_TARGET" }],
             });
           assert.equal(session.date, "2026-12-01T04:00:00.000Z");
-          assert.ok((await feed()).items.some((item) => item.id === `event:${session.id}`));
+          const sessionItem = (await feed()).items.find(
+            (item) => item.id === `event:${session.id}`,
+          );
+          assert.ok(sessionItem);
+          assert.equal(sessionItem.backgroundColor, "#8b5cf6");
+          assert.equal(sessionItem.extendedProps.layer, "sessions");
           await reject(event({ timing: timing("2026-03-08T02:30", "2026-03-08T04:00") }), 400);
           await reject(event({ timing: timing("2026-11-01T01:30", "2026-11-01T03:00") }), 400);
         },
@@ -605,6 +615,7 @@ test(
         await tx.workKeyDate.deleteMany({ where: { todoId: { in: tasks } } });
         await tx.todo.deleteMany({ where: { id: { in: tasks } } });
         await tx.workMutationReceipt.deleteMany({ where: { requestKey: { in: keys } } });
+        if (contextFixture) await tx.workContext.delete({ where: { id: contextFixture.id } });
         if (foreign) await tx.user.delete({ where: { id: foreign.id } });
         await tx.user.update({ where: { id: 1 }, data: beforeBalance });
       });

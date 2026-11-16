@@ -101,8 +101,23 @@ test(
       const pageErrors = [];
       page.on("pageerror", (error) => pageErrors.push(error.message));
       page.on("dialog", (dialog) => dialog.accept());
-      await page.goto("http://localhost:3000/finance");
-      await page.getByRole("link", { name: "Manage accounts" }).click();
+      await page.goto("http://localhost:3000/finance/settings");
+      await page.getByRole("link", { name: "Financial accounts", exact: true }).click();
+      await page.waitForURL("**/finance/settings/accounts");
+      assert.equal(
+        await page
+          .getByRole("navigation", { name: "Finance navigation" })
+          .getByRole("link", { name: "Settings", exact: true })
+          .getAttribute("aria-current"),
+        "page",
+      );
+      assert.ok(new URL(page.url()).pathname.startsWith("/finance/settings/"));
+      await page.getByRole("button", { name: "New account", exact: true }).click();
+      await page.getByRole("dialog", { name: "New account", exact: true }).waitFor();
+      await page.mouse.click(4, 4);
+      await page.getByRole("dialog").waitFor({ state: "hidden" });
+      assert.equal(accounts.length, 0);
+      await page.getByRole("button", { name: "New account", exact: true }).click();
       await page.getByLabel("Account name", { exact: true }).fill("Browser account");
       await page.getByLabel("Masked identifier", { exact: false }).fill("**** 1234");
       await page.getByRole("button", { name: "Create account", exact: true }).click();
@@ -120,6 +135,7 @@ test(
       assert.equal(accounts[0].active, false);
       await page.getByRole("button", { name: "Reactivate Browser savings", exact: true }).click();
       await page.getByRole("button", { name: "Deactivate Browser savings", exact: true }).waitFor();
+      await page.getByRole("button", { name: "New account", exact: true }).click();
       await page.getByLabel("Account name", { exact: true }).fill("Invalid card");
       await page.getByLabel("Masked identifier", { exact: false }).fill("1234567890123456");
       await page.getByRole("button", { name: "Create account", exact: true }).click();
@@ -128,10 +144,18 @@ test(
         await page.getByLabel("Account name", { exact: true }).inputValue(),
         "Invalid card",
       );
-      await page
-        .getByRole("navigation", { name: "Finance navigation" })
-        .getByRole("link", { name: "Categories", exact: true })
-        .click();
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.getByRole("link", { name: "Finance settings", exact: true }).click();
+      await page.getByRole("heading", { name: "Finance settings", exact: true }).waitFor();
+      for (const title of ["Income sources", "Deduction types"]) {
+        assert.equal(await page.getByRole("link", { name: title, exact: true }).count(), 1);
+      }
+      await page.getByRole("link", { name: "Expense categories", exact: true }).click();
+      await page.getByRole("button", { name: "New category", exact: true }).click();
+      await page.mouse.click(4, 4);
+      await page.getByRole("dialog").waitFor({ state: "hidden" });
+      assert.equal(categories.length, 0);
+      await page.getByRole("button", { name: "New category", exact: true }).click();
       await page.getByLabel("Category name", { exact: true }).fill("Food");
       await page.getByRole("button", { name: "Create category", exact: true }).click();
       await page.getByRole("button", { name: "Edit expense category Food", exact: true }).click();
@@ -146,21 +170,27 @@ test(
       await page
         .getByRole("button", { name: "Deactivate expense category Meals", exact: true })
         .waitFor();
+      await page.getByRole("button", { name: "New category", exact: true }).click();
       await page.getByLabel("Category name", { exact: true }).fill("Salary");
-      await page.getByLabel("Category type", { exact: false }).selectOption("INCOME");
+      assert.equal(await page.getByLabel("Category type", { exact: false }).count(), 0);
       await page.getByRole("button", { name: "Create category", exact: true }).click();
       await page
-        .getByRole("button", { name: "Delete income category Salary", exact: true })
+        .getByRole("button", { name: "Delete expense category Salary", exact: true })
         .click();
       await page
-        .getByRole("button", { name: "Create category", exact: true })
+        .getByRole("button", { name: "New category", exact: true })
         .waitFor({ state: "visible" });
       await page.waitForFunction(
-        () => !document.querySelector('[aria-label="Delete income category Salary"]'),
+        () => !document.querySelector('[aria-label="Delete expense category Salary"]'),
       );
       assert.equal(categories.length, 1);
       await page.setViewportSize({ width: 390, height: 844 });
-      await page.goto("http://localhost:3000/finance/accounts");
+      await page.goto("http://localhost:3000/finance/settings/accounts");
+      await page.getByRole("button", { name: "New account", exact: true }).click();
+      await page.getByRole("dialog").waitFor();
+      const bounds = await page.getByRole("dialog").boundingBox();
+      assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 390);
+      assert.ok(bounds.y >= 0 && bounds.y + bounds.height <= 844);
       await page.getByLabel("Account name", { exact: true }).fill("Phone cash");
       await page.getByLabel("Account type", { exact: false }).selectOption("CASH");
       await page.getByRole("button", { name: "Create account", exact: true }).click();
@@ -169,6 +199,8 @@ test(
         await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
         "phone layout must not overflow horizontally",
       );
+      await page.goto("http://localhost:3000/finance/accounts");
+      await page.waitForURL("**/finance/settings/accounts");
       failLoad = true;
       await page.reload();
       await page.getByRole("alert").filter({ hasText: "Fixture load failure" }).waitFor();

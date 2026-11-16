@@ -1,3 +1,4 @@
+import { timeZoneTestDependency } from "./helpers/time-zone.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
@@ -13,7 +14,10 @@ function load(file, deps = {}) {
     },
   }).outputText;
   const exports = {};
-  new Function("exports", "require", compiled)(exports, (name) => deps[name] ?? require(name));
+  new Function("exports", "require", compiled)(
+    exports,
+    (name) => deps[name] ?? timeZoneTestDependency(name) ?? require(name),
+  );
   return exports;
 }
 const validation = load("../src/lib/finance/validation.ts");
@@ -31,16 +35,17 @@ const base = {
   description: "Regular pay",
   date: "2026-11-06",
   currency: "CAD",
-  categoryId: 1,
-  accountId: null,
+  accountId: 1,
   grossAmount: "2000",
   netAmount: "1500",
   deductions: [{ typeId: 1, amount: "500" }],
-  transactionAction: "UNMATCHED",
+  transactionAction: "CREATE",
   requestKey: "ad777fad-4114-46dd-8479-57bedade3883",
 };
-test("income distinguishes gross, deductions, net and optional deposits using exact monetary text", () => {
-  assert.equal(incomeInput(base).accountId, null);
+test("income distinguishes gross, deductions, net and required deposits using exact monetary text", () => {
+  assert.equal(incomeInput(base).accountId, 1);
+  assert.equal(incomeInput(base).categoryId, null);
+  assert.equal(incomeInput({ ...base, transactionAction: undefined }).transactionAction, "CREATE");
   assert.equal(incomeInput(base).grossAmount, "2000.0000");
   assert.equal(incomeInput({ ...base, grossAmount: "" }).grossAmount, null);
   assert.deepEqual(incomeAmounts("2000", [{ amount: "500" }], "1500"), {
@@ -60,9 +65,9 @@ test("income distinguishes gross, deductions, net and optional deposits using ex
     "0.0000",
   );
   assert.equal(incomeAmounts("100", [{ amount: "20" }], "81").difference, "-1.0000");
-  assert.equal(
-    incomeInput({ ...base, grossAmount: "0", netAmount: "0", deductions: [] }).netAmount,
-    "0.0000",
+  assert.throws(
+    () => incomeInput({ ...base, grossAmount: "0", netAmount: "0", deductions: [] }),
+    /greater than zero/,
   );
   assert.equal(
     incomeInput({ ...base, accountId: 2, transactionAction: "LINK", transactionId: 4 })
@@ -92,13 +97,16 @@ test("income inputs reject invalid dates, amounts, ownership, deduction lines an
     { deductions: [{ typeId: 1, amount: "1", name: "Injected" }] },
     { deductions: Array.from({ length: 31 }, (_, index) => ({ typeId: index + 1, amount: "1" })) },
     { transactionAction: "TRANSFER" },
-    { transactionAction: "CREATE" },
+    { transactionAction: "UNMATCHED" },
+    { accountId: null },
+    { categoryId: 1 },
     { transactionId: 1 },
     { requestKey: "invalid" },
     { acknowledgeMismatch: "true" },
   ])
     assert.throws(() => incomeInput({ ...base, ...patch }), validation.FinanceValidationError);
-  const { requestKey, ...editing } = base;
+  const editing = { ...base };
+  delete editing.requestKey;
   assert.throws(() => incomeInput(editing, true));
   assert.equal(
     incomeInput({ ...editing, expectedUpdatedAt: "2026-11-06T12:00:00Z" }, true).requestKey,
