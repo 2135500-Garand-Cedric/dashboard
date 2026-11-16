@@ -88,3 +88,11 @@ mark a phase verified if required checks remain unavailable.
 
 No separate task copies, fake historical notes, guessed event conversions or
 retroactive reward payouts are acceptable shortcuts.
+
+## Current cleanup and verification
+
+The phase files and progress entries above are historical implementation records. Later UI changes replace contexts with calendar activity types and remove task rewards, tags, company/course, waiting contacts and task key-date editing. See the current [repository README](../../README.md#workcalendar-cleanup) for the retirement migrations and backup-preservation check. Applied migration files remain deployment history and must not be deleted.
+
+Use `tests/work-all.browser.mjs` for current task creation/details/view switching/contacts; `tests/project-classification.browser.mjs` for project dates/classification and task defaults; `tests/calendar-project-controls.browser.mjs` for the current calendar/project dialogs; and the `task-*.browser.mjs` tests for task dialogs/loading/details. The obsolete inline-capture/context/reward/key-date browser fixture files listed in historical operations entries have been removed. Their command-level ownership, graph, date, retry and audit coverage remains in the integration suites.
+
+Work example scripts now use activity types and recorded manifests/mutation receipts for provenance, rather than retired tags/context fields. They do not create task key dates. Run showcase examples only in the explicitly guarded, empty disposable `work_examples` database.

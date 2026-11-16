@@ -59,6 +59,9 @@ test(
               "@/lib/japanese/vocabulary-progress": progress,
               "@/lib/japanese/progress-history": history,
               "@/lib/japanese/kanji-writing": kanji,
+              "@/lib/japanese/practice-selection": load(
+                "../src/lib/japanese/practice-selection.ts",
+              ),
             });
             for (const [status, percentage] of [
               ["GOOD", "10.00"],
@@ -77,6 +80,7 @@ test(
               assert.equal(response.status, 200);
               const saved = await tx.activityVocab.findUnique({ where: { id: link.id } });
               assert.equal(saved.status, status);
+              assert.ok(saved.lastPracticed instanceof Date);
               assert.equal(
                 utils.calculateActivityStats([saved], [1, 2, 3, 4, 5]).percentage,
                 percentage,

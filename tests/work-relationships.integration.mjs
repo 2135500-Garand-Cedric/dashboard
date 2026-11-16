@@ -219,7 +219,7 @@ test(
       await t.test(
         "parent closure requires fresh descendant acknowledgement and never cascades rewards or states",
         async () => {
-          const parent = await create({ rewardXp: 0, rewardCoins: 0 }),
+          const parent = await create({}),
             child = await create({ parentId: parent.id, parentRevision: parent.revision }),
             grandchild = await create({ parentId: child.id, parentRevision: child.revision });
           const before = await count();
@@ -264,7 +264,7 @@ test(
       await t.test(
         "changed/ABA prerequisites and newly added links invalidate confirmation without partial reward/history writes",
         async () => {
-          const a = await create({ rewardXp: 0 }),
+          const a = await create({}),
             b = await create(),
             c = await create();
           await link(a, b);

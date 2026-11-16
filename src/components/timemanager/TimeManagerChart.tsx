@@ -165,7 +165,7 @@ export default function TimeManagerChart() {
                 onMouseEnter={(_, index) => setActiveIndex(index)}
                 onMouseLeave={() => setActiveIndex(null)}
               >
-                {formattedData.map((entry, index) => (
+                {formattedData.map((_, index) => (
                   <Cell
                     key={`cell-${index}`}
                     fill={COLORS[index % COLORS.length]}

@@ -36,8 +36,8 @@ export default function CategoriesPage() {
       } else {
         showMessage(`Failed to load starred count: ${data.error || res.statusText}`);
       }
-    } catch (err: any) {
-      showMessage(`Failed to load starred count: ${err.message || err}`);
+    } catch (err) {
+      showMessage(`Failed to load starred count: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -62,7 +62,7 @@ export default function CategoriesPage() {
       }
 
       setCategories(data.categories);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Failed to load categories:", err);
       showMessage("An unexpected error occurred while loading categories");
     }
@@ -97,7 +97,7 @@ export default function CategoriesPage() {
       setNewCategoryName("");
       await loadCategories();
       showMessage("Category added successfully");
-    } catch (err: any) {
+    } catch (err) {
       console.error("Unexpected error adding category:", err);
       showMessage("An unexpected error occurred");
     }
@@ -127,7 +127,7 @@ export default function CategoriesPage() {
       setEditDraft("");
       await loadCategories();
       showMessage("Category updated");
-    } catch (err: any) {
+    } catch (err) {
       console.error("Unexpected error updating category:", err);
       showMessage("An unexpected error occurred");
     }
@@ -155,7 +155,7 @@ export default function CategoriesPage() {
 
       await loadCategories();
       showMessage("Category deleted");
-    } catch (err: any) {
+    } catch (err) {
       console.error("Unexpected error deleting category:", err);
       showMessage("An unexpected error occurred");
     }

@@ -21,7 +21,6 @@ export interface CalendarEvent {
     todoId: number;
     role: string;
     task: GraphTaskStub;
-    contextId: number | null;
     reviewReason?: string | null;
   }[];
   linkedTodo?: GraphTaskStub | null;

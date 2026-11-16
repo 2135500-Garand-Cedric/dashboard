@@ -120,7 +120,7 @@ export function receiptCsv(rows: FinanceReceipt[]) {
       row.notes,
       associations(row),
       row.document?.originalName ?? null,
-      row.document ? `/api/finance/receipts/${row.id}/document?download=1` : null,
+      row.document ? `/api/finance/expenses/${row.id}/document?download=1` : null,
     ]),
   ]);
 }

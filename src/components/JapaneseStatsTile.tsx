@@ -65,7 +65,7 @@ export default function JapaneseDashboardTile() {
     }
   });
 
-  const StatBoxes = ({ perfect, good, weak }: any) => (
+  const StatBoxes = ({ perfect, good, weak }: { perfect: number; good: number; weak: number }) => (
     <div className="flex gap-2 mt-2">
       <div className="flex-1 text-center py-1 rounded-lg border border-green-500 text-green-500 text-sm">
         {perfect}

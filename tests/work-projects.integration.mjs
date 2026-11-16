@@ -432,10 +432,10 @@ test(
               start: "2026-11-01T00:00:00Z",
               end: "2026-12-01T00:00:00Z",
               project: String(b.id),
-              context: "none",
+              activityType: "none",
             }),
           );
-          assert.ok(!joint.items.some((item) => item.id === `event:${event.id}`));
+          assert.ok(joint.items.some((item) => item.id === `event:${event.id}`));
           const found = await tasks.searchWork(
             new URLSearchParams({ project: String(b.id), view: "all" }),
           );

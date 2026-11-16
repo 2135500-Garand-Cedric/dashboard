@@ -32,14 +32,17 @@ export function loadFinanceServices(db) {
     return unit.exports;
   }
   return {
+    validation: load("src/lib/finance/validation.ts"),
+    server: load("src/lib/finance/server.ts"),
     activities: load("src/lib/finance/activity-server.ts"),
     income: load("src/lib/finance/income-server.ts"),
     incomeInput: load("src/lib/finance/income.ts").incomeInput,
     receipts: load("src/lib/finance/receipt-server.ts"),
     receiptInput: load("src/lib/finance/receipts.ts").receiptInput,
+    expenses: load("src/lib/finance/expenses.ts"),
     transactions: load("src/lib/finance/transaction-server.ts"),
     transactionInput: load("src/lib/finance/transactions.ts").transactionInput,
-    ledger: load("src/lib/finance/reconciliation-ledger.ts"),
+    ledger: load("src/lib/finance/matching-ledger.ts"),
     statements: load("src/lib/finance/statement-server.ts"),
     csv: load("src/lib/finance/statement-csv.ts"),
     fixed: load("src/lib/finance/fixed-statement.ts"),

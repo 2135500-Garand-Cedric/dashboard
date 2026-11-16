@@ -38,20 +38,17 @@ export async function seedWorkExamples(db, now = new Date()) {
     convertedEventIds: [],
     contactIds: [],
   };
-  const contexts = await api.server.listWorkContexts(),
-    context = (name) =>
-      contexts.find((row) => row.name.toLowerCase() === name.toLowerCase() && row.active)?.id ??
-      null;
+  const activityTypes = await db.activityType.findMany(),
+    activityType = (name) =>
+      activityTypes.find((row) => row.name.toLowerCase() === name.toLowerCase() && row.active)
+        ?.id ?? null;
   const task = async (name, fields = {}) => {
     const row = await step(`task:${name}`, (command) =>
       api.server.createTodo(
         {
           title: `[Example] ${name}`,
           description: "Synthetic development work-management example. Not a real request.",
-          tags: ["work-example-v7", period],
-          rewardXp: 0,
-          rewardCoins: 0,
-          contextId: context("Personal"),
+          activityTypeId: activityType("Personal"),
           ...fields,
         },
         command,
@@ -112,42 +109,36 @@ export async function seedWorkExamples(db, now = new Date()) {
     manifest.contactIds.push(row.id);
     return row;
   };
-  const requester = await createContact("IT requester"),
-    vendor = await createContact("Hardware vendor");
+  const requester = await createContact("IT requester");
   const programming = await task("Submit programming assignment", {
-      contextId: context("School"),
+      activityTypeId: activityType("School"),
       status: "TODO",
     }),
     lab = await task("Submit lab report", {
-      contextId: context("School"),
+      activityTypeId: activityType("School"),
       status: "IN_PROGRESS",
     }),
     outline = await task("Submit project outline", {
-      contextId: context("School"),
+      activityTypeId: activityType("School"),
     });
   const study = await task("Prepare for midterm", {
-    contextId: context("School"),
+    activityTypeId: activityType("School"),
     nextAction: "Review practice questions before the exam.",
   });
   await dates("study:deadline", study, { action: "deadline", date: date(17) });
   const laptop = await task("Prepare an employee laptop", {
-    contextId: context("Work"),
+    activityTypeId: activityType("Work"),
     requesterId: requester.id,
     status: "TODO",
   });
   await dates("laptop:deadline", laptop, { action: "deadline", date: date(14) });
-  await dates("laptop:key", laptop, {
-    action: "key-create",
-    label: "Employee first day",
-    date: date(16),
-  });
   const install = await task("Install required applications", {
-    contextId: context("Work"),
+    activityTypeId: activityType("Work"),
     parentId: laptop.id,
     parentRevision: (await api.server.getTodo(laptop.id)).revision,
   });
   const verify = await task("Verify employee access", {
-    contextId: context("Work"),
+    activityTypeId: activityType("Work"),
     parentId: laptop.id,
     parentRevision: (await api.server.getTodo(laptop.id)).revision,
   });
@@ -160,10 +151,9 @@ export async function seedWorkExamples(db, now = new Date()) {
     ),
   );
   const printer = await task("Follow replacement printer delivery", {
-    contextId: context("Work"),
+    activityTypeId: activityType("Work"),
     kind: "ISSUE",
     status: "WAITING",
-    waitingOnContactId: vendor.id,
     waitingReason: "Replacement unit is in transit.",
     workaround: "Use the shared printer temporarily.",
   });
@@ -172,19 +162,14 @@ export async function seedWorkExamples(db, now = new Date()) {
     date: date(12),
     reason: "Ask the vendor for tracking status.",
   });
-  await dates("printer:key", printer, {
-    action: "key-create",
-    label: "Expected delivery",
-    date: date(14),
-  });
   await task("Investigate intermittent backup failure", {
-    contextId: context("Work"),
+    activityTypeId: activityType("Work"),
     kind: "ISSUE",
     priorityLevel: "URGENT",
     nextAction: "Check the last failed backup log.",
   });
   const fix = await task("Document a resolved network issue", {
-    contextId: context("Work"),
+    activityTypeId: activityType("Work"),
     kind: "MAINTENANCE",
   });
   await patch("fix:complete", fix, {
@@ -194,7 +179,9 @@ export async function seedWorkExamples(db, now = new Date()) {
   const weekly = await task("Review weekly personal goals", { status: "IN_PROGRESS" }),
     vocab = await task("Review difficult Japanese words", { status: "TODO" }),
     exchange = await task("Organize a language exchange", { status: "BACKLOG" });
-  const cancelled = await task("Replace an unused test device", { contextId: context("Work") });
+  const cancelled = await task("Replace an unused test device", {
+    activityTypeId: activityType("Work"),
+  });
   await patch("cancelled:close", cancelled, {
     status: "CANCELLED",
     completionSummary: "Synthetic cancelled example; device no longer needed.",

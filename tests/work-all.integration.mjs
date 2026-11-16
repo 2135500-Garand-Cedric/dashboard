@@ -100,100 +100,90 @@ test(
           waiting = await contact({ name: `${prefix} waiting` });
           const simple = await create();
           assert.equal(simple.requesterId, null);
-          assert.equal(simple.waitingOnContactId, null);
           assert.deepEqual(simple.affectedPeople, []);
         },
       );
-      await t.test(
-        "requester, distinct affected people and waiting contact are atomic and audited",
-        async () => {
-          assigned = await create({
-            requesterId: requester.id,
-            affectedContactIds: [affected.id],
-            waitingOnContactId: waiting.id,
-            waitingOn: "Also waiting for shipment",
-            status: "WAITING",
-          });
-          assert.equal(assigned.requester.id, requester.id);
-          assert.equal(assigned.waitingOnContact.id, waiting.id);
-          assert.deepEqual(
-            assigned.affectedPeople.map((person) => person.id),
-            [affected.id],
-          );
-          const entry = (await api.taskActivity(assigned.id))[0];
-          assert.equal(entry.changes.requester.after.name, requester.name);
-          assert.deepEqual(entry.changes.affectedPeople.after, [
-            { id: affected.id, name: affected.name },
-          ]);
-          const count = await db.workActivity.count({ where: { todoId: assigned.id } }),
-            key = command(assigned);
-          const updated = await api.patchTodo(
+      await t.test("requester and distinct affected people are atomic and audited", async () => {
+        assigned = await create({
+          requesterId: requester.id,
+          affectedContactIds: [affected.id],
+
+          waitingOn: "Also waiting for shipment",
+          status: "WAITING",
+        });
+        assert.equal(assigned.requester.id, requester.id);
+        assert.deepEqual(
+          assigned.affectedPeople.map((person) => person.id),
+          [affected.id],
+        );
+        const entry = (await api.taskActivity(assigned.id))[0];
+        assert.equal(entry.changes.requester.after.name, requester.name);
+        assert.deepEqual(entry.changes.affectedPeople.after, [
+          { id: affected.id, name: affected.name },
+        ]);
+        const count = await db.workActivity.count({ where: { todoId: assigned.id } }),
+          key = command(assigned);
+        const updated = await api.patchTodo(
+          assigned.id,
+          { affectedContactIds: [affected.id, requester.id] },
+          key,
+        );
+        assert.deepEqual(
+          await api.patchTodo(
             assigned.id,
             { affectedContactIds: [affected.id, requester.id] },
             key,
-          );
-          assert.deepEqual(
-            await api.patchTodo(
-              assigned.id,
-              { affectedContactIds: [affected.id, requester.id] },
-              key,
-            ),
-            updated,
-          );
-          assert.equal(await db.workActivity.count({ where: { todoId: assigned.id } }), count + 1);
-          await reject(patch(assigned, { requesterId: null }), 409);
-          assigned = updated;
-          await reject(patch(assigned, { affectedContactIds: [affected.id, affected.id] }), 400);
-          assert.equal((await api.getTodo(assigned.id)).affectedPeople.length, 2);
-          assigned = await patch(assigned, { priorityLevel: "HIGH" });
-          assert.equal(assigned.requesterId, requester.id);
-          assert.equal(assigned.waitingOnContactId, waiting.id);
-          assert.equal(assigned.affectedPeople.length, 2);
-          const failing = load("../src/lib/work-management/server.ts", {
-            ...deps,
-            "@/lib/prisma": {
-              prisma: {
-                $transaction: (callback, options) =>
-                  db.$transaction(
-                    (tx) =>
-                      callback(
-                        new Proxy(tx, {
-                          get(target, prop) {
-                            if (prop === "workActivity")
-                              return {
-                                ...target.workActivity,
-                                create: async () => {
-                                  throw new Error("injected people audit failure");
-                                },
-                              };
-                            return Reflect.get(target, prop);
-                          },
-                        }),
-                      ),
-                    options,
-                  ),
-              },
+          ),
+          updated,
+        );
+        assert.equal(await db.workActivity.count({ where: { todoId: assigned.id } }), count + 1);
+        await reject(patch(assigned, { requesterId: null }), 409);
+        assigned = updated;
+        await reject(patch(assigned, { affectedContactIds: [affected.id, affected.id] }), 400);
+        assert.equal((await api.getTodo(assigned.id)).affectedPeople.length, 2);
+        assigned = await patch(assigned, { priorityLevel: "HIGH" });
+        assert.equal(assigned.requesterId, requester.id);
+        assert.equal(assigned.affectedPeople.length, 2);
+        const failing = load("../src/lib/work-management/server.ts", {
+          ...deps,
+          "@/lib/prisma": {
+            prisma: {
+              $transaction: (callback, options) =>
+                db.$transaction(
+                  (tx) =>
+                    callback(
+                      new Proxy(tx, {
+                        get(target, prop) {
+                          if (prop === "workActivity")
+                            return {
+                              ...target.workActivity,
+                              create: async () => {
+                                throw new Error("injected people audit failure");
+                              },
+                            };
+                          return Reflect.get(target, prop);
+                        },
+                      }),
+                    ),
+                  options,
+                ),
             },
-          });
-          const failureKey = command(assigned);
-          await assert.rejects(
-            failing.patchTodo(
-              assigned.id,
-              { affectedContactIds: [], requesterId: null },
-              failureKey,
-            ),
-            /injected people audit failure/,
-          );
-          assert.equal((await api.getTodo(assigned.id)).affectedPeople.length, 2);
-          assert.equal((await api.getTodo(assigned.id)).requesterId, requester.id);
-          assert.equal(
-            await db.workMutationReceipt.count({ where: { requestKey: failureKey.requestKey } }),
-            0,
-          );
-          await assert.rejects(db.workContact.delete({ where: { id: requester.id } }));
-          assert.ok(await db.todo.findUnique({ where: { id: assigned.id } }));
-        },
-      );
+          },
+        });
+        const failureKey = command(assigned);
+        await assert.rejects(
+          failing.patchTodo(assigned.id, { affectedContactIds: [], requesterId: null }, failureKey),
+          /injected people audit failure/,
+        );
+        assert.equal((await api.getTodo(assigned.id)).affectedPeople.length, 2);
+        assert.equal((await api.getTodo(assigned.id)).requesterId, requester.id);
+        assert.equal(
+          await db.workMutationReceipt.count({ where: { requestKey: failureKey.requestKey } }),
+          0,
+        );
+        await assert.rejects(db.workContact.delete({ where: { id: requester.id } }));
+        assert.ok(await db.todo.findUnique({ where: { id: assigned.id } }));
+      });
       await t.test(
         "inactive contacts retain existing associations and are searchable but cannot be newly assigned",
         async () => {
@@ -277,25 +267,23 @@ test(
       await t.test(
         "all filters and reference/description search use one owner-scoped result set for both presentations",
         async () => {
-          const context = await db.workContext.findFirstOrThrow({
-            where: { userId: 1, key: "work" },
+          const context = await db.activityType.create({
+            data: { name: `${prefix} activity`, color: "#3b82f6" },
           });
           const row = await create({
             title: `${prefix} distinctive`,
             description: `${prefix} description needle`,
-            contextId: context.id,
+            activityTypeId: context.id,
             priorityLevel: "URGENT",
             kind: "ISSUE",
             system: "Synthetic system",
-            tags: ["test-tag"],
             requesterId: requester.id,
           });
           const filters = {
-            context: String(context.id),
+            activityType: String(context.id),
             priority: "URGENT",
             kind: "ISSUE",
             system: "system",
-            tag: "test-tag",
             person: String(requester.id),
             status: "NEW",
             sort: "priority",
@@ -312,9 +300,11 @@ test(
             row.id,
           );
           assert.equal((await search({ q: `${prefix} description needle` })).items[0].id, row.id);
-          const unclassified = await create({ contextId: null, kind: null });
+          const unclassified = await create({ activityTypeId: null, kind: null });
           assert.ok(
-            (await search({ context: "none" })).items.some((task) => task.id === unclassified.id),
+            (await search({ activityType: "none" })).items.some(
+              (task) => task.id === unclassified.id,
+            ),
           );
           await assert.rejects(create({ company: "Retired" }), (error) => error.status === 400);
           await assert.rejects(create({ course: "Retired" }), (error) => error.status === 400);
@@ -353,11 +343,10 @@ test(
         async () => {
           const row = await patch(assigned, {
             requesterId: null,
-            waitingOnContactId: null,
+
             affectedContactIds: [],
           });
           assert.equal(row.requester, null);
-          assert.equal(row.waitingOnContact, null);
           assert.deepEqual(row.affectedPeople, []);
           const linked = await create({
             requesterId: requester.id,
@@ -384,6 +373,7 @@ test(
         await tx.todoAffectedContact.deleteMany({ where: { todoId: { in: taskIds } } });
         await tx.todo.updateMany({ where: { id: { in: taskIds } }, data: { dependsOnId: null } });
         await tx.todo.deleteMany({ where: { id: { in: taskIds } } });
+        await tx.activityType.deleteMany({ where: { name: `${prefix} activity` } });
         await tx.workContact.deleteMany({ where: { id: { in: contactIds } } });
         await tx.workMutationReceipt.deleteMany({ where: { requestKey: { in: keys } } });
         if (foreign) await tx.user.delete({ where: { id: foreign.id } });

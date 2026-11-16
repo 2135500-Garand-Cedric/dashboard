@@ -1,8 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { Prisma } from "@/generated/prisma";
+import { Prisma, type FinancialMatchKind as MatchKind } from "@/generated/prisma";
 import { FinanceValidationError } from "./validation";
 import { FINANCE_USER_ID } from "./server";
-import type { MatchKind } from "./reconciliation";
 
 type DB = Prisma.TransactionClient;
 export const matchKey = (kind: MatchKind, sourceId: number, transactionId: number) =>
@@ -187,7 +186,7 @@ export async function syncSupportingMatch(
   const links = await db.financialMatch.findMany({
     where: { userId: FINANCE_USER_ID, kind, ...sourceWhere(kind, record.id), status: "CONFIRMED" },
   });
-  // Multi-payment allocations are owned by the reconciliation workspace, not the legacy single-link control.
+  // Preserve shared payment allocations when a supporting record has no unique direct movement.
   if (!record.transactionId && !previousTransactionId && links.length) return;
   for (const link of links)
     if (link.transactionId !== record.transactionId && link.transactionId)

@@ -113,15 +113,7 @@ export async function listProjects(params: URLSearchParams) {
     { isolationLevel: "RepeatableRead" },
   );
 }
-const fields = [
-  "name",
-  "objective",
-  "summary",
-  "contextId",
-  "activityTypeId",
-  "startDate",
-  "targetDate",
-];
+const fields = ["name", "objective", "summary", "activityTypeId", "startDate", "targetDate"];
 function projectFields(body: Record<string, unknown>) {
   const result: Record<string, unknown> = {};
   for (const field of ["name", "objective", "summary"])
@@ -132,8 +124,6 @@ function projectFields(body: Record<string, unknown>) {
         field === "name" ? 500 : 20000,
         field !== "name",
       );
-  if (body.contextId !== undefined)
-    result.contextId = body.contextId === null ? null : workId(body.contextId);
   if (body.activityTypeId !== undefined)
     result.activityTypeId = body.activityTypeId === null ? null : workId(body.activityTypeId);
   for (const field of ["startDate", "targetDate"])
@@ -146,18 +136,6 @@ async function validateFields(
   data: Record<string, unknown>,
   previous?: Awaited<ReturnType<typeof projectRow>>,
 ) {
-  const contextId = data.contextId === undefined ? previous?.contextId : data.contextId;
-  if (
-    contextId != null &&
-    !(await db.workContext.count({
-      where: {
-        id: Number(contextId),
-        userId: WORK_USER_ID,
-        ...(contextId !== previous?.contextId ? { active: true } : {}),
-      },
-    }))
-  )
-    throw new WorkValidationError("Choose an active context belonging to the owner.");
   const activityTypeId =
     data.activityTypeId === undefined ? previous?.activityTypeId : data.activityTypeId;
   if (

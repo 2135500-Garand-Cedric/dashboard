@@ -58,7 +58,6 @@ test(
         const task = await write("/api/todos", {
           title: `Task dialogs ${viewport.width} ${randomUUID().slice(0, 8)}`,
           description: "Keep dates and daily actions easy to find.",
-          contextId: null,
         });
         ids.push(task.id);
         const ordinary = await write("/api/events", {

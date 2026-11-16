@@ -2,7 +2,7 @@ import { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
 import { FINANCE_USER_ID } from "./server";
 import { FinanceValidationError } from "./validation";
-import { unlinkSupportingMatches } from "./reconciliation-ledger";
+import { unlinkSupportingMatches } from "./matching-ledger";
 import { removeReceiptFile } from "./receipt-files";
 
 // Delete the user's single activity, including its supporting metadata, in one transaction.

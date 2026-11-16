@@ -1,5 +1,5 @@
 import type { Todo } from "@/generated/prisma";
-import { WorkValidationError, workId, workInteger, workText } from "./validation";
+import { WorkValidationError, workId, workText } from "./validation";
 import { WORK_STATUSES, WORK_PRIORITIES, WORK_KINDS, isClosed, legacyPriorityLevel } from "./types";
 
 export const TASK_FIELDS = [
@@ -9,15 +9,11 @@ export const TASK_FIELDS = [
   "priorityLevel",
   "status",
   "dependsOnId",
-  "rewardXp",
-  "rewardCoins",
   "activityTypeId",
-  "contextId",
   "projectId",
   "stageId",
   "kind",
   "system",
-  "tags",
   "desiredOutcome",
   "nextAction",
   "waitingOn",
@@ -28,7 +24,6 @@ export const TASK_FIELDS = [
   "acceptWorkaround",
   "archived",
   "requesterId",
-  "waitingOnContactId",
   "affectedContactIds",
   "parentId",
   "parentRevision",
@@ -55,17 +50,12 @@ export type TaskData = Partial<
     | "status"
     | "dependsOnId"
     | "parentId"
-    | "rewardXp"
-    | "rewardCoins"
     | "activityTypeId"
-    | "contextId"
     | "projectId"
     | "stageId"
     | "requesterId"
-    | "waitingOnContactId"
     | "kind"
     | "system"
-    | "tags"
     | "desiredOutcome"
     | "nextAction"
     | "waitingOn"
@@ -115,32 +105,15 @@ export function parseTaskFields(body: Record<string, unknown>): TaskData {
   }
   for (const key of [
     "activityTypeId",
-    "contextId",
+
     "projectId",
     "stageId",
     "dependsOnId",
     "requesterId",
-    "waitingOnContactId",
+
     "parentId",
   ] as const)
     if (body[key] !== undefined) data[key] = body[key] === null ? null : workId(body[key]);
-  for (const key of ["rewardXp", "rewardCoins"] as const)
-    if (body[key] !== undefined) {
-      if (workInteger(body[key], key) !== 0)
-        throw new WorkValidationError("Task rewards are no longer supported.");
-      data[key] = 0;
-    }
-  if (body.tags !== undefined) {
-    if (
-      !Array.isArray(body.tags) ||
-      body.tags.length > 20 ||
-      body.tags.some(
-        (value) => typeof value !== "string" || !value.trim() || value.trim().length > 50,
-      )
-    )
-      throw new WorkValidationError("Use up to 20 nonempty tags, each at most 50 characters.");
-    data.tags = [...new Set((body.tags as string[]).map((value) => value.trim().normalize("NFC")))];
-  }
   if (body.parentRevision !== undefined) workId(body.parentRevision);
   for (const key of ["allowBlocked", "allowUnfinishedChildren"])
     if (body[key] !== undefined && typeof body[key] !== "boolean")
@@ -236,17 +209,15 @@ export function lifecycleData(
   return result;
 }
 export const AUDIT_FIELDS = [
+  "activityType",
   "title",
   "description",
   "status",
   "priorityLevel",
-  "context",
   "requester",
-  "waitingOnContact",
   "affectedPeople",
   "kind",
   "system",
-  "tags",
   "desiredOutcome",
   "nextAction",
   "waitingOn",
@@ -259,10 +230,6 @@ export const AUDIT_FIELDS = [
   "archivedAt",
   "dependsOnId",
   "parentId",
-  "rewardXp",
-  "rewardCoins",
-  "rewardAppliedXp",
-  "rewardAppliedCoins",
 ];
 export function taskChanges(
   before: Record<string, unknown> | null,
@@ -272,7 +239,7 @@ export function taskChanges(
   for (const field of AUDIT_FIELDS) {
     let old: unknown = before?.[field] ?? null,
       next: unknown = after[field] ?? null;
-    if (["context", "requester", "waitingOnContact", "affectedPeople"].includes(field)) {
+    if (["activityType", "requester", "affectedPeople"].includes(field)) {
       const snapshot = (value: unknown): unknown => {
         if (Array.isArray(value))
           return value
@@ -302,6 +269,7 @@ export function activityAction(
   }
   if ("archivedAt" in changes) return after.archivedAt ? "ARCHIVED" : "RESTORED";
   if (Object.keys(changes).length === 1 && "priorityLevel" in changes) return "PRIORITY_CHANGED";
-  if (Object.keys(changes).length === 1 && "context" in changes) return "CONTEXT_CHANGED";
+  if (Object.keys(changes).length === 1 && "activityType" in changes)
+    return "ACTIVITY_TYPE_CHANGED";
   return "UPDATED";
 }

@@ -77,7 +77,7 @@ test("metadata exports keep unknown gross blank, all allocations and authenticat
   };
   const receipt = rules.receiptCsv([record]),
     income = rules.incomeCsv([record]);
-  assert.ok(receipt.includes("/api/finance/receipts/3/document?download=1"));
+  assert.ok(receipt.includes("/api/finance/expenses/3/document?download=1"));
   assert.ok(income.includes("/api/finance/income/3/document?download=1"));
   assert.ok(receipt.includes('""transactionId"":10'));
   assert.ok(receipt.includes('""transactionId"":11'));

@@ -157,24 +157,18 @@ async function main() {
       description: "Review the new words and mark the difficult ones for another pass.",
       status: "IN_PROGRESS",
       priority: 1,
-      rewardXp: 30,
-      rewardCoins: 8,
     },
     {
       title: "Plan next week's goals",
       description: "Choose a few realistic goals for Japanese practice and personal projects.",
       status: "TODO",
       priority: 2,
-      rewardXp: 50,
-      rewardCoins: 12,
     },
     {
       title: "Set up the dashboard database",
       description: "Create the local database and verify the main dashboard workflows.",
       status: "DONE",
       priority: 3,
-      rewardXp: 75,
-      rewardCoins: 20,
     },
   ];
 

@@ -55,7 +55,7 @@ test(
       assert.ok(planning.sections.overdue.total >= 1);
       assert.equal(planning.sections.followups.total, 1);
       sentinel = await api.server.createTodo(
-        { title: "Synthetic sentinel outside the example manifest", rewardXp: 0, rewardCoins: 0 },
+        { title: "Synthetic sentinel outside the example manifest" },
         command(),
       );
       const originalSentinel = await api.server.getTodo(sentinel.id);

@@ -35,13 +35,11 @@ test("references and reviewed legacy mappings retain unknown priorities without 
     assert.equal(types.legacyPriorityLevel(raw), level);
   assert.equal(fields.parseTaskFields({ priority: 2 }).priorityLevel, "NORMAL");
   assert.throws(() => fields.parseTaskFields({ priority: 1, priorityLevel: "HIGH" }));
-  assert.deepEqual(fields.parseTaskFields({ tags: ["one", " one ", "two"] }).tags, ["one", "two"]);
   for (const body of [
     { status: "CUSTOM" },
     { priorityLevel: "MEDIUM" },
-    { tags: [""] },
     { archived: "true" },
-    { contextId: -1 },
+    { activityTypeId: -1 },
     { kind: "EXAM" },
   ])
     assert.throws(() => fields.parseTaskFields(body));
@@ -158,10 +156,17 @@ test("phase-02 inventory permits only declared additive fields/enums/defaults an
   );
 });
 
-test("task rewards are retired while zero-valued legacy requests remain compatible", () => {
-  for (const field of ["rewardXp", "rewardCoins"]) {
-    assert.throws(() => fields.parseTaskFields({ [field]: 10 }), /no longer supported/);
-    assert.equal(fields.parseTaskFields({ [field]: 0 })[field], 0);
+test("retired task metadata is rejected by the public command schema", () => {
+  for (const key of [
+    "rewardXp",
+    "rewardCoins",
+    "tags",
+    "contextId",
+    "waitingOnContactId",
+    "company",
+    "course",
+  ]) {
+    assert.throws(() => validation.workBody({ [key]: 0 }, fields.TASK_FIELDS));
   }
 });
 
@@ -180,4 +185,16 @@ test("closing automatically archives and reopening returns the task to active wo
     assert.equal(reopened.completedAt, null);
     assert.equal(reopened.cancelledAt, null);
   }
+});
+
+test("activity-type assignments retain readable audit facts without restoring contexts", () => {
+  const changes = fields.taskChanges(
+    { activityType: { id: 1, name: "School", color: "#3b82f6" } },
+    { activityType: { id: 2, name: "Work", color: "#f43f5e" } },
+  );
+  assert.deepEqual(changes.activityType, {
+    before: { id: 1, name: "School" },
+    after: { id: 2, name: "Work" },
+  });
+  assert.equal(fields.activityAction(row(), row(), changes), "ACTIVITY_TYPE_CHANGED");
 });

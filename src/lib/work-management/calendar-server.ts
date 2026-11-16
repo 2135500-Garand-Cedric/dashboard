@@ -60,13 +60,6 @@ async function conversionState(db: DB, id: number, body: Record<string, unknown>
   const task = body.taskId == null ? null : await todoRow(db, workId(body.taskId));
   if (task?.archivedAt)
     throw new WorkValidationError("Restore the chosen task before converting this event.", 409);
-  const contextId = body.contextId == null ? null : workId(body.contextId);
-  if (
-    !task &&
-    contextId !== null &&
-    !(await db.workContext.count({ where: { id: contextId, userId: WORK_USER_ID, active: true } }))
-  )
-    throw new WorkValidationError("Choose an active context belonging to the owner.");
   const activityTypeId = task
     ? task.activityTypeId
     : body.activityTypeId == null
@@ -92,20 +85,18 @@ async function conversionState(db: DB, id: number, body: Record<string, unknown>
     taskRevision: task?.revision ?? null,
     taskId: task?.id ?? null,
     title,
-    contextId: task?.contextId ?? contextId,
     activityTypeId,
     mode: body.mode,
     changeDeadline: body.changeDeadline,
     before: json(before),
     after: json(after),
   });
-  return { event, task, title, contextId, activityTypeId, before, after, token };
+  return { event, task, title, activityTypeId, before, after, token };
 }
 const conversionFields = [
   "mode",
   "taskId",
   "title",
-  "contextId",
   "activityTypeId",
   "changeDeadline",
   "deadline",
@@ -128,7 +119,6 @@ export async function previewConversion(id: number, value: unknown) {
             }
           : null,
         title: state.title,
-        contextId: state.task?.contextId ?? state.contextId,
         activityTypeId: state.activityTypeId,
         beforeDeadline: state.before,
         afterDeadline: state.after,
@@ -177,7 +167,6 @@ export async function confirmConversion(id: number, value: unknown, command: Wor
         data: {
           title: state.title,
           userId: WORK_USER_ID,
-          contextId: state.contextId,
           activityTypeId: state.activityTypeId,
         },
         include: {
@@ -210,9 +199,7 @@ export async function confirmConversion(id: number, value: unknown, command: Wor
             },
           },
           requester: true,
-          waitingOnContact: true,
           affectedPeople: { include: { contact: true } },
-          context: true,
           activityType: true,
           project: true,
           stage: true,
@@ -368,9 +355,7 @@ export async function calendarFeed(params: URLSearchParams) {
     throw new WorkValidationError("Choose valid calendar layers.");
   const project = params.get("project") || "",
     projectId = project && project !== "none" ? workId(project) : null;
-  const context = params.get("context") || "",
-    contextId = context && context !== "none" ? workId(context) : null,
-    history = params.get("history") === "true",
+  const history = params.get("history") === "true",
     from = localToday(start, getAppTimeZone()),
     through =
       end.getTime() === dayStart(localToday(end, getAppTimeZone()), getAppTimeZone()).getTime()
@@ -378,26 +363,22 @@ export async function calendarFeed(params: URLSearchParams) {
         : nextCalendarDate(localToday(end, getAppTimeZone()));
   const activity = params.get("activityType") || "",
     activityId = activity && activity !== "none" ? workId(activity) : null;
-  const taskContext: Prisma.TodoWhereInput = context
-    ? { contextId: context === "none" ? null : contextId }
-    : {};
-  const eventContext: Prisma.EventWhereInput =
-    context || project
-      ? {
-          OR: [
-            {
-              taskLinks: {
-                some: {
-                  todo: { userId: WORK_USER_ID, ...taskContext, ...(project ? { projectId } : {}) },
-                },
+  const eventContext: Prisma.EventWhereInput = project
+    ? {
+        OR: [
+          {
+            taskLinks: {
+              some: {
+                todo: { userId: WORK_USER_ID, ...(project ? { projectId } : {}) },
               },
             },
-            ...((!context || context === "none") && (!project || project === "none")
-              ? [{ taskLinks: { none: { todo: { userId: WORK_USER_ID } } } }]
-              : []),
-          ],
-        }
-      : {};
+          },
+          ...(!project || project === "none"
+            ? [{ taskLinks: { none: { todo: { userId: WORK_USER_ID } } } }]
+            : []),
+        ],
+      }
+    : {};
   const taskWhere: Prisma.TodoWhereInput = {
     userId: WORK_USER_ID,
     ...(history
@@ -408,7 +389,6 @@ export async function calendarFeed(params: URLSearchParams) {
           ],
         }
       : { archivedAt: null }),
-    ...taskContext,
     ...(activity ? { activityTypeId: activityId } : {}),
     ...(project ? { projectId, ...(projectId ? { project: { userId: WORK_USER_ID } } : {}) } : {}),
     ...(!history ? { status: { notIn: ["DONE", "CANCELLED"] } } : {}),
@@ -580,7 +560,6 @@ export async function calendarFeed(params: URLSearchParams) {
                     archivedAt: null,
                     ...(projectId ? { id: projectId } : {}),
                     ...(activity ? { activityTypeId: activityId } : {}),
-                    ...(context ? { contextId: context === "none" ? null : contextId } : {}),
                     ...(!history ? { status: "ACTIVE" } : {}),
                   },
                   ...dateRange("date", "at"),

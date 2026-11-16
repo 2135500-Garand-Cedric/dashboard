@@ -86,7 +86,7 @@ test(
       assert.equal(
         (
           await context.request.get(
-            `${base}/api/finance/receipts/${expense.receipts[0].id}/document`,
+            `${base}/api/finance/expenses/${expense.receipts[0].id}/document`,
           )
         ).status(),
         200,

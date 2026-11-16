@@ -44,9 +44,7 @@ export const todoInclude = {
   },
   parent: { select: taskStubSelect },
   requester: true,
-  waitingOnContact: true,
   affectedPeople: { include: { contact: true }, orderBy: { contactId: "asc" as const } },
-  context: true,
   activityType: true,
   project: true,
   stage: true,
@@ -68,16 +66,7 @@ import {
 } from "./event-core";
 type TodoRow = Prisma.TodoGetPayload<{ include: typeof todoInclude }>;
 const todoDTO = (row: TodoRow, now = new Date()) => {
-  const {
-    prerequisites,
-    parent,
-    followUps,
-    company: retiredCompany,
-    course: retiredCourse,
-    ...fields
-  } = row;
-  void retiredCompany;
-  void retiredCourse;
+  const { prerequisites, parent, followUps, ...fields } = row;
   const single = prerequisites.length === 1 ? prerequisites[0].prerequisite : null;
   return {
     ...fields,
@@ -119,11 +108,9 @@ const todoDTO = (row: TodoRow, now = new Date()) => {
               ? null
               : row.priority,
     requester: row.requester?.userId === WORK_USER_ID ? row.requester : null,
-    waitingOnContact: row.waitingOnContact?.userId === WORK_USER_ID ? row.waitingOnContact : null,
     affectedPeople: row.affectedPeople
       .filter((link) => link.contact.userId === WORK_USER_ID)
       .map((link) => link.contact),
-    context: row.context?.userId === WORK_USER_ID ? row.context : null,
     parent: parent?.userId === WORK_USER_ID ? graphStub(parent) : null,
     dependsOnId: single?.id ?? null,
     dependsOn: single?.userId === WORK_USER_ID ? graphStub(single) : null,
@@ -345,22 +332,6 @@ async function recordTaskActivity(db: DB, before: TodoRow | null, after: TodoRow
     changes as Prisma.InputJsonValue,
   );
 }
-async function validateContext(db: DB, id: number | null | undefined, previous?: number | null) {
-  if (id == null) return;
-  const context = await db.workContext.findFirst({ where: { id, userId: WORK_USER_ID } });
-  if (!context || (!context.active && id !== previous))
-    throw new WorkValidationError("Choose an active context belonging to the application owner.");
-}
-async function defaultContext(db: DB): Promise<number | null> {
-  return (
-    (
-      await db.workContext.findFirst({
-        where: { userId: WORK_USER_ID, key: "personal", active: true },
-        select: { id: true },
-      })
-    )?.id ?? null
-  );
-}
 async function validateActivityType(
   db: DB,
   id: number | null | undefined,
@@ -400,8 +371,6 @@ export async function createTodo(value: unknown, command: WorkCommand) {
     throw new WorkValidationError("Create the task first, then close it explicitly.");
   if (!data.title) throw new WorkValidationError("Enter a task title.");
   return mutation("todo:create", body, command, async (db) => {
-    const contextId = data.contextId === undefined ? await defaultContext(db) : data.contextId;
-    await validateContext(db, contextId);
     const project = await validateNewMembership(db, data.projectId, data.stageId);
     const activityTypeId =
       data.activityTypeId === undefined ? (project?.activityTypeId ?? null) : data.activityTypeId;
@@ -413,7 +382,6 @@ export async function createTodo(value: unknown, command: WorkCommand) {
         ...columns,
         title: data.title!,
         userId: WORK_USER_ID,
-        contextId,
         activityTypeId,
         status: data.status ?? "NEW",
         priorityLevel: data.priorityLevel ?? "NORMAL",
@@ -467,7 +435,6 @@ export async function patchTodo(id: number, value: unknown, command: WorkCommand
     if (body.priority === null && row.priorityLevel === "URGENT")
       throw new WorkValidationError("Use the named priority when editing an Urgent task.", 409);
     const data = lifecycleData(row, parsed, body, new Date());
-    await validateContext(db, data.contextId, row.contextId);
     await validateActivityType(db, data.activityTypeId, row.activityTypeId);
     await validatePeople(db, body, row);
     const status = data.status ?? row.status;
@@ -479,8 +446,6 @@ export async function patchTodo(id: number, value: unknown, command: WorkCommand
       body.status !== undefined && ["IN_PROGRESS", "DONE", "CANCELLED"].includes(status)
         ? await validateTransition(db, id, status, body)
         : null;
-    // Task completion is independent of personal XP/coins. Keep historic reward
-    // snapshots intact; neither completion nor reopening changes earned balances.
     if (!isClosed(row.status) && isClosed(status)) await retireFollowUps(db, id);
     await replaceAffected(db, id, body);
     const updated = await db.todo.update({
@@ -574,7 +539,6 @@ export async function deleteTodo(id: number, command: WorkCommand) {
     await db.todoAffectedContact.deleteMany({ where: { todoId: id } });
     await db.subtask.deleteMany({ where: { todoId: id } });
     await db.todo.delete({ where: { id, userId: WORK_USER_ID } });
-    // Deletion does not reverse earned rewards, matching the previous behavior.
     return { ok: true };
   });
 }
@@ -739,33 +703,6 @@ export async function deleteEvent(id: number, command: WorkCommand) {
     return { success: true };
   });
 }
-// Legacy adapter: never infers a deadline or truncates a multi-task association.
-export async function createLinkedTodo(id: number, value: unknown, command: WorkCommand) {
-  const body = workBody(value, ["title"]),
-    title = workText(body.title, "task title", 500)!;
-  return mutation(`event:${id}:create-todo`, body, command, async (db) => {
-    const row = await eventRow(db, id);
-    if (row.taskLinks.length > 1)
-      throw new WorkValidationError(
-        "Choose an existing task in the event's task-link editor.",
-        409,
-      );
-    if (row.taskLinks.length) {
-      await todoRow(db, row.taskLinks[0].todoId);
-      return eventDTO(row);
-    }
-    version(row, command);
-    const task = await db.todo.create({
-      data: { title, userId: WORK_USER_ID, contextId: await defaultContext(db) },
-      include: todoInclude,
-    });
-    await recordTaskActivity(db, null, task);
-    await writeEventLinks(db, id, [{ todoId: task.id, role: "RELATED" }], row.kind);
-    await db.event.update({ where: { id }, data: { revision: { increment: 1 } } });
-    return eventDTO(await eventRow(db, id));
-  });
-}
-
 export async function taskActivity(id: number) {
   await todoRow(prisma, id);
   return prisma.workActivity.findMany({
@@ -774,67 +711,6 @@ export async function taskActivity(id: number) {
     take: 100,
   });
 }
-export async function listWorkContexts() {
-  return prisma.workContext.findMany({
-    where: { userId: WORK_USER_ID },
-    orderBy: [{ active: "desc" }, { name: "asc" }],
-  });
-}
-function contextData(value: unknown) {
-  const body = workBody(value, ["name", "active"]);
-  const data: { name?: string; normalizedName?: string; active?: boolean } = {};
-  if (body.name !== undefined) {
-    data.name = workText(body.name, "context name", 80)!.normalize("NFKC").trim();
-    data.normalizedName = data.name.toLocaleLowerCase("en-CA");
-  }
-  if (body.active !== undefined) {
-    if (typeof body.active !== "boolean")
-      throw new WorkValidationError("Active must be true or false.");
-    data.active = body.active;
-  }
-  return { body, data };
-}
-export async function createWorkContext(value: unknown, command: WorkCommand) {
-  const { body, data } = contextData(value);
-  if (!data.name) throw new WorkValidationError("Enter a context name.");
-  return mutation("context:create", body, command, async (db) => {
-    if (
-      await db.workContext.count({
-        where: { userId: WORK_USER_ID, normalizedName: data.normalizedName },
-      })
-    )
-      throw new WorkValidationError("A context with this name already exists.", 409);
-    return db.workContext.create({
-      data: {
-        ...data,
-        name: data.name!,
-        normalizedName: data.normalizedName!,
-        userId: WORK_USER_ID,
-        key: command.requestKey,
-      },
-    });
-  });
-}
-export async function patchWorkContext(id: number, value: unknown, command: WorkCommand) {
-  const { body, data } = contextData(value);
-  return mutation(`context:${id}:patch`, body, command, async (db) => {
-    const row = await db.workContext.findFirst({ where: { id, userId: WORK_USER_ID } });
-    if (!row) throw new WorkValidationError("Context not found.", 404);
-    version(row, command);
-    if (
-      data.normalizedName &&
-      (await db.workContext.count({
-        where: { userId: WORK_USER_ID, normalizedName: data.normalizedName, id: { not: id } },
-      }))
-    )
-      throw new WorkValidationError("A context with this name already exists.", 409);
-    return db.workContext.update({
-      where: { id, userId: WORK_USER_ID },
-      data: { ...data, revision: { increment: 1 } },
-    });
-  });
-}
-
 function affectedIds(body: Record<string, unknown>): number[] | undefined {
   if (body.affectedContactIds === undefined) return undefined;
   if (!Array.isArray(body.affectedContactIds) || body.affectedContactIds.length > 30)
@@ -848,7 +724,7 @@ async function validatePeople(db: DB, body: Record<string, unknown>, previous?: 
   const links = affectedIds(body),
     prior = new Set(previous?.affectedPeople.map((link) => link.contactId) ?? []);
   const assignments = [
-    ...(["requesterId", "waitingOnContactId"] as const)
+    ...(["requesterId"] as const)
       .filter((key) => body[key] != null)
       .map((key) => ({ id: workId(body[key]), existing: previous?.[key] === body[key] })),
     ...(links ?? []).map((id) => ({ id, existing: prior.has(id) })),

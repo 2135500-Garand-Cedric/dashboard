@@ -11,7 +11,6 @@ import {
 } from "@/lib/work-management/types";
 export type TaskFoundationDraft = {
   priorityLevel: WorkTodo["priorityLevel"];
-  contextId: number | null;
   activityTypeId: number | null;
   kind: WorkTodo["kind"];
   system: string;
@@ -24,7 +23,6 @@ export type TaskFoundationDraft = {
 export function foundationDraft(task: WorkTodo): TaskFoundationDraft {
   return {
     priorityLevel: priorityOf(task),
-    contextId: task.contextId ?? null,
     activityTypeId: task.activityTypeId ?? null,
     kind: task.kind ?? null,
     system: task.system ?? "",
@@ -38,7 +36,6 @@ export function foundationDraft(task: WorkTodo): TaskFoundationDraft {
 export function foundationPayload(draft: TaskFoundationDraft) {
   const fields: (keyof TaskFoundationDraft)[] = [
     "priorityLevel",
-    "contextId",
     "activityTypeId",
     "kind",
     "system",
@@ -70,10 +67,7 @@ export default function TaskFoundationFields({
   section?: "all" | "main" | "metadata";
 }) {
   const textFields: {
-    key: Exclude<
-      keyof TaskFoundationDraft,
-      "contextId" | "activityTypeId" | "priorityLevel" | "kind"
-    >;
+    key: Exclude<keyof TaskFoundationDraft, "activityTypeId" | "priorityLevel" | "kind">;
     label: string;
     multiline?: boolean;
   }[] = [

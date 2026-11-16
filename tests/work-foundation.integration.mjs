@@ -43,7 +43,7 @@ test(
       prefix = `__foundation_${randomUUID()}`;
     const ids = new Set(),
       keys = [],
-      contextIds = [];
+      activityTypeIds = [];
     const original = await db.user.findUniqueOrThrow({
       where: { id: 1 },
       select: { totalXp: true, coins: true, updatedAt: true },
@@ -69,13 +69,13 @@ test(
     let foreign;
     try {
       await t.test(
-        "title-only capture defaults to New/Normal/Personal; legacy raw values are immutable historical data",
+        "title-only capture defaults to New/Normal with no activity type; legacy raw values are immutable historical data",
         async () => {
           const row = await create();
           assert.equal(row.status, "NEW");
           assert.equal(row.priorityLevel, "NORMAL");
           assert.equal(row.kind, "TASK");
-          assert.equal(row.context.key, "personal");
+          assert.equal(row.activityTypeId, null);
           assert.equal(row.legacyPriority, null);
           assert.match(row.reference, /^TASK-\d{4,}$/);
           const entries = await activity(row.id);
@@ -90,14 +90,14 @@ test(
               status: "DONE",
               priority: 99,
               priorityLevel: null,
-              contextId: null,
+              activityTypeId: null,
               kind: null,
             },
           });
           ids.add(legacy.id);
           const edited = await patch(legacy, { nextAction: "Review metadata only" });
           assert.equal(edited.completedAt, null);
-          assert.equal(edited.contextId, null);
+          assert.equal(edited.activityTypeId, null);
           assert.equal(edited.kind, null);
           assert.equal(edited.priorityLevel, null);
           assert.equal(edited.legacyPriority, 99);
@@ -109,41 +109,23 @@ test(
         },
       );
       await t.test(
-        "custom contexts are owner-scoped, versioned, retain labels and can be deactivated without changing tasks",
+        "activity types replace contexts and preserve existing inactive assignments",
         async () => {
-          const key = command();
-          const context = await api.createWorkContext({ name: prefix }, key);
-          contextIds.push(context.id);
-          assert.deepEqual(await api.createWorkContext({ name: prefix }, key), context);
-          await reject(api.createWorkContext({ name: prefix.toUpperCase() }, command()), 409);
-          const row = await create({
-            contextId: context.id,
+          const type = await db.activityType.create({ data: { name: prefix, color: "#3b82f6" } });
+          activityTypeIds.push(type.id);
+          let row = await create({
+            activityTypeId: type.id,
             priorityLevel: "HIGH",
             kind: "REQUEST",
             system: "Printer",
-            tags: ["test", " test "],
           });
-          assert.deepEqual(row.tags, ["test"]);
-          assert.equal(row.context.id, context.id);
-          const inactive = await api.patchWorkContext(
-            context.id,
-            { active: false },
-            command(context),
-          );
-          assert.equal(inactive.active, false);
-          await reject(api.patchWorkContext(context.id, { name: "stale" }, command(context)), 409);
-          await reject(create({ contextId: context.id }), 400);
-          const edited = await patch(row, {
-            contextId: context.id,
-            desiredOutcome: "Print a test page",
-          });
-          assert.equal(edited.context.id, context.id);
-          const removed = await patch(edited, { contextId: null });
-          assert.equal(removed.contextId, null);
-          const changes = (await activity(row.id)).at(-1);
-          assert.equal(changes.action, "CONTEXT_CHANGED");
-          assert.equal(changes.changes.context.before.name, prefix);
-          assert.equal(changes.changes.context.after, null);
+          assert.equal(row.activityType.id, type.id);
+          await db.activityType.update({ where: { id: type.id }, data: { active: false } });
+          await reject(create({ activityTypeId: type.id }), 400);
+          row = await patch(row, { activityTypeId: type.id, desiredOutcome: "Print a test page" });
+          assert.equal(row.activityType.id, type.id);
+          const cleared = await patch(row, { activityTypeId: null });
+          assert.equal(cleared.activityType, null);
         },
       );
       await t.test(
@@ -251,7 +233,7 @@ test(
       await t.test(
         "replay/conflict and failure of audit insert cannot duplicate history or partially change balances",
         async () => {
-          const row = await create({ rewardXp: 0, rewardCoins: 0 }),
+          const row = await create({}),
             key = command(row);
           const completed = await api.patchTodo(row.id, { status: "DONE" }, key);
           const count = (await activity(row.id)).length;
@@ -259,7 +241,7 @@ test(
           assert.equal((await activity(row.id)).length, count);
           await reject(patch(row, { status: "DONE" }), 409);
           assert.equal((await activity(row.id)).length, count);
-          const second = await create({ rewardXp: 0, rewardCoins: 0 });
+          const second = await create({});
           const balance = await db.user.findUnique({
             where: { id: 1 },
             select: { totalXp: true, coins: true },
@@ -309,18 +291,13 @@ test(
         },
       );
       await t.test(
-        "history and contexts cannot be read or reassigned across owners; timestamps/activity are not writable fields",
+        "task history cannot be read across owners; timestamps/activity are not writable fields",
         async () => {
           foreign = await db.user.create({ data: { email: `${randomUUID()}@example.invalid` } });
-          const context = await db.workContext.create({
-            data: { userId: foreign.id, key: prefix, name: prefix, normalizedName: prefix },
-          });
           const other = await db.todo.create({ data: { userId: foreign.id, title: prefix } });
           ids.add(other.id);
           await reject(api.taskActivity(other.id), 404);
-          await reject(api.patchWorkContext(context.id, { active: false }, command(context)), 404);
           const row = await create();
-          await reject(patch(row, { contextId: context.id }), 400);
           await reject(patch(row, { createdAt: "2000-01-01" }), 400);
           await reject(patch(row, { activity: [] }), 400);
           const route = load("../src/app/api/todos/[id]/activity/route.ts", {
@@ -371,9 +348,8 @@ test(
         await tx.todo.updateMany({ where: { id: { in: all } }, data: { dependsOnId: null } });
         await tx.todo.deleteMany({ where: { id: { in: all } } });
         await tx.workMutationReceipt.deleteMany({ where: { requestKey: { in: keys } } });
-        await tx.workContext.deleteMany({ where: { id: { in: contextIds } } });
+        await tx.activityType.deleteMany({ where: { id: { in: activityTypeIds } } });
         if (foreign) {
-          await tx.workContext.deleteMany({ where: { userId: foreign.id } });
           await tx.user.delete({ where: { id: foreign.id } });
         }
         await tx.user.update({ where: { id: 1 }, data: original });

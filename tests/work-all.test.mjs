@@ -22,11 +22,11 @@ const validation = load("../src/lib/work-management/validation.ts"),
 test("All Work parses bounded validated filters", () => {
   const parsed = query.parseWorkQuery(
     new URLSearchParams(
-      "view=history&q=TASK-0013&context=none&person=2&sort=priority&status=DONE&priority=URGENT&tag=printer",
+      "view=history&q=TASK-0013&activityType=none&person=2&sort=priority&status=DONE&priority=URGENT",
     ),
   );
   assert.equal(parsed.page, 1);
-  assert.equal(parsed.context, "none");
+  assert.equal(parsed.activityType, "none");
   assert.equal(parsed.person, "2");
   assert.equal(query.WORK_PAGE_SIZE, 30);
   for (const input of [
@@ -35,7 +35,7 @@ test("All Work parses bounded validated filters", () => {
     "priority=bad",
     "kind=bad",
     "sort=bad",
-    "context=bad",
+    "activityType=bad",
     "person=0",
     "page=0",
     "page=2147483648",
@@ -48,7 +48,9 @@ test("All Work parses bounded validated filters", () => {
 });
 test("search query always scopes owner, archive/history and optional people/reference correctly", () => {
   const where = query.workQueryWhere(
-    query.parseWorkQuery(new URLSearchParams("q=TASK-0013&context=none&person=2&priority=URGENT")),
+    query.parseWorkQuery(
+      new URLSearchParams("q=TASK-0013&activityType=none&person=2&priority=URGENT"),
+    ),
     1,
   );
   assert.deepEqual(where.AND[0], { userId: 1 });
@@ -57,7 +59,7 @@ test("search query always scopes owner, archive/history and optional people/refe
   assert.deepEqual(where.AND.at(-1).OR.at(-1), { id: 13 });
   assert.ok(JSON.stringify(where).includes('"requesterId":2'));
   assert.ok(JSON.stringify(where).includes('"affectedPeople"'));
-  assert.ok(JSON.stringify(where).includes('"contextId":null'));
+  assert.ok(JSON.stringify(where).includes('"activityTypeId":null'));
   assert.deepEqual(query.workQueryOrder("priority").at(-1), { id: "desc" });
   const archived = query.workQueryWhere(
     query.parseWorkQuery(new URLSearchParams("view=archived")),

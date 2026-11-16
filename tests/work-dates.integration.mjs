@@ -215,7 +215,7 @@ test(
       await t.test(
         "closure retires active follow-ups without erasing history; reopen recomputes original deadline without reminders",
         async () => {
-          const row = await create({ rewardXp: 0, rewardCoins: 0 });
+          const row = await create({});
           await act(row, { action: "deadline", date: date("2020-01-01") });
           await act(row, { action: "followup-create", date: date("2020-01-02") });
           const legacy = await db.workKeyDate.create({
@@ -392,7 +392,7 @@ test(
       await t.test(
         "late audit failure rolls back deadline, follow-up replacement, retirement and rewards",
         async () => {
-          const row = await create({ rewardXp: 0 });
+          const row = await create({});
           await act(row, { action: "followup-create", date: date("2026-11-10") });
           const failDb = {
             $transaction: (action, options) =>

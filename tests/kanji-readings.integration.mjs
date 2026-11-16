@@ -63,6 +63,9 @@ test(
               "@/lib/japanese/progress-history": { recordJapaneseProgress: async () => {} },
               "@/lib/japanese/utils": utils,
               "@/lib/japanese/kanji-writing": kanji,
+              "@/lib/japanese/practice-selection": load(
+                "../src/lib/japanese/practice-selection.ts",
+              ),
               "@/lib/japanese/vocabulary-progress": progress,
             };
             const add = load(

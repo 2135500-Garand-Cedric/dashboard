@@ -7,7 +7,7 @@ import { activityHref } from "@/lib/finance/activity-links";
 import { ArrowPathIcon } from "@heroicons/react/24/outline";
 import IncomeEditor from "./IncomeEditor";
 import StatementBadge from "./StatementBadge";
-import ReceiptEditor from "./ReceiptEditor";
+import ExpenseEditor from "./ExpenseEditor";
 import TransactionEntry from "./TransactionEntry";
 import { financeRequest, FinanceLoadError, secondaryButton, useFinanceData } from "./shared";
 import { useSnackbar } from "@/context/SnackbarContext";
@@ -143,11 +143,10 @@ export default function ActivityDetail({
           headerActions={headerActions}
           notesTransaction={transaction}
           currencies={currencies}
-          unified
           onSaved={result.retry}
         />
       ) : kind === "expenses" && transaction.type === "EXPENSE" ? (
-        <ReceiptEditor
+        <ExpenseEditor
           key={`${transaction.updatedAt}:${recordId ?? "new"}`}
           id={recordId ? String(recordId) : undefined}
           initialDate={transaction.date}
@@ -157,7 +156,6 @@ export default function ActivityDetail({
           headerActions={headerActions}
           notesTransaction={transaction}
           currencies={currencies}
-          expenseMode
           onSaved={result.retry}
         />
       ) : (

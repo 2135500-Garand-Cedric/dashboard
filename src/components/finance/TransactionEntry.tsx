@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import FinancialRecordLink from "./FinancialRecordLink";
 import type { ReactNode } from "react";
 import ActivityNotes from "./ActivityNotes";
 import { activityHref } from "@/lib/finance/activity-links";
@@ -115,7 +116,7 @@ function EntryForm({
     ? "/finance/expenses"
     : transferOnly
       ? "/finance/transfers"
-      : "/finance/transactions";
+      : "/finance";
   const accounts = useFinanceData<{ accounts: FinanceAccount[] }>("/api/finance/accounts");
   const categories = useFinanceData<{ categories: FinanceCategory[] }>("/api/finance/categories");
   const router = useRouter();
@@ -247,7 +248,7 @@ function EntryForm({
         <div className="flex flex-wrap gap-2">
           {headerActions}
           <Link href={historyPath} className={secondaryButton}>
-            ← {refundOnly ? "Expenses" : transferOnly ? "Transfers" : "Transaction history"}
+            ← {refundOnly ? "Expenses" : transferOnly ? "Transfers" : "Finance overview"}
           </Link>
         </div>
       </div>
@@ -266,15 +267,11 @@ function EntryForm({
           <h3 className="text-lg font-semibold">Linked receipts ({existing.receipts.length})</h3>
           <div className="flex flex-wrap gap-2">
             {existing.receipts.map((receipt) => (
-              <Link
-                key={receipt.id}
-                href={`/finance/receipts/${receipt.id}`}
-                className={`${secondaryButton} max-w-full break-words`}
-              >
+              <FinancialRecordLink key={receipt.id} kind="EXPENSE" id={receipt.id}>
                 {existing.receipts.length === 1
                   ? "View receipt"
                   : `View receipt #${receipt.id} — ${receipt.merchant || "Receipt"} · ${receipt.date}`}
-              </Link>
+              </FinancialRecordLink>
             ))}
           </div>
         </section>
@@ -286,15 +283,11 @@ function EntryForm({
           </h3>
           <div className="flex flex-wrap gap-2">
             {existing.incomeRecords.map((record) => (
-              <Link
-                key={record.id}
-                href={`/finance/income/${record.id}`}
-                className={`${secondaryButton} max-w-full break-words`}
-              >
+              <FinancialRecordLink key={record.id} kind="INCOME" id={record.id}>
                 {existing.incomeRecords.length === 1
                   ? "View income / pay stub"
                   : `${record.description} · ${record.date}`}
-              </Link>
+              </FinancialRecordLink>
             ))}
           </div>
         </section>

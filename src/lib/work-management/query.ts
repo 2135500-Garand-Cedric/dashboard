@@ -27,12 +27,10 @@ export function parseWorkQuery(params: URLSearchParams) {
     planning: choice("planning", ["", ...PLANNING_SECTIONS], ""),
     view: choice("view", ["active", "history", "archived", "all"], "active"),
     activityType: id("activityType", true),
-    context: id("context", true),
     project: id("project", true),
     stage: id("stage"),
     person: id("person"),
     system: text("system", 120),
-    tag: text("tag", 50),
     status: choice("status", ["", ...WORK_STATUSES], ""),
     priority: choice("priority", ["", "none", ...WORK_PRIORITIES], ""),
     kind: choice("kind", ["", "none", ...WORK_KINDS], ""),
@@ -83,11 +81,8 @@ export function workQueryWhere(
   if (query.stage) AND.push({ stageId: Number(query.stage), stage: { project: { userId } } });
   if (query.activityType)
     AND.push({ activityTypeId: query.activityType === "none" ? null : Number(query.activityType) });
-  if (query.context)
-    AND.push({ contextId: query.context === "none" ? null : Number(query.context) });
   for (const field of ["system"] as const)
     if (query[field]) AND.push({ [field]: { contains: query[field], mode: "insensitive" } });
-  if (query.tag) AND.push({ tags: { has: query.tag } });
   if (query.status) AND.push({ status: query.status as Prisma.EnumTodoStatusFilter["equals"] });
   if (query.priority)
     AND.push({
@@ -108,7 +103,6 @@ export function workQueryWhere(
     AND.push({
       OR: [
         { requesterId: id },
-        { waitingOnContactId: id },
         { affectedPeople: { some: { contactId: id, contact: { userId } } } },
       ],
     });

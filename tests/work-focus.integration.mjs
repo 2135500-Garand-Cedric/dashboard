@@ -286,17 +286,17 @@ test(
       await t.test(
         "combined/separate context and project filters, paging links, and reads do not write",
         async () => {
-          contextFixture = await db.workContext.create({
-            data: { userId: 1, key: prefix, name: prefix, normalizedName: prefix, active: true },
+          contextFixture = await db.activityType.create({
+            data: { name: `${prefix} filtered`, color: "#3b82f6", active: true },
           });
           const school = contextFixture;
           const project = await services.projects.createProject({ name: prefix }, command());
-          const row = await scoped({ contextId: school.id });
+          const row = await scoped({ activityTypeId: school.id });
           await services.projects.taskMembership(row.id, { projectId: project.id }, command(row));
           for (let i = 0; i < 7; i++) await scoped({ status: "BACKLOG" });
           const before = await captureInventory(db),
             all = await view(),
-            separate = await view({ context: String(school.id), project: String(project.id) });
+            separate = await view({ activityType: String(school.id), project: String(project.id) });
           assert.equal(separate.totalActive, 1);
           assert.equal(all.sections.backlog.total, 7);
           assert.equal(all.sections.backlog.items.length, 6);
@@ -379,7 +379,7 @@ test(
         await tx.todo.updateMany({ where: { id: { in: ids } }, data: { dependsOnId: null } });
         await tx.todo.deleteMany({ where: { id: { in: ids } } });
         await tx.workMutationReceipt.deleteMany({ where: { requestKey: { in: keys } } });
-        if (contextFixture) await tx.workContext.delete({ where: { id: contextFixture.id } });
+        if (contextFixture) await tx.activityType.delete({ where: { id: contextFixture.id } });
         if (foreign) await tx.user.delete({ where: { id: foreign.id } });
         await tx.activityType.delete({ where: { id: fixtureType.id } });
       });

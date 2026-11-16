@@ -257,6 +257,14 @@ export async function savePracticeSession(input: PracticeSessionInput, userId = 
               where: { id: item.activityVocabId },
               data: { status: item.status },
             });
+          await tx.activityVocab.updateMany({
+            where: {
+              id: { in: input.updates.map((item) => item.activityVocabId) },
+              activityId: input.activity,
+              OR: [{ lastPracticed: null }, { lastPracticed: { lt: new Date(input.completedAt) } }],
+            },
+            data: { lastPracticed: new Date(input.completedAt) },
+          });
           await tx.vocabulary.updateMany({
             where: { userId, id: { in: review.words!.map((word) => word.vocabId) } },
             data: { lastPracticed: new Date(input.completedAt) },

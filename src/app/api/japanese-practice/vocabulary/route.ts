@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getKnownKanji, isKanjiWritingEligible } from "@/lib/japanese/kanji-writing";
 import { vocabularyProgress } from "@/lib/japanese/vocabulary-progress";
+import { selectPracticeWords } from "@/lib/japanese/practice-selection";
 import { recordJapaneseProgress } from "@/lib/japanese/progress-history";
 
 // Get all the vocabulary for a user
@@ -72,6 +73,25 @@ export async function PATCH(req: Request) {
       }
 
       const activityId = data.activity;
+      if (
+        !Number.isInteger(activityId) ||
+        activityId < 1 ||
+        data.updates.length > 1000 ||
+        data.updates.some(
+          (item) =>
+            !item ||
+            !Number.isInteger(item.activityVocabId) ||
+            item.activityVocabId < 1 ||
+            !["WEAK", "GOOD", "PERFECT"].includes(item.status),
+        ) ||
+        new Set(data.updates.map((item) => item.activityVocabId)).size !== data.updates.length
+      ) {
+        return NextResponse.json(
+          { success: false, error: "Choose valid words and ratings for this activity." },
+          { status: 400 },
+        );
+      }
+      const practicedAt = new Date();
 
       const counts = {
         wordCount: 0,
@@ -84,7 +104,11 @@ export async function PATCH(req: Request) {
         for (const item of data.updates) {
           // 1. Update status
           const updated = await tx.activityVocab.update({
-            where: { id: item.activityVocabId },
+            where: {
+              id: item.activityVocabId,
+              activityId,
+              OR: [{ vocab: { userId: 1 } }, { verbForm: { baseVocab: { userId: 1 } } }],
+            },
             data: { status: item.status },
             include: {
               vocab: true,
@@ -100,12 +124,12 @@ export async function PATCH(req: Request) {
           if (updated.vocab) {
             await tx.vocabulary.update({
               where: { id: updated.vocab.id },
-              data: { lastPracticed: new Date() },
+              data: { lastPracticed: practicedAt },
             });
           } else if (updated.verbForm) {
             await tx.vocabulary.update({
               where: { id: updated.verbForm.baseVocab.id },
-              data: { lastPracticed: new Date() },
+              data: { lastPracticed: practicedAt },
             });
           }
 
@@ -115,6 +139,15 @@ export async function PATCH(req: Request) {
           else if (item.status === "GOOD") counts.goodCount += 1;
           else counts.weakCount += 1;
         }
+
+        await tx.activityVocab.updateMany({
+          where: {
+            activityId,
+            id: { in: data.updates.map((item) => item.activityVocabId) },
+            OR: [{ lastPracticed: null }, { lastPracticed: { lt: practicedAt } }],
+          },
+          data: { lastPracticed: practicedAt },
+        });
 
         // 4. Create practice summary
         await tx.practice.create({
@@ -232,6 +265,7 @@ export async function POST(req: Request) {
         read_hiragana: boolean;
         category_name: string | null;
         status: "WEAK" | "GOOD" | "PERFECT";
+        lastPracticed: Date | null;
         formType?: string;
       };
 
@@ -247,6 +281,7 @@ export async function POST(req: Request) {
               read_hiragana: av.verbForm.baseVocab.readHiragana,
               category_name: av.verbForm.baseVocab.category?.name || null,
               status: av.status,
+              lastPracticed: av.lastPracticed,
             };
           } else if (av.vocab) {
             let english = av.vocab.english;
@@ -262,6 +297,7 @@ export async function POST(req: Request) {
               read_hiragana: av.vocab.readHiragana,
               category_name: av.vocab.category?.name || null,
               status: av.status,
+              lastPracticed: av.lastPracticed,
             };
           } else {
             return null;
@@ -269,33 +305,7 @@ export async function POST(req: Request) {
         })
         .filter(Boolean) as PracticeWord[];
 
-      // Separate by status
-      const statusOrder: ("WEAK" | "GOOD" | "PERFECT")[] = ["WEAK", "GOOD", "PERFECT"];
-      const wordsByStatus: Record<string, PracticeWord[]> = {
-        WEAK: [],
-        GOOD: [],
-        PERFECT: [],
-      };
-
-      for (const w of words) wordsByStatus[w.status].push(w);
-
-      // Shuffle each status array (Fisher-Yates)
-      const shuffle = <T>(array: T[]) => {
-        for (let i = array.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [array[i], array[j]] = [array[j], array[i]];
-        }
-      };
-      statusOrder.forEach((status) => shuffle(wordsByStatus[status]));
-
-      // Select up to nbWords: take from WEAK first, then GOOD, then PERFECT
-      const selectedWords: PracticeWord[] = [];
-      for (const status of statusOrder) {
-        for (const w of wordsByStatus[status]) {
-          if (selectedWords.length < nbWords) selectedWords.push(w);
-          else break;
-        }
-      }
+      const selectedWords = selectPracticeWords(words, nbWords);
 
       return NextResponse.json({ success: true, words: selectedWords });
     } catch (error: unknown) {

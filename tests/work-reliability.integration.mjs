@@ -44,8 +44,6 @@ test(
           activityTypeId: fixtureType.id,
           status: index % 5 === 0 ? "DONE" : index % 3 === 0 ? "WAITING" : "NEW",
           priorityLevel: index % 7 === 0 ? "URGENT" : "NORMAL",
-          rewardXp: 0,
-          rewardCoins: 0,
         })),
       });
       ids.push(

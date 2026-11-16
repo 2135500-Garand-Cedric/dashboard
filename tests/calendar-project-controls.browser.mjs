@@ -50,7 +50,6 @@ test(
       const project = await write("/api/projects", { name: prefix });
       const task = await write("/api/todos", {
         title: `${prefix} task`,
-        contextId: null,
         activityTypeId: typeA.id,
         projectId: project.id,
       });

@@ -122,8 +122,24 @@ test(
             });
             assert.ok(Math.abs(snapshot.average - saved.averageAfter) < 1e-9);
             assert.equal(await tx.practice.count(), beforeCount + 1);
+            const practicedLink = await tx.activityVocab.findUnique({ where: { id: links[0].id } });
+            const otherActivity = await tx.activityVocab.findUnique({ where: { id: links[1].id } });
+            assert.equal(
+              practicedLink.lastPracticed.toISOString(),
+              input.completedAt.replace("Z", ".000Z"),
+            );
+            assert.equal(
+              otherActivity.lastPracticed,
+              null,
+              "another activity's timer must remain untouched",
+            );
             const retried = await sessions.savePracticeSession(input);
             assert.equal(retried.id, saved.id);
+            assert.deepEqual(
+              (await tx.activityVocab.findUnique({ where: { id: links[0].id } })).lastPracticed,
+              practicedLink.lastPracticed,
+              "retries must not restart the timer",
+            );
             assert.equal(await tx.practice.count(), beforeCount + 1);
             const bad = {
               ...input,

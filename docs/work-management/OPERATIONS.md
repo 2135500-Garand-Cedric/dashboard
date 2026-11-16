@@ -1,3 +1,5 @@
+> Current-code note: this file records each implementation phase. Old browser commands for inline task capture, contexts, rewards and task key dates are historical; those fixtures were removed during cleanup. Use the current browser-test mapping in [README.md](README.md#current-cleanup-and-verification). Applied migrations and historical preservation evidence remain necessary.
+
 # Work-management operations and compatibility
 
 Use CONTEXT.md and the assigned phase as the execution boundary. These commands

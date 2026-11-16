@@ -100,9 +100,9 @@ test(
     assert.equal(taskResponse.status, 200, "owner task reads must work after schema changes");
     const tasks = await taskResponse.json();
     assert.ok(Array.isArray(tasks));
-    const contexts = await fetch(`${base}/api/work-contexts`, { headers });
-    assert.equal(contexts.status, 200, "owner context reads must work after schema changes");
-    assert.ok(Array.isArray(await contexts.json()));
+    const activityTypes = await fetch(`${base}/api/activity-types`, { headers });
+    assert.equal(activityTypes.status, 200, "owner context reads must work after schema changes");
+    assert.ok(Array.isArray(await activityTypes.json()));
     const work = await fetch(`${base}/api/work-items?view=all`, { headers });
     assert.equal(work.status, 200);
     const workData = await work.json();
@@ -227,8 +227,6 @@ test(
       "/japanese/statistics",
       "/todos",
       "/todos/new",
-      "/todos/contexts",
-      "/todos/contacts",
       "/todos/manage",
       "/projects/new",
       "/settings",
@@ -237,40 +235,35 @@ test(
       "/projects/1",
       "/timemanager",
       "/finance",
-      "/finance/accounts",
-      "/finance/categories",
-      "/finance/transactions",
-      "/finance/transactions/new",
       "/finance/transactions/1",
-      "/finance/receipts",
-      "/finance/receipts/new",
-      "/finance/receipts/1",
       "/finance/income",
       "/finance/income/new",
-      "/finance/income/1",
-      "/finance/income/settings",
+      "/finance/income/deposits/1",
+      "/finance/expenses",
+      "/finance/expenses/new",
+      "/finance/expenses/1",
+      "/finance/transfers",
+      "/finance/transfers/new",
+      "/finance/settings",
+      "/finance/settings/accounts",
+      "/finance/settings/categories",
+      "/finance/settings/income-sources",
+      "/finance/settings/deduction-types",
       "/finance/imports",
       "/finance/imports/new",
       "/finance/imports/1",
-      "/finance/reconciliation",
     ]) {
       const response = await fetch(base + page, { redirect: "manual" });
       assert.equal(response.status, 307, page);
       assert.ok(response.headers.get("location").includes("/api/auth/signin"));
     }
-    for (const endpoint of ["accounts", "categories", "transactions", "receipts"]) {
+    for (const endpoint of ["accounts", "categories", "transactions"]) {
       const response = await fetch(`${base}/api/finance/${endpoint}`, { headers });
       assert.equal(response.status, 200);
       assert.match(response.headers.get("cache-control"), /no-store/);
       assert.ok(Array.isArray((await response.json())[endpoint]));
     }
-    for (const endpoint of [
-      "income",
-      "income-sources",
-      "deduction-types",
-      "imports",
-      "reconciliation",
-    ]) {
+    for (const endpoint of ["income", "income-sources", "deduction-types", "imports"]) {
       const response = await fetch(`${base}/api/finance/${endpoint}`, { headers });
       assert.equal(response.status, 200);
       assert.match(response.headers.get("cache-control"), /no-store/);
@@ -284,9 +277,7 @@ test(
                 ? "sources"
                 : endpoint === "imports"
                   ? "batches"
-                  : endpoint === "reconciliation"
-                    ? "records"
-                    : "types"
+                  : "types"
           ],
         ),
       );

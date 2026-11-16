@@ -32,8 +32,8 @@ export async function POST(request: Request) {
       data: { name, color, active: body.active !== false },
     });
     return NextResponse.json(activityType, { status: 201 });
-  } catch (error: any) {
-    if (error.code === "P2002") {
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "P2002") {
       return NextResponse.json({ error: "That activity type already exists" }, { status: 409 });
     }
     return NextResponse.json({ error: "Unable to create activity type" }, { status: 500 });

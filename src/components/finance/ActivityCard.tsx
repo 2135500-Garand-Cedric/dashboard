@@ -9,7 +9,6 @@ import {
   EyeIcon,
   PencilSquareIcon,
   TagIcon,
-  TrashIcon,
 } from "@heroicons/react/24/outline";
 import type { FinanceTransaction } from "@/lib/finance/transactions";
 import { displayAmount, TRANSACTION_TYPES } from "@/lib/finance/transactions";
@@ -25,13 +24,7 @@ const calendarDate = new Intl.DateTimeFormat("en-CA", {
   timeZone: "UTC",
 });
 
-export default function ActivityCard({
-  transaction,
-  onDelete,
-}: {
-  transaction: FinanceTransaction;
-  onDelete?: () => void;
-}) {
+export default function ActivityCard({ transaction }: { transaction: FinanceTransaction }) {
   const transfer = transaction.type === "TRANSFER";
   const outgoing = transaction.amount.startsWith("-");
   const matchedAccounts = new Set(transaction.statementMatches?.map((match) => match.accountId));
@@ -174,15 +167,6 @@ export default function ActivityCard({
                 ? "View / edit"
                 : "View record"}
           </Link>
-          {onDelete && editable && (
-            <button
-              className={`${secondaryButton} gap-2 !border-rose-500/30 text-rose-400`}
-              onClick={onDelete}
-            >
-              <TrashIcon className="h-4 w-4" aria-hidden="true" />
-              Delete
-            </button>
-          )}
         </div>
       </div>
     </article>

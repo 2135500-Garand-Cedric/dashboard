@@ -24,7 +24,7 @@ export const eventInclude = {
   taskLinks: {
     include: {
       todo: {
-        select: { ...taskStubSelect, contextId: true, activityTypeId: true, activityType: true },
+        select: { ...taskStubSelect, activityTypeId: true, activityType: true },
       },
     },
     orderBy: { todoId: "asc" as const },
@@ -45,7 +45,6 @@ export function eventDTO(row: CalendarEventRow) {
       origin: link.origin,
       reviewReason: link.legacyReviewReason,
       task: graphStub(link.todo),
-      contextId: link.todo.userId === owner ? link.todo.contextId : null,
     })),
     legacyLinkWritable: taskLinks.length <= 1,
     conversion: conversions[0] ?? null,

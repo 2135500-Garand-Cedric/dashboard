@@ -85,31 +85,6 @@ test(
       );
     let foreign;
     try {
-      if (process.env.WORK_MANAGEMENT_MIGRATION_BASELINE)
-        await t.test(
-          "restored original rows receive only the declared technical reward/version baseline",
-          async () => {
-            const baseline = JSON.parse(
-              fs.readFileSync(process.env.WORK_MANAGEMENT_MIGRATION_BASELINE, "utf8"),
-            );
-            for (const raw of baseline.tables.Todo.rows) {
-              const old = JSON.parse(raw),
-                row = await prisma.todo.findUniqueOrThrow({ where: { id: old.id } });
-              assert.equal(row.revision, 1);
-              assert.equal(row.rewardAccountingBasis, "LEGACY_BASELINE");
-              assert.equal(row.rewardAppliedXp, old.status === "DONE" ? old.rewardXp : 0);
-              assert.equal(row.rewardAppliedCoins, old.status === "DONE" ? old.rewardCoins : 0);
-            }
-            for (const [table, model] of [
-              ["Event", prisma.event],
-              ["Subtask", prisma.subtask],
-            ])
-              for (const raw of baseline.tables[table].rows) {
-                const row = await model.findUniqueOrThrow({ where: { id: JSON.parse(raw).id } });
-                assert.equal(row.revision, 1);
-              }
-          },
-        );
       await t.test(
         "resulting prerequisite, omitted versus cleared fields, legacy cycle preservation",
         async () => {
@@ -153,7 +128,7 @@ test(
       await t.test(
         "completion/reopen preserve balances and legacy snapshots, exact retries and stale/conflicting keys",
         async () => {
-          const row = await task({ rewardXp: 20, rewardCoins: 7 }),
+          const row = await task({}),
             key = command(row);
           const before = await balances();
           const done = await api.patchTodo(row.id, { status: "DONE" }, key);
@@ -174,15 +149,8 @@ test(
           );
           const legacy = await task({
             status: "DONE",
-            rewardXp: 9,
-            rewardCoins: 3,
-            rewardAppliedXp: 9,
-            rewardAppliedCoins: 3,
-            rewardAccountingBasis: "LEGACY_BASELINE",
           });
           await api.patchTodo(legacy.id, { status: "TODO" }, command(legacy));
-          assert.equal((await fresh(legacy)).rewardAppliedXp, 9);
-          assert.equal((await fresh(legacy)).rewardAppliedCoins, 3);
           assert.deepEqual(await balances(), {
             totalXp: before.totalXp,
             coins: before.coins,
@@ -200,7 +168,7 @@ test(
           ]);
           assert.equal(results.filter((row) => row.status === "fulfilled").length, 1);
           assert.equal(results.find((row) => row.status === "rejected").reason.status, 409);
-          const row = await task({ rewardXp: 11, rewardCoins: 4 }),
+          const row = await task({}),
             before = await balances();
           const statuses = await Promise.allSettled([
             api.patchTodo(row.id, { status: "DONE" }, command(row)),
@@ -216,7 +184,7 @@ test(
       await t.test(
         "a write failure rolls back task status and receipt without touching balances",
         async () => {
-          const row = await task({ rewardXp: 22, rewardCoins: 6 }),
+          const row = await task({}),
             key = command(row),
             before = await balances();
           const failing = load("../src/lib/work-management/server.ts", {
@@ -324,63 +292,6 @@ test(
           const restored = await prisma.event.findUniqueOrThrow({ where: { id: linked.id } });
           assert.equal(restored.linkedTodoId, row.id);
           assert.equal(restored.revision, 1);
-        },
-      );
-      await t.test(
-        "missing event, concurrent linking, existing link reuse and failed link rollback",
-        async () => {
-          const count = await prisma.todo.count();
-          await rejects(
-            api.createLinkedTodo(2147483647, { title: prefix }, command({ revision: 1 })),
-            404,
-          );
-          assert.equal(await prisma.todo.count(), count);
-          const row = await event();
-          const [first, second] = await Promise.all([
-            api.createLinkedTodo(row.id, { title: prefix }, command(row)),
-            api.createLinkedTodo(row.id, { title: prefix }, command(row)),
-          ]);
-          taskIds.add(first.linkedTodoId);
-          assert.equal(first.linkedTodoId, second.linkedTodoId);
-          assert.equal(await prisma.todo.count(), count + 1);
-          await api.createLinkedTodo(row.id, { title: "must not overwrite" }, command(row));
-          assert.equal(
-            (await prisma.todo.findUnique({ where: { id: first.linkedTodoId } })).title,
-            prefix,
-          );
-          const failingEvent = await event(),
-            before = await prisma.todo.count();
-          const failing = load("../src/lib/work-management/server.ts", {
-            ...dependencies,
-            "@/lib/prisma": {
-              prisma: {
-                $transaction: (action, options) =>
-                  prisma.$transaction(
-                    (db) =>
-                      action(
-                        new Proxy(db, {
-                          get(target, prop) {
-                            if (prop === "event")
-                              return {
-                                ...target.event,
-                                update: async () => {
-                                  throw new Error("injected link failure");
-                                },
-                              };
-                            return Reflect.get(target, prop);
-                          },
-                        }),
-                      ),
-                    options,
-                  ),
-              },
-            },
-          });
-          await assert.rejects(
-            failing.createLinkedTodo(failingEvent.id, { title: prefix }, command(failingEvent)),
-            /injected link failure/,
-          );
-          assert.equal(await prisma.todo.count(), before);
         },
       );
       await t.test(

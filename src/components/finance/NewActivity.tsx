@@ -2,7 +2,7 @@
 import type { StatementPrefill } from "@/lib/finance/statement-prefill";
 import { useSettings } from "@/context/SettingsContext";
 import { localToday } from "@/lib/work-management/date-format";
-import ReceiptEditor from "./ReceiptEditor";
+import ExpenseEditor from "./ExpenseEditor";
 import TransactionEntry from "./TransactionEntry";
 export default function NewActivity({
   kind,
@@ -16,7 +16,7 @@ export default function NewActivity({
   const { timeZone } = useSettings();
   const date = localToday(new Date(), timeZone);
   return kind === "expenses" ? (
-    <ReceiptEditor initialDate={date} currencies={currencies} expenseMode prefill={prefill} />
+    <ExpenseEditor initialDate={date} currencies={currencies} prefill={prefill} />
   ) : (
     <TransactionEntry
       initialDate={date}

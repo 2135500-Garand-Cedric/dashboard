@@ -42,9 +42,9 @@ test(
     let page;
     try {
       const title = `Initial load ${randomUUID().slice(0, 8)}`;
-      let task = await write("/api/todos", { title, contextId: null });
+      let task = await write("/api/todos", { title });
       ids.push(task.id);
-      const target = await write("/api/todos", { title: `${title} target`, contextId: null });
+      const target = await write("/api/todos", { title: `${title} target` });
       ids.push(target.id);
       const project = await write("/api/projects", { name: `${title} project` });
       task = await write(

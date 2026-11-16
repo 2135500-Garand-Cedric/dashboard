@@ -29,7 +29,7 @@ test(
     };
     try {
       const task = await modules.server.createTodo(
-        { title: `Follow-up timeline ${randomUUID()}`, contextId: null },
+        { title: `Follow-up timeline ${randomUUID()}` },
         command(),
       );
       ids.push(task.id);

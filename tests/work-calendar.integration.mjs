@@ -162,12 +162,12 @@ test(
       await t.test(
         "bounded feed has stable typed IDs, labels, layers, context, TBD and date-only markers",
         async () => {
-          contextFixture = await db.workContext.create({
-            data: { userId: 1, key: prefix, name: prefix, normalizedName: prefix, active: true },
+          contextFixture = await db.activityType.create({
+            data: { name: prefix, color: "#3b82f6", active: true },
           });
           const school = contextFixture,
-            row = await task({ contextId: school.id }),
-            noContext = await task({ contextId: null });
+            row = await task({ activityTypeId: school.id }),
+            noContext = await task({ activityTypeId: null });
           await dates.taskDateCommand(
             row.id,
             { action: "deadline", date: day("2026-11-13") },
@@ -187,7 +187,7 @@ test(
             }),
             tbd = await event({ timing: { kind: "TBD" } });
           await event({ timing: timing(), links: [{ todoId: noContext.id, role: "RELATED" }] });
-          const scoped = await feed({ context: String(school.id) });
+          const scoped = await feed({ activityType: String(school.id) });
           for (const id of [`deadline:${row.id}`, `event:${ordinary.id}`])
             assert.ok(scoped.items.some((item) => item.id === id));
           assert.ok(scoped.items.some((item) => String(item.id).startsWith("followup:")));
@@ -195,17 +195,17 @@ test(
           const marker = scoped.items.find((item) => item.id === `deadline:${row.id}`);
           assert.equal(marker.start, "2026-11-13");
           assert.equal(marker.extendedProps.plainTitle, row.title);
-          assert.equal(marker.borderColor, "#f43f5e");
+          assert.equal(marker.borderColor, school.color);
           const ordinaryItem = scoped.items.find((item) => item.id === `event:${ordinary.id}`);
           assert.equal(ordinaryItem.extendedProps.plainTitle, ordinary.title);
           assert.equal(ordinaryItem.backgroundColor, "#3b82f6");
           assert.equal(marker.display, "list-item");
           assert.equal(marker.extendedProps.busy, false);
           assert.ok(marker.extendedProps.href.startsWith(`/todos/${row.id}`));
-          const deadlines = await feed({ layers: "deadlines", context: String(school.id) });
+          const deadlines = await feed({ layers: "deadlines", activityType: String(school.id) });
           assert.ok(deadlines.items.every((item) => item.id.startsWith("deadline:")));
           assert.ok(
-            (await feed({ layers: "events", context: "none" })).tbd.some(
+            (await feed({ layers: "events", activityType: "none" })).tbd.some(
               (item) => item.id === tbd.id,
             ),
           );
@@ -361,7 +361,7 @@ test(
               mode: "PLACEHOLDER",
               taskId: null,
               title: prefix,
-              contextId: null,
+              activityTypeId: null,
               changeDeadline: true,
               deadline: day("2026-11-13"),
             };
@@ -615,7 +615,7 @@ test(
         await tx.workKeyDate.deleteMany({ where: { todoId: { in: tasks } } });
         await tx.todo.deleteMany({ where: { id: { in: tasks } } });
         await tx.workMutationReceipt.deleteMany({ where: { requestKey: { in: keys } } });
-        if (contextFixture) await tx.workContext.delete({ where: { id: contextFixture.id } });
+        if (contextFixture) await tx.activityType.delete({ where: { id: contextFixture.id } });
         if (foreign) await tx.user.delete({ where: { id: foreign.id } });
         await tx.user.update({ where: { id: 1 }, data: beforeBalance });
       });

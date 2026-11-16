@@ -56,13 +56,6 @@ export function legacyPriorityLevel(value: number | null | undefined): WorkPrior
         ? "HIGH"
         : null;
 }
-export interface WorkContext {
-  id: number;
-  name: string;
-  key: string;
-  active: boolean;
-  revision: number;
-}
 export interface WorkContact {
   id: number;
   name: string;
@@ -115,19 +108,14 @@ export interface WorkTodo {
   priorityLevel?: WorkPriority | null;
   requesterId?: number | null;
   requester?: WorkContact | null;
-  waitingOnContactId?: number | null;
-  waitingOnContact?: WorkContact | null;
   affectedPeople?: WorkContact[];
   dependents?: { id: number; title: string; status: string }[];
   dependentCount?: number;
   supportingRecordCount?: number;
   activityTypeId?: number | null;
   activityType?: WorkActivityType | null;
-  contextId?: number | null;
-  context?: WorkContext | null;
   kind?: WorkKind | null;
   system?: string | null;
-  tags?: string[];
   desiredOutcome?: string | null;
   nextAction?: string | null;
   waitingOn?: string | null;
@@ -141,8 +129,6 @@ export interface WorkTodo {
   dependsOnId?: number | null;
   dependsOn?: { id: number; title: string; status?: string } | null;
   subtasks?: ChecklistItem[];
-  rewardXp?: number;
-  rewardCoins?: number;
   updatedAt: string;
   createdAt?: string;
 }
@@ -285,7 +271,6 @@ export interface WorkProject {
   summary: string | null;
   activityTypeId: number | null;
   activityType: WorkActivityType | null;
-  contextId: number | null;
   status: "ACTIVE" | "COMPLETED" | "CANCELLED";
   startDate: string | null;
   targetDate: string | null;

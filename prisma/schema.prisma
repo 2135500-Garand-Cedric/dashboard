@@ -41,7 +41,6 @@ model User {
   workNotes WorkNote[]
   workAttachments WorkAttachment[]
   workContacts WorkContact[]
-  workContexts WorkContext[]
   workActivity WorkActivity[]
   workMutationReceipts WorkMutationReceipt[]
   todos     Todo[]
@@ -103,13 +102,7 @@ model Todo {
   stage WorkProjectStage? @relation(fields: [stageId, projectId], references: [id, projectId], onDelete: Restrict, onUpdate: NoAction)
   activityTypeId Int?
   activityType ActivityType? @relation(fields: [activityTypeId], references: [id], onDelete: Restrict)
-  contextId Int?
-  context WorkContext? @relation(fields: [contextId], references: [id], onDelete: Restrict)
-  // Retired task metadata; preserve existing values and historical records.
-  company String?
-  course String?
   system String?
-  tags String[] @default([])
   deadlineDate String? @db.VarChar(10)
   deadlineAt DateTime? @db.Timestamptz(3)
   deadlineTimeZone String? @db.VarChar(100)
@@ -119,8 +112,6 @@ model Todo {
   nextAction String?
   requesterId Int?
   requester WorkContact? @relation("TaskRequester", fields: [requesterId], references: [id], onDelete: Restrict)
-  waitingOnContactId Int?
-  waitingOnContact WorkContact? @relation("TaskWaitingContact", fields: [waitingOnContactId], references: [id], onDelete: Restrict)
   affectedPeople TodoAffectedContact[]
   waitingOn String?
   waitingReason String?
@@ -135,13 +126,7 @@ model Todo {
   activity WorkActivity[]
   priority     Int?
 
-  // XP & coin rewards for completing this todo
-  rewardXp     Int        @default(0)
-  rewardCoins  Int        @default(0)
   revision     Int        @default(1)
-  rewardAppliedXp Int    @default(0)
-  rewardAppliedCoins Int @default(0)
-  rewardAccountingBasis String @default("TRACKED")
 
   // Relations
   userId       Int
@@ -177,9 +162,7 @@ model Todo {
   @@index([deadlineAt])
   @@index([userId, archivedAt, status])
   @@index([activityTypeId])
-  @@index([contextId])
   @@index([requesterId])
-  @@index([waitingOnContactId])
 }
 
 enum WorkPriority {
@@ -203,23 +186,6 @@ enum WorkClosureType {
   CANCELLED
 }
 
-model WorkContext {
-  id Int @id @default(autoincrement())
-  userId Int
-  key String
-  name String @db.VarChar(80)
-  normalizedName String @db.VarChar(80)
-  active Boolean @default(true)
-  revision Int @default(1)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
-  todos Todo[]
-  projects WorkProject[]
-
-  @@unique([userId, key])
-  @@unique([userId, normalizedName])
-}
 
 // Facts are appended by successful commands; there are no edit/delete activity APIs.
 // Explicit task deletion may detach the FK, retaining its immutable reference/facts.
@@ -325,6 +291,7 @@ model ActivityVocab {
   verbFormId Int?
 
   status     ActivityVocabStatus @default(WEAK)
+  lastPracticed DateTime? @db.Timestamptz(3)
 
   activity Activity     @relation(fields: [activityId], references: [id], onDelete: Cascade)
   vocab    Vocabulary?  @relation(fields: [vocabId], references: [id], onDelete: Cascade)
@@ -849,7 +816,6 @@ model WorkContact {
   updatedAt DateTime @updatedAt
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
   requestedTasks Todo[] @relation("TaskRequester")
-  waitingTasks Todo[] @relation("TaskWaitingContact")
   affectedTasks TodoAffectedContact[]
 
   @@index([userId, active, name])
@@ -1047,8 +1013,6 @@ model WorkProject {
   summary String?
   activityTypeId Int?
   activityType ActivityType? @relation(fields: [activityTypeId], references: [id], onDelete: Restrict)
-  contextId Int?
-  context WorkContext? @relation(fields: [contextId], references: [id], onDelete: Restrict)
   status String @default("ACTIVE") @db.VarChar(20)
   startDate String? @db.VarChar(10)
   targetDate String? @db.VarChar(10)

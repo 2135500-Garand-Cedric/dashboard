@@ -3,7 +3,7 @@ import { FINANCE_USER_ID } from "./server";
 import { FinanceValidationError } from "./validation";
 import { transactionInput } from "./transactions";
 import { saveTransactionInDb } from "./transaction-server";
-import { unlinkSupportingMatches } from "./reconciliation-ledger";
+import { unlinkSupportingMatches } from "./matching-ledger";
 
 // A unified record may update its own manual movement, never bank history or shared payments.
 export async function syncActivityMovement(

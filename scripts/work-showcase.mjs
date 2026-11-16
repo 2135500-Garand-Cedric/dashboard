@@ -57,7 +57,13 @@ export async function workShowcase(db, action = "seed") {
     const manifest = complete.result;
     for (const id of manifest.taskIds) {
       const row = await api.server.getTodo(id);
-      assert.ok(row.tags.includes(dataset), "Refusing a task outside this dataset.");
+      const created = await db.workMutationReceipt.findFirst({
+        where: { userId: 1, operation: "todo:create", result: { path: ["id"], equals: id } },
+      });
+      assert.ok(
+        created && /^\[(Example|Showcase)\]/.test(created.result.title),
+        "Refusing a task without recorded example provenance.",
+      );
       if (!row.archivedAt)
         await step(`archive:task:${id}`, (command) =>
           api.server.patchTodo(id, { archived: true }, { ...command, revision: row.revision }),
@@ -122,16 +128,18 @@ export async function workShowcase(db, action = "seed") {
     })),
   );
   for (const name of ["Work", "School", "Personal"]) {
-    if (!(await api.server.listWorkContexts()).some((row) => row.name === name)) {
-      await step(`context:${name}`, (command) => api.server.createWorkContext({ name }, command));
-    }
+    await db.activityType.upsert({
+      where: { name },
+      update: {},
+      create: { name, color: "#3b82f6" },
+    });
   }
   const examples = await seedWorkExamples(db, new Date(start.startedAt));
   const taskIds = [...examples.taskIds],
     eventIds = [...examples.eventIds];
-  const contexts = await api.server.listWorkContexts();
+  const activityTypes = await db.activityType.findMany();
   const projectIds = [];
-  for (const [name, contextName] of [
+  for (const [name, activityTypeName] of [
     ["Laptop rollout", "Work"],
     ["Course preparation", "School"],
   ]) {
@@ -140,7 +148,7 @@ export async function workShowcase(db, action = "seed") {
         {
           name: `[Showcase] ${name}`,
           objective: "Synthetic project; stages are separate from task statuses.",
-          contextId: contexts.find((row) => row.name === contextName).id,
+          activityTypeId: activityTypes.find((row) => row.name === activityTypeName).id,
         },
         command,
       ),
@@ -264,9 +272,8 @@ export async function workShowcase(db, action = "seed") {
     api.server.createTodo(
       {
         title: "[Showcase] Submit a converted assignment",
-        rewardXp: 0,
-        rewardCoins: 0,
-        contextId: contexts.find((row) => row.name === "School").id,
+
+        activityTypeId: activityTypes.find((row) => row.name === "School").id,
       },
       command,
     ),
@@ -315,17 +322,11 @@ export async function workShowcase(db, action = "seed") {
     api.server.createTodo(
       {
         title: "[Showcase] Archived history",
-        rewardXp: 0,
-        rewardCoins: 0,
       },
       command,
     ),
   );
   taskIds.push(archived.id);
-  for (const id of taskIds) {
-    const row = await api.server.getTodo(id);
-    await patch(`tag:${id}`, id, { tags: [...row.tags, dataset] });
-  }
   await patch("archive-example", archived.id, { archived: true });
   return step("complete", (command) =>
     api.server.mutation("showcase:complete", { dataset }, command, async () => ({

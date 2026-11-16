@@ -1,6 +1,6 @@
 "use client";
-
 import Link from "next/link";
+import FinancialRecordLink from "./FinancialRecordLink";
 import type { ReactNode } from "react";
 import ActivityNotes from "./ActivityNotes";
 import type { StatementPrefill } from "@/lib/finance/statement-prefill";
@@ -29,7 +29,6 @@ import {
   secondaryButton,
   useFinanceData,
 } from "./shared";
-
 // Keep the server-provided currency list identical during hydration.
 export function NewIncomeEditor({
   currencies,
@@ -43,19 +42,16 @@ export function NewIncomeEditor({
     <IncomeEditor
       initialDate={localToday(new Date(), timeZone)}
       currencies={currencies}
-      unified
       prefill={prefill}
     />
   );
 }
-
 export default function IncomeEditor({
   id,
   initialDate,
   currencies,
   initialTransaction,
   prefill,
-  unified = false,
   onSaved,
   readOnly,
   headerMeta,
@@ -64,7 +60,6 @@ export default function IncomeEditor({
 }: {
   initialTransaction?: FinanceTransaction;
   prefill?: StatementPrefill;
-  unified?: boolean;
   onSaved?: () => void;
   readOnly?: boolean;
   headerMeta?: ReactNode;
@@ -78,7 +73,6 @@ export default function IncomeEditor({
     <ExistingIncome
       id={id}
       currencies={currencies}
-      unified={unified}
       onSaved={onSaved}
       readOnly={readOnly}
       headerMeta={headerMeta}
@@ -96,14 +90,12 @@ export default function IncomeEditor({
       initialTransaction={initialTransaction}
       prefill={prefill}
       refresh={onSaved}
-      unified={unified}
     />
   );
 }
 function ExistingIncome({
   id,
   currencies,
-  unified,
   onSaved,
   readOnly,
   headerMeta,
@@ -117,9 +109,10 @@ function ExistingIncome({
   notesTransaction?: FinanceTransaction;
   id: string;
   currencies: string[];
-  unified: boolean;
 }) {
-  const result = useFinanceData<{ record: FinanceIncome }>(`/api/finance/income/${id}`);
+  const result = useFinanceData<{
+    record: FinanceIncome;
+  }>(`/api/finance/income/${id}`);
   if (result.error) return <FinanceLoadError error={result.error} retry={result.retry} />;
   if (result.loading || !result.data) return <p role="status">Loading income record…</p>;
   return (
@@ -130,7 +123,6 @@ function ExistingIncome({
       headerActions={headerActions}
       notesTransaction={notesTransaction}
       existing={result.data.record}
-      unified={unified}
       initialDate={result.data.record.date}
       currencies={currencies}
       refresh={() => {
@@ -151,11 +143,9 @@ function IncomeForm({
   notesTransaction,
   initialTransaction,
   prefill,
-  unified,
 }: {
   initialTransaction?: FinanceTransaction;
   prefill?: StatementPrefill;
-  unified: boolean;
   existing?: FinanceIncome;
   initialDate: string;
   currencies: string[];
@@ -165,9 +155,15 @@ function IncomeForm({
   headerActions?: ReactNode;
   notesTransaction?: FinanceTransaction;
 }) {
-  const accounts = useFinanceData<{ accounts: FinanceAccount[] }>("/api/finance/accounts");
-  const sources = useFinanceData<{ sources: IncomeSource[] }>("/api/finance/income-sources");
-  const types = useFinanceData<{ types: DeductionType[] }>("/api/finance/deduction-types");
+  const accounts = useFinanceData<{
+    accounts: FinanceAccount[];
+  }>("/api/finance/accounts");
+  const sources = useFinanceData<{
+    sources: IncomeSource[];
+  }>("/api/finance/income-sources");
+  const types = useFinanceData<{
+    types: DeductionType[];
+  }>("/api/finance/deduction-types");
   const [draft, setDraft] = useState(() => ({
     sourceId: String(existing?.source?.id ?? ""),
     description:
@@ -194,7 +190,7 @@ function IncomeForm({
     [busy, setBusy] = useState(false),
     [failure, setFailure] = useState<FinanceRequestError | null>(null);
   const [acknowledge, setAcknowledge] = useState(false),
-    [confirmation, setConfirmation] = useState<"record" | "document" | null>(null);
+    [confirmation, setConfirmation] = useState<"document" | null>(null);
   const requestKey = useRef<string | null>(null),
     guard = useRef(false),
     router = useRouter(),
@@ -252,7 +248,7 @@ function IncomeForm({
         })),
         transactionId: draft.transactionAction === "LINK" ? Number(draft.transactionId) : null,
         acknowledgeMismatch: acknowledge,
-        syncMovement: unified,
+        syncMovement: true,
         ...(existing
           ? { expectedUpdatedAt: existing.updatedAt }
           : { requestKey: requestKey.current }),
@@ -260,16 +256,18 @@ function IncomeForm({
       const body = new FormData();
       body.append("details", JSON.stringify(details));
       if (file) body.append("file", file);
-      const result = await financeRequest<{ record: FinanceIncome }>(
-        existing ? `/api/finance/income/${existing.id}` : "/api/finance/income",
-        { method: existing ? "PATCH" : "POST", body },
-      );
+      const result = await financeRequest<{
+        record: FinanceIncome;
+      }>(existing ? `/api/finance/income/${existing.id}` : "/api/finance/income", {
+        method: existing ? "PATCH" : "POST",
+        body,
+      });
       showMessage("Income record saved successfully.");
       refresh?.();
       if (result.record.transaction)
         router.push(`/finance/income/deposits/${result.record.transaction.id}`);
       else if (existing) refresh?.();
-      else router.push(`/finance/income/${result.record.id}`);
+      else throw new Error("The saved income has no associated deposit.");
     } catch (error) {
       showFailure(error);
     } finally {
@@ -283,17 +281,12 @@ function IncomeForm({
     setBusy(true);
     setFailure(null);
     try {
-      await financeRequest(
-        `/api/finance/income/${existing.id}${confirmation === "document" ? "/document" : ""}`,
-        { method: "DELETE", headers: { "If-Match": existing.updatedAt } },
-      );
-      showMessage(
-        confirmation === "document"
-          ? "Pay stub deleted. Income details were kept."
-          : "Income record deleted. Its bank transaction was kept.",
-      );
-      if (confirmation === "document") refresh?.();
-      else router.push("/finance/income");
+      await financeRequest(`/api/finance/income/${existing.id}/document`, {
+        method: "DELETE",
+        headers: { "If-Match": existing.updatedAt },
+      });
+      showMessage("Pay stub deleted. Income details were kept.");
+      refresh?.();
     } catch (error) {
       showFailure(error);
     } finally {
@@ -302,33 +295,12 @@ function IncomeForm({
       setConfirmation(null);
     }
   }
-  const confirm = (kind: "record" | "document") => {
+  const confirm = (kind: "document") => {
     setConfirmation(kind);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
   return (
     <div className="min-w-0 space-y-5">
-      {existing && !unified && (
-        <section className="card space-y-3">
-          {!!existing.allocations?.length && (
-            <div className="flex flex-wrap gap-3">
-              {existing.allocations.map((allocation) => (
-                <span key={allocation.id} className="text-sm">
-                  Confirmed {allocation.amount} {existing.currency}
-                  {allocation.transactionId && (
-                    <Link
-                      className="ml-2 text-blue-400 underline"
-                      href={`/finance/transactions/${allocation.transactionId}`}
-                    >
-                      Transaction #{allocation.transactionId}
-                    </Link>
-                  )}
-                </span>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <h2 className="text-2xl font-semibold">
@@ -348,14 +320,14 @@ function IncomeForm({
           <p className="text-rose-500">{failure.message}</p>
           {failure.existingId && (
             <div className="flex flex-wrap gap-2">
-              <Link
-                className={secondaryButton}
-                href={
+              <FinancialRecordLink
+                id={failure.existingId}
+                kind={
                   failure.code === "EXISTING_DEPOSIT"
-                    ? `/finance/transactions/${failure.existingId}`
+                    ? "TRANSACTION"
                     : failure.code === "DUPLICATE_RECEIPT"
-                      ? `/finance/receipts/${failure.existingId}`
-                      : `/finance/income/${failure.existingId}`
+                      ? "EXPENSE"
+                      : "INCOME"
                 }
               >
                 Review existing{" "}
@@ -364,7 +336,7 @@ function IncomeForm({
                   : failure.code === "DUPLICATE_RECEIPT"
                     ? "receipt"
                     : "income record"}
-              </Link>
+              </FinancialRecordLink>
               {failure.code === "EXISTING_DEPOSIT" && (
                 <button
                   type="button"
@@ -397,11 +369,7 @@ function IncomeForm({
       )}
       {confirmation && (
         <div role="alert" className="card space-y-3">
-          <p>
-            {confirmation === "document"
-              ? "Delete the pay stub? Income details and the linked bank deposit will remain."
-              : "Delete this income record and its pay stub? The bank transaction will remain; this does not reverse money received."}
-          </p>
+          <p>{"Delete the pay stub? Income details and the linked bank deposit will remain."}</p>
           <div className="flex gap-2">
             <button
               type="button"
@@ -716,14 +684,7 @@ function IncomeForm({
                   Add a deposit account
                 </Link>
               )}
-              {existing?.transaction && !unified && (
-                <Link
-                  href={`/finance/transactions/${existing.transaction.id}`}
-                  className={secondaryButton}
-                >
-                  View linked deposit
-                </Link>
-              )}
+
               <div className="flex flex-wrap gap-2 pt-3">
                 <button type="submit" hidden={readOnly} className={primaryButton}>
                   {busy ? "Saving…" : "Save income record"}
@@ -731,15 +692,6 @@ function IncomeForm({
                 <Link href="/finance/income" className={secondaryButton}>
                   Cancel
                 </Link>
-                {existing && !unified && (
-                  <button
-                    type="button"
-                    className={`${secondaryButton} text-rose-500`}
-                    onClick={() => confirm("record")}
-                  >
-                    Delete income record
-                  </button>
-                )}
               </div>
             </fieldset>
           </section>

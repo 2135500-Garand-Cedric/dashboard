@@ -232,7 +232,7 @@ export default function AllWork({
           <>
             {!projectId && (
               <Link href="/todos/manage" className={buttonClass}>
-                Contexts & contacts
+                Contacts
               </Link>
             )}
             <button

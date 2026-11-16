@@ -110,7 +110,9 @@ test(
       page = await context.newPage();
       page.setDefaultTimeout(30000);
       page.on("pageerror", (error) => errors.push(error.message));
-      const school = (await read("/api/work-contexts")).find((row) => row.key === "school");
+      const school = (await read("/api/activity-types")).find(
+        (row) => row.name.toLowerCase() === "school",
+      );
       const nav = async (name) => {
         const open = page.getByRole("button", { name: "Open navigation", exact: true });
         if (await open.isVisible()) await open.click();
@@ -138,7 +140,9 @@ test(
       ]) {
         await page.setViewportSize(viewport);
         const prefix = `Layout test ${viewport.width} ${randomUUID().slice(0, 8)}`;
-        await page.goto(`${base}/todos?company=${encodeURIComponent(prefix)}&context=${school.id}`);
+        await page.goto(
+          `${base}/todos?company=${encodeURIComponent(prefix)}&activityType=${school.id}`,
+        );
         await page.getByRole("heading", { name: "All Work", exact: true }).waitFor();
         assert.ok(await page.getByRole("button", { name: "Show search and filters" }).isVisible());
         await showFilters();

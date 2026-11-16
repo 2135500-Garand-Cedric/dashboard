@@ -11,7 +11,7 @@ import { FinanceValidationError, financeId } from "./validation";
 import { FINANCE_USER_ID, accountSelect, categorySelect } from "./server";
 import { calendarDate, decimalAmount, transactionInput } from "./transactions";
 import { saveTransactionInDb } from "./transaction-server";
-import { writeMatch } from "./reconciliation-ledger";
+import { writeMatch } from "./matching-ledger";
 import { storeReceiptFile, removeReceiptFile, type PreparedReceiptFile } from "./receipt-files";
 import { type ParsedStatement, MAX_CSV_ROWS } from "./statement-csv";
 import {

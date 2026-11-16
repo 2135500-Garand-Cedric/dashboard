@@ -81,10 +81,7 @@ test(
       typeA = await db.activityType.create({ data: { name: `${prefix} A`, color: "#117744" } });
       typeB = await db.activityType.create({ data: { name: `${prefix} B`, color: "#8833cc" } });
       const makeTask = async (type) => {
-        const row = await api.createTodo(
-          { title: prefix, contextId: null, activityTypeId: type.id },
-          command(),
-        );
+        const row = await api.createTodo({ title: prefix, activityTypeId: type.id }, command());
         ids.push(row.id);
         return row;
       };

@@ -60,7 +60,6 @@ test(
           title: `${prefix} ${viewport.width}`,
           kind: "ISSUE",
           priorityLevel: "HIGH",
-          contextId: null,
         });
         tasks.push(task.id);
         await page.goto(`${base}/todos/${task.id}`);

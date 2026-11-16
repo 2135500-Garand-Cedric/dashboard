@@ -34,8 +34,8 @@ test(
       for (const id of result.taskIds) {
         const row = await db.todo.findUniqueOrThrow({ where: { id } });
         assert.ok(row.title.startsWith("[Example]"));
-        assert.equal(row.rewardXp, 0);
-        assert.equal(row.rewardCoins, 0);
+        assert.equal(Object.hasOwn(row, "rewardXp"), false);
+        assert.equal(Object.hasOwn(row, "rewardCoins"), false);
       }
       for (const row of result.sourceSnapshots) {
         assert.equal(row.description, "Sample calendar event for development.");
