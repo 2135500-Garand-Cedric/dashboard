@@ -58,6 +58,17 @@ export default function EventOverview({
             {event.completed ? "Mark incomplete" : "Mark completed"}
           </button>
         </div>
+        <p className="mt-3 text-sm">
+          {event.reminderMinutes === -1
+            ? "Notifications off for this event"
+            : event.reminderMinutes == null
+              ? "Reminder uses notification settings"
+              : event.reminderMinutes === 0
+                ? "Reminder at the scheduled time"
+                : event.reminderMinutes >= 1440
+                  ? `Reminder ${event.reminderMinutes / 1440} day${event.reminderMinutes > 1440 ? "s" : ""} before`
+                  : `Reminder ${event.reminderMinutes} minutes before`}
+        </p>
         <section
           aria-label="Event schedule"
           className="mt-6 rounded-xl border border-blue-400/20 bg-background/50 p-4 sm:p-5"

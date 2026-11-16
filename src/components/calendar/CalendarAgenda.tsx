@@ -6,6 +6,7 @@ import {
   calendarAppearance,
   calendarItemTiming,
   upcomingCalendarItems,
+  calendarItemsOnDay,
 } from "@/lib/work-management/calendar-display";
 
 export default function CalendarAgenda({
@@ -13,11 +14,13 @@ export default function CalendarAgenda({
   timeZone,
   saving,
   onToggleCompleted,
+  selectedDay,
 }: {
   items: CalendarItem[] | null;
   timeZone: string;
   saving: boolean;
   onToggleCompleted: (item: CalendarItem) => Promise<void>;
+  selectedDay?: string;
 }) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -31,14 +34,27 @@ export default function CalendarAgenda({
       document.removeEventListener("visibilitychange", update);
     };
   }, []);
-  const upcoming = items ? upcomingCalendarItems(items, now, timeZone) : [];
+  const upcoming = items
+    ? selectedDay
+      ? calendarItemsOnDay(items, selectedDay, timeZone)
+      : upcomingCalendarItems(items, now, timeZone)
+    : [];
+  const dayLabel = selectedDay
+    ? new Intl.DateTimeFormat("en", {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+        timeZone: "UTC",
+      }).format(new Date(`${selectedDay}T12:00:00Z`))
+    : "";
   return (
     <section
-      aria-label="Upcoming calendar items"
+      aria-label={selectedDay ? "Selected day events" : "Upcoming calendar items"}
       className="space-y-4 rounded-xl border border-card-border bg-card-bg p-4"
     >
       <header className="flex items-center justify-between gap-3">
-        <h2 className="font-semibold">Upcoming in this range</h2>
+        <h2 className="font-semibold">{selectedDay ? dayLabel : "Upcoming in this range"}</h2>
         {items && (
           <span className="rounded-full border border-card-border px-2 py-0.5 text-xs">
             {upcoming.length}
@@ -51,7 +67,9 @@ export default function CalendarAgenda({
         </p>
       ) : !upcoming.length ? (
         <p className="text-sm text-gray-500 dark:text-gray-400">
-          No upcoming items match the current range and filters.
+          {selectedDay
+            ? "No events for this day."
+            : "No upcoming items match the current range and filters."}
         </p>
       ) : (
         <ul className="space-y-3 xl:max-h-[min(70dvh,48rem)] xl:overflow-y-auto xl:overscroll-contain">

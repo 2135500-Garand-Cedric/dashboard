@@ -25,6 +25,7 @@ test(
       for (const viewport of [
         { width: 1600, height: 1000 },
         { width: 390, height: 844 },
+        { width: 320, height: 740 },
       ]) {
         const page = await context.newPage();
         page.setDefaultTimeout(20000);
@@ -83,6 +84,12 @@ test(
             ),
           ),
         ];
+        if (viewport.width < 768) {
+          rows.push({
+            ...item("trip", "Multi-day visit", "events", "2026-11-15", "#ec4899", true),
+            end: "2026-11-17",
+          });
+        }
         await page.route("**/api/work-calendar?*", (route) => {
           const params = new URL(route.request().url()).searchParams;
           const layers = (params.get("layers") || "").split(",");
@@ -108,6 +115,77 @@ test(
         });
         try {
           await page.goto(base + "/events");
+          if (viewport.width < 768) {
+            const month = page.locator("[data-mobile-month]");
+            const selected = page.getByRole("region", { name: "Selected day events", exact: true });
+            await selected.getByText("Study session", { exact: true }).waitFor();
+            await selected.getByText("Multi-day visit", { exact: true }).waitFor();
+            await month
+              .getByRole("button", { name: "November 16, 2026, 2 events", exact: true })
+              .click();
+            await selected.getByText("Submit assignment", { exact: true }).waitFor();
+            await selected.getByText("Multi-day visit", { exact: true }).waitFor();
+            await page.screenshot({
+              path: `/tmp/calendar-mobile-events-${viewport.width}.png`,
+              fullPage: true,
+            });
+            await month
+              .getByRole("button", { name: "November 17, 2026, 1 event", exact: true })
+              .click();
+            assert.equal(await selected.getByText("Multi-day visit", { exact: true }).count(), 0);
+            await month
+              .getByRole("button", { name: "November 16, 2026, 2 events", exact: true })
+              .click();
+            assert.equal(
+              await selected
+                .locator('[data-calendar-item="deadline"]')
+                .evaluate((node) => getComputedStyle(node).borderLeftColor),
+              "rgb(21, 128, 61)",
+            );
+            await month
+              .getByRole("button", { name: "November 14, 2026, 1 event", exact: true })
+              .click();
+            await selected.getByText("Past appointment", { exact: true }).waitFor();
+            await month
+              .getByRole("button", { name: "November 22, 2026, 0 events", exact: true })
+              .click();
+            await selected.getByText("No events for this day.", { exact: true }).waitFor();
+            assert.equal(await page.locator(".fullcalendar-theme").isVisible(), false);
+            assert.equal(
+              await page.getByText("Unscheduled events (1)", { exact: true }).isVisible(),
+              false,
+            );
+            assert.equal(
+              await page
+                .getByRole("region", { name: "Upcoming calendar items", exact: true })
+                .isVisible(),
+              false,
+            );
+            assert.ok(
+              await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+            );
+            await page.screenshot({
+              path: `/tmp/calendar-mobile-${viewport.width}.png`,
+              fullPage: true,
+            });
+            await page.getByRole("button", { name: "Next calendar range", exact: true }).click();
+            await selected
+              .getByRole("heading", { name: "Tuesday, December 1, 2026", exact: true })
+              .waitFor();
+            await page.getByRole("button", { name: "Week", exact: true }).click();
+            await page.locator(".fc-timeGridWeek-view").waitFor();
+            assert.equal(await page.locator(".fullcalendar-theme").isVisible(), true);
+            assert.equal(await month.count(), 0);
+            await page.setViewportSize({ width: 1440, height: 1000 });
+            await page.getByRole("button", { name: "Month", exact: true }).click();
+            await page.locator(".fc-dayGridMonth-view").waitFor();
+            assert.equal(await page.locator("[data-mobile-month]").isVisible(), false);
+            assert.ok((await page.locator(".fc-dayGridMonth-view").boundingBox()).width > 500);
+            console.log(
+              `Verified compact month, day selection, colors, empty dates, navigation and week view at ${viewport.width}px.`,
+            );
+            continue;
+          }
           const agenda = page.getByRole("region", { name: "Upcoming calendar items", exact: true });
           await agenda.getByText("Submit assignment", { exact: true }).waitFor();
           assert.equal(await agenda.locator("[data-calendar-item]").count(), 51);

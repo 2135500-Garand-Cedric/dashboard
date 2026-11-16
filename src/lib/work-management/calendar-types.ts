@@ -1,6 +1,7 @@
 import type { GraphTaskStub } from "./types";
 import { describeWorkDate } from "./date-format";
 export interface CalendarEvent {
+  reminderMinutes?: number | null;
   id: number;
   revision: number;
   title: string;

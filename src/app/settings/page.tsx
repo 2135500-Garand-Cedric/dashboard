@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import NotificationSettings from "@/components/notifications/NotificationSettings";
 import { useSettings } from "@/context/SettingsContext";
 export default function SettingsPage() {
   const { timeZone, saveTimeZone } = useSettings();
@@ -44,7 +45,8 @@ export default function SettingsPage() {
       timeZoneName: "shortOffset",
     })
       .formatToParts(new Date())
-      .find((part) => part.type === "timeZoneName")!.value;
+      .find((part) => part.type === "timeZoneName")!
+      .value.replace(/^GMT$/, "GMT+0");
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 pb-8 pt-12 md:pt-2">
@@ -99,6 +101,7 @@ export default function SettingsPage() {
           {busy ? "Saving…" : "Save settings"}
         </button>
       </form>
+      <NotificationSettings />
     </div>
   );
 }

@@ -15,12 +15,17 @@ import type { DatesSetArg, EventDropArg } from "@fullcalendar/core";
 import type { EventResizeDoneArg } from "@fullcalendar/interaction";
 import { createWorkWriter, workRead } from "@/lib/work-management/client";
 import { localParts, localToday } from "@/lib/work-management/date-format";
-import { eventTiming, type CalendarFeed } from "@/lib/work-management/calendar-types";
+import {
+  eventTiming,
+  type CalendarFeed,
+  type CalendarItem,
+} from "@/lib/work-management/calendar-types";
 import type { WorkActivityType, WorkTodo } from "@/lib/work-management/types";
 import { useMemory } from "@/context/MemoryContext";
 import TaskModal from "@/components/shared/TaskModal";
 import EventForm from "@/components/calendar/EventForm";
 import CalendarAgenda from "@/components/calendar/CalendarAgenda";
+import MobileMonth from "@/components/calendar/MobileMonth";
 import { calendarAppearance, calendarItemTiming } from "@/lib/work-management/calendar-display";
 import ActivityTypeSettings from "@/components/calendar/ActivityTypeSettings";
 const button =
@@ -144,6 +149,22 @@ export default function EventsPage() {
   }, [move]);
   const today = data ? localToday(new Date(), data.timeZone) : localToday(new Date(), timeZone),
     initialDate = `${get("calendar_currentYear", Number(today.slice(0, 4)))}-${String(get("calendar_currentMonth", Number(today.slice(5, 7)))).padStart(2, "0")}-01`;
+  async function toggleCompleted(item: CalendarItem) {
+    setSaving(true);
+    try {
+      await writer.current(
+        `/api/events/${item.extendedProps.eventId}`,
+        "PATCH",
+        { completed: !item.extendedProps.completed },
+        item.extendedProps.revision,
+      );
+      setRefresh((value) => value + 1);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to save completion.");
+    } finally {
+      setSaving(false);
+    }
+  }
   return (
     <div className="calendar-page min-w-0 space-y-5 pb-8 pt-12 md:pt-2">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -313,7 +334,9 @@ export default function EventsPage() {
           {!data ? (
             <p role="status">Loading calendar…</p>
           ) : (
-            <div className="fullcalendar-theme">
+            <div
+              className={`fullcalendar-theme ${view === "dayGridMonth" ? "hidden md:block" : ""}`}
+            >
               <FullCalendar
                 ref={calendar}
                 plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, luxonPlugin]}
@@ -373,7 +396,17 @@ export default function EventsPage() {
               />
             </div>
           )}
-          <details className="space-y-3 rounded-xl border border-card-border bg-card-bg p-4">
+          {data && view === "dayGridMonth" && (
+            <MobileMonth
+              month={savedDate || initialDate}
+              today={today}
+              items={data.items}
+              timeZone={data.timeZone}
+              saving={saving}
+              onToggleCompleted={toggleCompleted}
+            />
+          )}
+          <details className="hidden space-y-3 rounded-xl border border-card-border bg-card-bg p-4 md:block">
             <summary className="cursor-pointer font-medium">
               Unscheduled events ({data?.tbdTotal ?? 0})
             </summary>
@@ -426,27 +459,12 @@ export default function EventsPage() {
             </div>
           </details>
         </div>
-        <aside className="min-w-0 space-y-5">
+        <aside className={`min-w-0 space-y-5 ${view === "dayGridMonth" ? "hidden md:block" : ""}`}>
           <CalendarAgenda
             items={data?.items ?? null}
             timeZone={data?.timeZone || timeZone}
             saving={saving}
-            onToggleCompleted={async (item) => {
-              setSaving(true);
-              try {
-                await writer.current(
-                  `/api/events/${item.extendedProps.eventId}`,
-                  "PATCH",
-                  { completed: !item.extendedProps.completed },
-                  item.extendedProps.revision,
-                );
-                setRefresh((value) => value + 1);
-              } catch (error) {
-                setError(error instanceof Error ? error.message : "Unable to save completion.");
-              } finally {
-                setSaving(false);
-              }
-            }}
+            onToggleCompleted={toggleCompleted}
           />
         </aside>
       </div>

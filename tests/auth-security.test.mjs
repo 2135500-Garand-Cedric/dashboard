@@ -177,6 +177,14 @@ test("all private page branches use the protected shell; the denial page does no
   for (const file of files(appRoot).filter(
     (file) => file.endsWith("/page.tsx") && !file.endsWith("/access-denied/page.tsx"),
   )) {
+    if (file.endsWith("/notifications/open/page.tsx")) {
+      // This page only redirects; it preserves the safe destination through login.
+      const source = fs.readFileSync(file, "utf8");
+      assert.match(source, /getServerSession/);
+      assert.match(source, /isOwnerSession/);
+      assert.doesNotMatch(source, /prisma|fetch\(/);
+      continue;
+    }
     let current = path.dirname(file);
     let protectedPage = fs.readFileSync(file, "utf8").includes("ProtectedLayout");
     while (!protectedPage && current !== path.dirname(new URL(appRoot).pathname)) {

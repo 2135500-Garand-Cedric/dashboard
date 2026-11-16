@@ -36,6 +36,8 @@ model User {
   coins     Int       @default(0)     // current coin balance
   
   // Relations
+  notificationSettings NotificationSettings?
+  pushSubscriptions PushSubscription[]
   workFocus WorkFocus[]
   workProjects WorkProject[]
   workNotes WorkNote[]
@@ -221,6 +223,7 @@ model Subtask {
 }
 
 model Event {
+  reminderMinutes Int?
   kind String @default("ORDINARY") @db.VarChar(30)
   busy Boolean?
   timeZone String? @db.VarChar(100)
@@ -1063,4 +1066,63 @@ model WorkFocus {
   todo Todo @relation(fields: [todoId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
   @@id([userId, todoId, date])
   @@index([userId, date, active])
+}
+
+// Notifications are opt-in per device. No document content or session cookies are stored here.
+model NotificationSettings {
+  userId Int @id
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  enabled Boolean @default(true)
+  events Boolean @default(true)
+  sessions Boolean @default(true)
+  deadlines Boolean @default(true)
+  followUps Boolean @default(true)
+  milestones Boolean @default(false)
+  showDetails Boolean @default(true)
+  leadMinutes Int @default(15)
+  dateOnlyTime String @default("09:00") @db.VarChar(5)
+  enabledAt DateTime @default(now()) @db.Timestamptz(3)
+  workerSeenAt DateTime? @db.Timestamptz(3)
+  workerError String? @db.VarChar(30)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+}
+
+model PushSubscription {
+  id String @id @default(uuid()) @db.Uuid
+  userId Int
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  endpoint String @unique
+  p256dh String
+  auth String
+  vapidPublicKey String
+  label String @db.VarChar(80)
+  active Boolean @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  lastSuccessAt DateTime? @db.Timestamptz(3)
+  lastTestAt DateTime? @db.Timestamptz(3)
+  deliveries PushDelivery[]
+  @@index([userId, active])
+}
+
+// One delivery per device and source occurrence; leases allow restart-safe retries.
+model PushDelivery {
+  id String @id @default(uuid()) @db.Uuid
+  subscriptionId String @db.Uuid
+  subscription PushSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  occurrenceKey String @db.VarChar(64)
+  sourceKind String @db.VarChar(20)
+  sourceId Int
+  targetAt DateTime @db.Timestamptz(3)
+  sendAt DateTime @db.Timestamptz(3)
+  status String @default("PENDING") @db.VarChar(20)
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now()) @db.Timestamptz(3)
+  leaseUntil DateTime? @db.Timestamptz(3)
+  errorCode String? @db.VarChar(30)
+  sentAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  @@unique([subscriptionId, occurrenceKey])
+  @@index([status, nextAttemptAt, leaseUntil])
 }

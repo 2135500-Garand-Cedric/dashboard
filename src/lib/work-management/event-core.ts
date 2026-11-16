@@ -8,6 +8,7 @@ import { WorkValidationError, workBody, workId, workText } from "./validation";
 import { validateEventDates } from "@/lib/event-dates";
 type DB = Prisma.TransactionClient;
 export const EVENT_FIELDS = [
+  "reminderMinutes",
   "title",
   "description",
   "type",
@@ -70,6 +71,7 @@ export async function appendEventActivity(db: DB, id: number, action: string, ch
   });
 }
 type EventData = {
+  reminderMinutes?: number | null;
   title?: string;
   description?: string | null;
   type?: string | null;
@@ -84,6 +86,14 @@ type EventData = {
 };
 export function parseEventFields(body: Record<string, unknown>) {
   const data: EventData = {};
+  if (body.reminderMinutes !== undefined) {
+    if (
+      body.reminderMinutes !== null &&
+      ![-1, 0, 5, 15, 30, 60, 1440, 10080].includes(body.reminderMinutes as number)
+    )
+      throw new WorkValidationError("Choose a valid notification reminder.");
+    data.reminderMinutes = body.reminderMinutes as number | null;
+  }
   if (body.title !== undefined) data.title = workText(body.title, "event title", 500)!;
   if (body.description !== undefined)
     data.description = workText(body.description, "description", 50000, true);

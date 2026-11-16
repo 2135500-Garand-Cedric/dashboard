@@ -60,3 +60,10 @@ test("task link inputs validate role, uniqueness, explicit versions and maximum 
     /at most/,
   );
 });
+
+test("event reminder overrides inherit, disable or use a bounded explicit offset", () => {
+  for (const minutes of [null, -1, 0, 5, 15, 30, 60, 1440, 10080])
+    assert.equal(core.parseEventFields({ reminderMinutes: minutes }).reminderMinutes, minutes);
+  for (const minutes of ["15", -2, 1.5, 99999])
+    assert.throws(() => core.parseEventFields({ reminderMinutes: minutes }), /reminder/);
+});

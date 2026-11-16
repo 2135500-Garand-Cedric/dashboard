@@ -11,7 +11,12 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata = {
   title: "Dashboard",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, title: "Dashboard", statusBarStyle: "default" },
+  icons: { icon: "/icons/dashboard-192.png", apple: "/icons/dashboard-180.png" },
 };
+
+export const viewport = { themeColor: "#0f172a" };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerSession(authOptions);

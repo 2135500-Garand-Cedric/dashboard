@@ -75,3 +75,29 @@ export function calendarItemTiming(item: CalendarItem, timeZone: string) {
   }
   return `${start} → ${writtenEventDate(item.end, timeZone)}`;
 }
+
+export function calendarItemsOnDay(items: CalendarItem[], day: string, timeZone: string) {
+  return items
+    .filter((item) => {
+      if (item.allDay) {
+        return (
+          item.start.slice(0, 10) <= day &&
+          (item.end ? item.end.slice(0, 10) > day : item.start.slice(0, 10) === day)
+        );
+      }
+      const start = Date.parse(item.start);
+      if (!Number.isFinite(start)) return false;
+      const end = item.end ? Date.parse(item.end) : start;
+      const lastInstant = Number.isFinite(end) && end > start ? end - 1 : start;
+      return (
+        localToday(new Date(start), timeZone) <= day &&
+        localToday(new Date(lastInstant), timeZone) >= day
+      );
+    })
+    .sort(
+      (a, b) =>
+        Number(b.allDay) - Number(a.allDay) ||
+        (a.allDay ? a.start.localeCompare(b.start) : Date.parse(a.start) - Date.parse(b.start)) ||
+        a.id.localeCompare(b.id),
+    );
+}

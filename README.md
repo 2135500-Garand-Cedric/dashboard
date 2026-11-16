@@ -186,3 +186,70 @@ Each `ActivityVocab` (including each conjugated verb form/activity pair) stores 
 Saving a completed practice with Okay updates only its rated activity-word records, using the session completion time. Previewing or selecting words does not change timestamps. Retries do not restart timers; an older completion cannot overwrite a newer timestamp. Unknown timestamps are considered due until first saved practice. Historical recovery uses exact word/form IDs, activity and owner from detailed saved sessions; aggregate daily counts cannot reconstruct individual practice times.
 
 Timer verification: the 39-file unit suite, targeted ESLint, strict TypeScript and production build passed. Two rollback-only timer/history database checks and four existing Japanese practice/kanji/reading/reward checks passed. The development migration recovered 238 exact activity-word timestamps; a live owner-authenticated selection request returned ten words with timers without saving a session.
+
+## Phone installation and calendar notifications
+
+The dashboard is an installable PWA. Its manifest, icons and push-only service worker are public; notification registration, preferences and test APIs require the existing GitHub owner login. The worker never caches private pages, APIs or uploads for offline use. Notification clicks open the original event, task or project. `/notifications/open` preserves that destination through sign-in when a phone session expires.
+
+All application services can run on your NAS:
+
+| Compose service | Role |
+| --- | --- |
+| `dashboard` | Website, GitHub authentication and notification settings/APIs |
+| `dashboard-db` | Calendar data, registered devices and durable delivery state |
+| `notification-worker` | Checks reminders every 30 seconds and sends Web Push |
+
+Both Compose files include the worker. It builds from the same Dockerfile as the app, needs no exposed port or upload volume, waits for the app healthcheck (after migrations), and restarts automatically. No Redis, Firebase account, separate notification SaaS or Apple Developer membership is required. Delivery still travels through the browser vendor's push service—Apple's service for iPhones—so outbound HTTPS is required. The phone must be able to reach your dashboard URL to open reminders.
+
+### One-time server setup
+
+1. Set the existing `NEXTAUTH_URL` to your dashboard's public **HTTPS** URL. Configure the GitHub OAuth application's callback for that domain (`https://your-domain/api/auth/callback/github`) as with normal dashboard deployment.
+2. Build the updated images, without starting/deploying them yet:
+
+   ```sh
+   docker compose -f docker-compose.prod.yml build dashboard notification-worker
+   ```
+
+3. Generate your Web Push keys once:
+
+   ```sh
+   docker compose -f docker-compose.prod.yml run --rm --no-deps dashboard npm run notifications:keys
+   ```
+
+   This prints a public/private key pair. Put it in the NAS `.env`, together with:
+
+   ```dotenv
+   PUSH_ENABLED=true
+   PUSH_VAPID_PUBLIC_KEY=the-generated-public-key
+   PUSH_VAPID_PRIVATE_KEY=the-generated-private-key
+   PUSH_VAPID_SUBJECT=mailto:your-real-email@example.com
+   ```
+
+   The app and worker read the same `.env`. Keep the private key secret and preserve both keys across rebuilds/backups. The public key is safe for the browser. `npm run notifications:keys` also works in a local checkout with dependencies installed. These keys are separate from GitHub and NextAuth credentials.
+4. When ready to deploy the updated application, use the normal command:
+
+   ```sh
+   docker compose -f docker-compose.prod.yml up -d --build
+   ```
+
+   App startup applies migrations before starting Next.js; the worker starts once the app is healthy. This feature adds an optional `Event.reminderMinutes` and the `NotificationSettings`, `PushSubscription`, and `PushDelivery` tables. Existing events inherit the notification defaults; no subscription or actual push message is created by migration. Without valid push configuration, the worker stays idle and Settings shows setup instructions.
+
+For development, the same services are in `docker-compose.dev.yml`, but both the app and worker force push off unless `DEV_PUSH_ENABLED=true` is explicitly set. This prevents a restored production database from sending real reminders during ordinary development. Desktop browsers can test on `http://localhost:3000`; an iPhone opening a LAN HTTP address cannot use push. Use a real HTTPS development address for physical-phone tests. Keep the same keys in the app and worker; recreate their containers after changing `.env`.
+
+### Enable your iPhone
+
+Use iOS 16.4 or newer. In Safari, open the deployed dashboard and choose **Share → Add to Home Screen**. Open that icon, sign in with your GitHub owner account, then go to **Settings → Phone & notifications**. Name the device, tap **Enable on this device**, allow the system permission, and use **Send test notification**. Permission is requested only by that button. Each phone/browser has its own registration; the device list lets you disable old devices. You may need to re-enable notifications after reinstalling the PWA, clearing website data, or changing push keys.
+
+### Reminder behavior and operation
+
+- Timed events/work sessions/deadlines/follow-ups default to 15 minutes before; date-only items default to 09:00 in the saved dashboard timezone. Project milestones are opt-in. Configure these in Settings. For all-day events, the settings time is the reminder reference time; an explicit event offset is subtracted from that reference.
+- Event creation/editing offers **Reminder**: inherit settings, disable, at the scheduled time, or a chosen offset. The master switch and source-type preferences still apply. Task deadlines/follow-ups remain task data; reminders do not create extra calendar events.
+- The worker derives schedules from current records. Completed/deleted events, resolved follow-ups, closed/archived tasks, completed milestones and superseded deadline placeholders are excluded. Work sessions targeting closed/archived tasks are excluded. Recheck happens just before sending; edits invalidate queued old occurrences.
+- Each device/source occurrence has one durable delivery record. Transient failures retry with backoff; expired subscriptions are disabled. Multiple workers claim jobs with leases. After downtime, only reminders up to 15 minutes late are eligible; newly enabled devices do not get an old backlog. Delivery attempts are retained for 90 days.
+- A push service acceptance is not proof the phone displayed the notification. Network outages, Focus/notification settings and device behavior can delay or suppress alerts. If a process stops after provider acceptance but before recording success, a retry can occur; the stable notification tag coalesces that occurrence on the device. This is not an exact-time alarm service.
+- Settings shows worker heartbeat/configuration status, allows pausing reminders, hiding titles on the lock screen, disabling devices and sending a rate-limited test. Test sends do not require the worker; scheduled reminders do. Inspect its logs with `docker compose -f docker-compose.prod.yml logs --tail=50 notification-worker`. Logs omit endpoints, keys, titles and payloads.
+- The existing whole-database backup includes notification state. Keep `.env`/VAPID keys separately. No new persistent volume is needed.
+
+Verification: `node --test tests/*.test.mjs`; disposable worker/registration checks with `RUN_NOTIFICATION_DB_TEST=1 WORK_MANAGEMENT_DISPOSABLE=1 node --test tests/notifications.integration.mjs` on the isolated `work-db`; desktop/phone layout and permission-flow checks with `RUN_NOTIFICATION_BROWSER_TEST=1 node tests/notifications.browser.mjs` against the disposable port-3002 app. The browser test mocks push permission and delivery; actual iPhone delivery must be checked on an installed HTTPS PWA. Reference: [Apple/WebKit Web Push requirements](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/).
+
+PWA implementation verification: production build and strict TypeScript passed; all 40 unit-test files passed; three rollback-only notification worker/API/rescheduling checks passed; 27 calendar/project regression checks passed; mocked phone/desktop notification setup, iPhone installation gating and safe sign-in redirects passed. Live authorization checks covered 152 protected API handlers. Both Compose files validate, Prisma reports no schema drift, and the worker starts/shuts down cleanly with push disabled. The runtime dependency audit reported zero known vulnerabilities at verification time. Real iPhone/APNs delivery remains a deployment/device acceptance step; no production deployment or real push send was performed during implementation.

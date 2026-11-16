@@ -1,13 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { loadWorkModule } from "./helpers/work-support.mjs";
-const { calendarAppearance, calendarItemTiming, upcomingCalendarItems } = loadWorkModule(
-  "src/lib/work-management/calendar-display.ts",
-  {
+const { calendarAppearance, calendarItemTiming, upcomingCalendarItems, calendarItemsOnDay } =
+  loadWorkModule("src/lib/work-management/calendar-display.ts", {
     "./date-format": loadWorkModule("src/lib/work-management/date-format.ts"),
     "./event-display": loadWorkModule("src/lib/work-management/event-display.ts"),
-  },
-);
+  });
 const item = (id, start, layer = "events", allDay = false) => ({
   id,
   start,
@@ -88,4 +86,43 @@ test("date-only task markers and historical items keep their meaning", () => {
   };
   assert.equal(calendarItemTiming(due, "UTC"), "Nov 16, 2026 · Date only");
   assert.equal(calendarAppearance(due).historical, true);
+});
+
+test("selected day includes past items, date markers and spanning events with exclusive ends", () => {
+  const rows = [
+    item("past", "2026-11-16T08:00:00Z"),
+    item("due", "2026-11-16", "deadlines", true),
+    { ...item("trip", "2026-11-15", "events", true), end: "2026-11-17" },
+    { ...item("overnight", "2026-11-15T23:00:00Z"), end: "2026-11-17T00:00:00Z" },
+    item("next", "2026-11-17T00:00:00Z"),
+  ];
+  assert.deepEqual(
+    calendarItemsOnDay(rows, "2026-11-16", "UTC").map((row) => row.id),
+    ["trip", "due", "overnight", "past"],
+  );
+  assert.deepEqual(
+    calendarItemsOnDay(rows, "2026-11-17", "UTC").map((row) => row.id),
+    ["next"],
+  );
+  assert.equal(rows[0].id, "past");
+});
+
+test("selected days follow the display timezone including DST and local midnight", () => {
+  const rows = [
+    item("late", "2026-11-17T02:00:00Z"),
+    { ...item("dst", "2026-11-01T05:30:00Z"), end: "2026-11-02T05:00:00Z" },
+  ];
+  assert.deepEqual(
+    calendarItemsOnDay(rows, "2026-11-16", "America/New_York").map((row) => row.id),
+    ["late"],
+  );
+  assert.deepEqual(
+    calendarItemsOnDay(rows, "2026-11-17", "Asia/Tokyo").map((row) => row.id),
+    ["late"],
+  );
+  assert.deepEqual(
+    calendarItemsOnDay(rows, "2026-11-01", "America/New_York").map((row) => row.id),
+    ["dst"],
+  );
+  assert.deepEqual(calendarItemsOnDay(rows, "2026-11-02", "America/New_York"), []);
 });

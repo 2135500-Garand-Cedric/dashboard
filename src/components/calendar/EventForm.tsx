@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { createWorkWriter, workRead } from "@/lib/work-management/client";
 import { localParts } from "@/lib/work-management/date-format";
@@ -28,6 +29,9 @@ export default function EventForm({
   onBusyChange?: (busy: boolean) => void;
   embedded?: boolean;
 }) {
+  const [reminder, setReminder] = useState(
+    event?.reminderMinutes == null ? "" : String(event.reminderMinutes),
+  );
   const [title, setTitle] = useState(
       event?.title ?? (initialTask ? `Work on ${initialTask.title}` : ""),
     ),
@@ -89,6 +93,7 @@ export default function EventForm({
     }),
     originalTiming = useRef(timingFingerprint);
   const fingerprint = JSON.stringify({
+    reminder,
     title,
     description,
     type,
@@ -172,7 +177,11 @@ export default function EventForm({
                 .map(({ todoId, role }) => ({ todoId, role }))
                 .sort((a, b) => a.todoId - b.todoId),
             );
+      const reminderMinutes = reminder === "" ? null : Number(reminder);
       const fields = {
+        ...(!event || reminderMinutes !== (event.reminderMinutes ?? null)
+          ? { reminderMinutes }
+          : {}),
         ...(!event || title !== event.title ? { title } : {}),
         ...(!event || description !== (event.description ?? "")
           ? { description: description || null }
@@ -493,6 +502,29 @@ export default function EventForm({
           session task; other links are related.
         </p>
       </fieldset>
+      <label className="block text-sm">
+        Reminder
+        <select
+          aria-label="Event reminder"
+          className={input}
+          value={reminder}
+          disabled={saving}
+          onChange={(event) => setReminder(event.target.value)}
+        >
+          <option value="">Use notification settings</option>
+          <option value="-1">No reminder</option>
+          <option value="0">At the scheduled time</option>
+          <option value="5">5 minutes before</option>
+          <option value="15">15 minutes before</option>
+          <option value="30">30 minutes before</option>
+          <option value="60">1 hour before</option>
+          <option value="1440">1 day before</option>
+          <option value="10080">1 week before</option>
+        </select>
+      </label>
+      <Link href="/settings" className="inline-block text-sm text-blue-400 underline">
+        Manage phone notifications
+      </Link>
       <div className="flex flex-wrap gap-2">
         <button type="submit" disabled={saving} className={`${button} bg-blue-600 text-white`}>
           {saving ? "Saving…" : "Save event"}

@@ -11,7 +11,9 @@
     "seed:finance-examples": "node scripts/seed-finance-examples.mjs",
     "backfill:verb-conditionals": "node scripts/backfill-verb-conditionals.mjs",
     "work:inventory": "node scripts/work-management-inventory.mjs",
-    "seed:work-examples": "node scripts/seed-work-examples.mjs"
+    "seed:work-examples": "node scripts/seed-work-examples.mjs",
+    "notifications:worker": "node scripts/notification-worker.mjs",
+    "notifications:keys": "node scripts/generate-push-keys.mjs"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.8",
@@ -32,13 +34,15 @@
     "react-dom": "19.1.10",
     "recharts": "^3.2.1",
     "sharp": "0.35.5",
-    "tailwindcss": "^4"
+    "tailwindcss": "^4",
+    "web-push": "^4.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/web-push": "^3.6.4",
     "eslint": "^9",
     "eslint-config-next": "15.5.29",
     "typescript": "^5"
