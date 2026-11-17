@@ -1,3 +1,4 @@
+import PwaRegistration from "@/components/notifications/PwaRegistration";
 import { SettingsProvider } from "@/context/SettingsContext";
 import { ViewStateProvider } from "@/context/ViewStateContext";
 import SideMenu from "@/components/SideMenu";
@@ -15,6 +16,7 @@ export default function AppShell({
 }) {
   return (
     <>
+      <PwaRegistration />
       <SettingsProvider initialTimeZone={timeZone}>
         <ViewStateProvider>
           <SnackbarProvider>

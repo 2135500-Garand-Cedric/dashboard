@@ -17,7 +17,7 @@ NAS PRODUCTION: deploy code and apply a new migration
 1. SSH into the NAS and move to the cloned repository:
 
 	ssh <nas-user>@<nas-host>
-	cd /volume1/docker/dashboard
+	cd /volume1/Subdomains/dashboard
 
 2. Pull the release from GitHub:
 
@@ -31,9 +31,17 @@ NAS PRODUCTION: deploy code and apply a new migration
 
 	sudo docker network inspect web-network
 
-5. Rebuild and recreate the application stack:
+5. See docs/deployment.md for GHCR login and DASHBOARD_IMAGE setup.
+   Pull the published image, back up the database and review migration status:
 
-	sudo docker compose -f docker-compose.prod.yml up -d --build
+	sudo docker compose -f docker-compose.prod.yml config --quiet
+	sudo docker compose -f docker-compose.prod.yml pull dashboard notification-worker
+	sudo sh scripts/backup-database.sh /volume1/backups/dashboard
+	sudo docker compose -f docker-compose.prod.yml run --rm --no-deps dashboard npx prisma migrate status
+
+   Stop if there is a failed or diverged migration. After review, recreate without building:
+
+	sudo docker compose -f docker-compose.prod.yml up -d --no-build dashboard notification-worker
 
 6. The dashboard container automatically runs this before starting Next.js:
 
@@ -48,23 +56,25 @@ NAS PRODUCTION: deploy code and apply a new migration
 
 To install the repository on the NAS for the first time:
 
-	cd /volume1/docker
+	cd /volume1/Subdomains
 	git clone <github-repository-url> dashboard
 	cd dashboard
 	sudo docker network inspect web-network
-	sudo docker compose -f docker-compose.prod.yml up -d --build
+	Follow docs/deployment.md to configure .env, GHCR access and the existing volumes.
+	sudo docker compose -f docker-compose.prod.yml pull dashboard notification-worker
+	sudo docker compose -f docker-compose.prod.yml up -d --no-build dashboard notification-worker
 
 IMPORTANT:
 
 - Do not run `docker compose down -v` in production. It can delete the PostgreSQL volume and database data.
 - Do not run `prisma migrate dev` against production. Use `prisma migrate deploy`.
 - Do not run the demo seed in production. The production Compose file intentionally runs migrations only.
-- If the migration fails, do not delete the database container or volume. Read the logs, fix the migration, and rerun the deployment.
+- If a migration fails, stop and review the schema, logs and migration state on an isolated backup restore before applying a recovery. Do not edit migration history or automatically mark it applied. See docs/deployment.md for the known ActivityVocab.lastPracticed guard.
 
 
 NAS: BACK UP THE WHOLE DATABASE (Japanese, finance, calendar, todos, users, everything)
 
-From /volume1/docker/dashboard:
+From /volume1/Subdomains/dashboard:
 
 sudo sh scripts/backup-database.sh /volume1/backups/dashboard
 

@@ -14,3 +14,18 @@ private
 # Database backups
 backups/
 *.dump
+
+# Never replace the Linux client generated inside the builder with a local copy.
+src/generated/prisma
+
+# Local tools, credentials, and deployment metadata do not belong in the image.
+.github
+.codex
+.agents
+.aws
+.ssh
+.npmrc
+*.pem
+*.key
+coverage
+dev

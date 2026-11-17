@@ -1,8 +1,6 @@
 services:
   dashboard:
-    build:
-      context: .
-      dockerfile: Dockerfile.prod
+    image: ${DASHBOARD_IMAGE:?Set DASHBOARD_IMAGE in .env to the published GHCR image}
     container_name: dashboard
     restart: unless-stopped
     networks:
@@ -28,9 +26,7 @@ services:
         condition: service_healthy
 
   notification-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.prod
+    image: ${DASHBOARD_IMAGE:?Set DASHBOARD_IMAGE in .env to the published GHCR image}
     restart: unless-stopped
     env_file:
       - .env

@@ -1,5 +1,9 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+Production deployment: [Synology deployment guide](docs/deployment.md). GitHub
+Actions builds and publishes the AMD64 image to GHCR on pushes to `main`; the NAS
+pulls it using `DASHBOARD_IMAGE`. Deployment remains manual, with no NAS builds.
+
 Work-management redesign: [roadmap](docs/work-management/README.md),
 [progress](docs/work-management/PROGRESS.md), and
 [Work-management operations](docs/work-management/OPERATIONS.md). Development startup no
@@ -199,15 +203,15 @@ All application services can run on your NAS:
 | `dashboard-db` | Calendar data, registered devices and durable delivery state |
 | `notification-worker` | Checks reminders every 30 seconds and sends Web Push |
 
-Both Compose files include the worker. It builds from the same Dockerfile as the app, needs no exposed port or upload volume, waits for the app healthcheck (after migrations), and restarts automatically. No Redis, Firebase account, separate notification SaaS or Apple Developer membership is required. Delivery still travels through the browser vendor's push service—Apple's service for iPhones—so outbound HTTPS is required. The phone must be able to reach your dashboard URL to open reminders.
+Both Compose files include the worker. In production, it pulls the same GHCR image as the app; development builds locally. It needs no exposed port or upload volume, waits for the app healthcheck (after migrations), and restarts automatically. No Redis, Firebase account, separate notification SaaS or Apple Developer membership is required. Delivery still travels through the browser vendor's push service—Apple's service for iPhones—so outbound HTTPS is required. The phone must be able to reach your dashboard URL to open reminders.
 
 ### One-time server setup
 
 1. Set the existing `NEXTAUTH_URL` to your dashboard's public **HTTPS** URL. Configure the GitHub OAuth application's callback for that domain (`https://your-domain/api/auth/callback/github`) as with normal dashboard deployment.
-2. Build the updated images, without starting/deploying them yet:
+2. Follow the [deployment guide](docs/deployment.md) to publish the image, authenticate the NAS to GHCR and set `DASHBOARD_IMAGE` in its `.env`. Pull the image without deploying it yet:
 
    ```sh
-   docker compose -f docker-compose.prod.yml build dashboard notification-worker
+   docker compose -f docker-compose.prod.yml pull dashboard notification-worker
    ```
 
 3. Generate your Web Push keys once:
@@ -226,10 +230,10 @@ Both Compose files include the worker. It builds from the same Dockerfile as the
    ```
 
    The app and worker read the same `.env`. Keep the private key secret and preserve both keys across rebuilds/backups. The public key is safe for the browser. `npm run notifications:keys` also works in a local checkout with dependencies installed. These keys are separate from GitHub and NextAuth credentials.
-4. When ready to deploy the updated application, use the normal command:
+4. After reviewing backups and migration status as described in the deployment guide, deploy:
 
    ```sh
-   docker compose -f docker-compose.prod.yml up -d --build
+   docker compose -f docker-compose.prod.yml up -d --no-build dashboard notification-worker
    ```
 
    App startup applies migrations before starting Next.js; the worker starts once the app is healthy. This feature adds an optional `Event.reminderMinutes` and the `NotificationSettings`, `PushSubscription`, and `PushDelivery` tables. Existing events inherit the notification defaults; no subscription or actual push message is created by migration. Without valid push configuration, the worker stays idle and Settings shows setup instructions.
