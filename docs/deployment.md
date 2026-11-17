@@ -168,6 +168,12 @@ that separate recovery reviewed before running it on production. Do not blindly
 rerun, edit old migration SQL, or use `migrate resolve --applied` to bypass it.
 Building/pulling a new image does not solve a failed database migration.
 
+For the separately diagnosed case where the drop migration is recorded completed
+but the original timestamp column remains and the restore migration failed, see
+[Retained activity-review column recovery](ACTIVITY_REVIEW_TIMER_RECOVERY.md).
+That procedure preserves timestamps and validates the repair before resolving
+the failed migration record; it is not an automatic deployment step.
+
 ## Rollback
 
 Use a previously published full commit SHA, not `latest`. First verify its schema
