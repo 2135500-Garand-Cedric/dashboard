@@ -8,8 +8,13 @@ export const ACCOUNT_TYPES = {
 export const CATEGORY_TYPES = { EXPENSE: "Expense", INCOME: "Income" } as const;
 export type AccountType = keyof typeof ACCOUNT_TYPES;
 export type CategoryType = keyof typeof CATEGORY_TYPES;
-export const CURRENCIES = Intl.supportedValuesOf("currency");
-const currencies = new Set(CURRENCIES);
+export const CURRENCIES = ["CAD", "USD", "EUR", "GBP", "JPY"];
+export function currencyOptionLabel(currency: string) {
+  const symbols: Record<string, string> = { CAD: "$", USD: "$", EUR: "€", GBP: "£", JPY: "¥" };
+  return symbols[currency] ? `${currency} (${symbols[currency]})` : currency;
+}
+// Existing records in other currencies remain valid; only the offered choices narrow.
+const currencies = new Set(Intl.supportedValuesOf("currency"));
 
 export class FinanceValidationError extends Error {
   constructor(

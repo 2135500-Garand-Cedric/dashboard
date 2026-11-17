@@ -7,7 +7,12 @@ import ActivityCard from "./ActivityCard";
 import HistoryFilters, { HistoryFiltersButton } from "./HistoryFilters";
 import { useHistoryFilters } from "./useHistoryFilters";
 import { type FormEvent } from "react";
-import { type FinanceAccount, type FinanceCategory } from "@/lib/finance/validation";
+import {
+  currencyOptionLabel,
+  CURRENCIES,
+  type FinanceAccount,
+  type FinanceCategory,
+} from "@/lib/finance/validation";
 import { TRANSACTION_TYPES, type TransactionPage } from "@/lib/finance/transactions";
 import {
   fieldClass,
@@ -170,11 +175,11 @@ export default function TransactionHistory({
               onChange={(event) => update("currency", event.target.value)}
             >
               <option value="">All currencies</option>
-              {[...new Set(accounts.data?.accounts.map((account) => account.currency) ?? [])]
-                .sort()
-                .map((currency) => (
-                  <option key={currency}>{currency}</option>
-                ))}
+              {CURRENCIES.map((currency) => (
+                <option key={currency} value={currency}>
+                  {currencyOptionLabel(currency)}
+                </option>
+              ))}
             </select>
           </label>
           <label className="space-y-1">

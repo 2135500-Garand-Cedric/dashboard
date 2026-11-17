@@ -26,6 +26,7 @@ test("All Work parses bounded validated filters", () => {
     ),
   );
   assert.equal(parsed.page, 1);
+  assert.equal(parsed.view, "active");
   assert.equal(parsed.activityType, "none");
   assert.equal(parsed.person, "2");
   assert.equal(query.WORK_PAGE_SIZE, 30);
@@ -55,7 +56,7 @@ test("search query always scopes owner, archive/history and optional people/refe
   );
   assert.deepEqual(where.AND[0], { userId: 1 });
   assert.deepEqual(where.AND[1], { archivedAt: null });
-  assert.ok(JSON.stringify(where).includes('"notIn":["DONE","CANCELLED"]'));
+  assert.ok(!JSON.stringify(where).includes('"notIn":["DONE","CANCELLED"]'));
   assert.deepEqual(where.AND.at(-1).OR.at(-1), { id: 13 });
   assert.ok(JSON.stringify(where).includes('"requesterId":2'));
   assert.ok(JSON.stringify(where).includes('"affectedPeople"'));

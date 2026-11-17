@@ -233,7 +233,6 @@ test(
       "/my-work",
       "/projects",
       "/projects/1",
-      "/timemanager",
       "/finance",
       "/finance/transactions/1",
       "/finance/income",

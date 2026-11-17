@@ -17,7 +17,7 @@ import {
   type FinanceIncome,
 } from "@/lib/finance/income";
 import { MAX_RECEIPT_BYTES } from "@/lib/finance/receipts";
-import type { FinanceAccount } from "@/lib/finance/validation";
+import { currencyOptionLabel, type FinanceAccount } from "@/lib/finance/validation";
 import { displayAmount, type FinanceTransaction } from "@/lib/finance/transactions";
 import FinanceDocumentPanel from "./FinanceDocumentPanel";
 import {
@@ -454,7 +454,9 @@ function IncomeForm({
                     onChange={(event) => patch("currency", event.target.value)}
                   >
                     {currencies.map((currency) => (
-                      <option key={currency}>{currency}</option>
+                      <option key={currency} value={currency}>
+                        {currencyOptionLabel(currency)}
+                      </option>
                     ))}
                   </select>
                 </label>

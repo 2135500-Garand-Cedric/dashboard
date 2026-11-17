@@ -142,7 +142,7 @@ balances changed. No payout-history backfill or fake activity entries.
 ### Exact checks executed
 
 - `node --test tests/*.test.mjs`: all 22 test files passed, including existing
-  auth, finance, Japanese, backup, event-date and time-manager unit coverage.
+  auth, finance, Japanese, backup and event-date unit coverage.
 - `node tests/work-management.test.mjs`: 5 tests passed (headers/validation,
   inventories, preservation comparison, sanitized errors and lost-response retries).
 - `docker compose -p dashboard-work-test -f docker-compose.work-test.yml run --rm -e RUN_EVENT_DB_TEST=1 -e WORK_MANAGEMENT_MIGRATION_BASELINE=/app/private/work-management/phase01-copy-before.json runner node --test tests/work-management.integration.mjs tests/event-completion.integration.mjs`: 12 TAP checks passed, including 10 work scenarios,

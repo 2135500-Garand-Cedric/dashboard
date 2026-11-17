@@ -7,6 +7,7 @@ export interface YouTubePlayer {
   getDuration(): number;
   getCurrentTime(): number;
   seekTo(seconds: number, allowSeekAhead: boolean): void;
+  setVolume(volume: number): void;
 }
 
 interface YouTubeAPI {
@@ -18,7 +19,12 @@ interface YouTubeAPI {
         onReady: () => void;
         onStateChange: (event: { data: number }) => void;
       };
-      playerVars: { controls: number; modestbranding: number; autoplay: number };
+      playerVars: {
+        controls: number;
+        modestbranding: number;
+        autoplay: number;
+        playsinline?: number;
+      };
     },
   ) => YouTubePlayer;
   PlayerState: { PLAYING: number; PAUSED: number; ENDED: number };

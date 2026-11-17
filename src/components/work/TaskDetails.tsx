@@ -451,6 +451,24 @@ export default function TaskDetails({
                 })
               }
             />
+            <button
+              type="button"
+              disabled={
+                busy ||
+                supportingBusy ||
+                editing ||
+                dirty ||
+                peopleDirty ||
+                relationshipState.dirty ||
+                datesState.dirty ||
+                membershipState.dirty ||
+                calendarState.dirty
+              }
+              onClick={() => void perform(() => patch({ archived: !todo.archivedAt }))}
+              className={`${buttonClass} border-amber-500/40`}
+            >
+              {todo.archivedAt ? "Restore task" : "Archive task"}
+            </button>
             {panel && (
               <Link
                 href={`/todos/${todoId}?returnTo=${encodeURIComponent(returnTo)}`}
@@ -719,7 +737,12 @@ export default function TaskDetails({
               ref={notes}
               id={todoId}
               revision={todo.revision}
+              currentStatus={todo.status}
               onStateChange={setNotesState}
+              onTaskChanged={(task) => {
+                setTodo(task);
+                onChanged?.();
+              }}
               onRecordsChanged={recordAdded}
             />
             {(editing ||
@@ -1082,16 +1105,6 @@ export default function TaskDetails({
               className="task-secondary-section border-t border-card-border pt-3"
             >
               <summary className="cursor-pointer font-medium">Record details</summary>
-              {!!todo.archivedAt && !isClosed(todo.status) && (
-                <button
-                  type="button"
-                  className={buttonClass}
-                  disabled={busy || supportingBusy}
-                  onClick={() => void perform(() => patch({ archived: false }))}
-                >
-                  Restore task
-                </button>
-              )}
               <div className="space-y-3 mb-4">
                 {([["system", "System"]] as const)
                   .filter(([key]) => editing || !!todo[key])

@@ -11,7 +11,7 @@ import {
   AdjustmentsHorizontalIcon,
   ChartBarIcon,
 } from "@heroicons/react/24/outline";
-import type { FinanceAccount } from "@/lib/finance/validation";
+import { currencyOptionLabel, CURRENCIES, type FinanceAccount } from "@/lib/finance/validation";
 import type { FinanceOverviewReport } from "@/lib/finance/overview";
 import { INCOME_KINDS, type IncomeKind } from "@/lib/finance/income";
 import { displayAmount } from "@/lib/finance/transactions";
@@ -67,9 +67,7 @@ export default function FinanceOverview({ today }: { today: string }) {
   const result = useFinanceData<FinanceOverviewReport>(
     `/api/finance/reports?${new URLSearchParams(filters)}`,
   );
-  const currencies = [
-    ...new Set(["CAD", ...(accounts.data?.accounts.map((row) => row.currency) ?? [])]),
-  ].sort();
+  const currencies = CURRENCIES;
   function update(patch: Partial<typeof initial>) {
     setDraft((previous) => ({ ...previous, ...patch }));
     setFilters({ ...filters, ...patch });
@@ -87,7 +85,7 @@ export default function FinanceOverview({ today }: { today: string }) {
   }
   const filterCount = Number(!!filters.account) + Number(filters.dataset !== "all");
   return (
-    <div className="min-w-0 max-w-[1800px] space-y-5">
+    <div className="w-full min-w-0 space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-2xl font-semibold">Financial overview</h2>
         <div className="flex flex-wrap gap-2">
@@ -200,7 +198,9 @@ export default function FinanceOverview({ today }: { today: string }) {
             onChange={(event) => update({ currency: event.target.value, account: "" })}
           >
             {currencies.map((currency) => (
-              <option key={currency}>{currency}</option>
+              <option key={currency} value={currency}>
+                {currencyOptionLabel(currency)}
+              </option>
             ))}
           </select>
           <button

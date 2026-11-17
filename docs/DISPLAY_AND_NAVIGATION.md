@@ -98,7 +98,7 @@ The opt-in `tests/task-details.browser.mjs` check uses only the disposable app o
 port 3002. It covers phone/desktop layout, 24 links across all relationship types
 and multiple API pages, internal scrolling, note saving and project/stage changes.
 
-## Practice rewards, automatic archiving and quick sessions
+## Practice rewards and quick sessions
 
 Completed practices earn 1 XP per Good word and 2 XP per Perfect word. Gold is
 `floor(completedWordCount / 5)`: 10/25/50/100 words earn 2/5/10/20 gold regardless
@@ -109,11 +109,11 @@ reuse with different session details is rejected. Saved XP/gold remain visible
 in history. The additive `20261115120000_japanese_practice_rewards` migration adds
 nullable fields; existing sessions remain null and receive no retroactive awards.
 
-New Done/Cancelled transitions archive automatically. Reopening clears the
-archive flag. Existing tasks are not bulk-reclassified. Completed history and
-historical calendar markers include archived closed tasks, and completed tasks
-still count toward project progress. The task page has no manual Archive button;
-Restore remains available for historical manually archived open tasks.
+Done/Cancelled transitions retain the current archive state. Reopening clears the
+archive flag. Existing tasks are not bulk-reclassified. Active lists all unarchived
+tasks, including closed tasks; Archived lists explicitly archived records.
+Completed tasks still count toward project progress. The task header provides
+manual Archive/Restore actions beside Focus today.
 
 The header Schedule work session action opens a centered dialog with a start
 time in the saved display timezone and an integer duration in minutes. The form creates a
@@ -256,3 +256,83 @@ defaults/overrides, retired metadata, activity filters and milestone colors.
 readable date cards, color changes, task defaults, removed fields and stale filter
 cleanup at desktop and phone sizes. `tests/retired-task-fields.test.mjs` checks
 that cached old drafts cannot submit the removed fields.
+
+## Daily-use refinements
+
+The main dashboard includes a compact current-month CAD finance summary, using
+the same report calculation as Finance Overview. It shows recorded income,
+expenses, net cash flow and activities awaiting statement matching, rather than
+implying a complete account balance. Finance Overview uses all available width.
+
+Receipt and pay-stub originals open in a closable in-app dialog. Saving fetches
+the owner-protected original without navigating the app: capable phones use the
+native share sheet (including Save to Files), and other browsers download a blob.
+A file prepared during a rejected share gesture stays in memory for a second
+explicit tap; no private original is stored in service-worker or browser caches.
+Matched records still allow original viewing and saving while edits remain locked.
+
+Expense subtotal, optional tax/tip and total are always visible. Changing a
+component recalculates the total using decimal-safe arithmetic. Subtotal, tax,
+tip and total display and accept two decimal places; existing stored precision
+is preserved when a displayed legacy amount is left unchanged. Editing the total
+manually keeps the difference warning and explicit mismatch confirmation.
+Finance currency controls offer CAD ($), USD ($), EUR (€), GBP (£) and JPY (¥),
+while submitting the unchanged three-letter currency codes. On phones, the six
+main finance tabs use a three-column, two-row grid with no horizontal scrolling.
+
+Task and project note editors open in centered dialogs. Clicking outside closes
+the dialog while preserving its draft for reopening. New notes contain text and
+a server-recorded writing timestamp; links and occurred-at controls are no longer
+offered. A new task note can optionally change its task status. The note and
+status save in one transaction, using the current task revision, dependency
+checks and existing audit records. Note cards show the before/after status.
+The note's status field remains optional: its default reads Keep current status
+with the current status name, and that status is omitted from the other choices.
+
+Project Notes includes direct project notes and notes from all current project
+tasks, with the task reference/title linking to its source. These are views of
+the original note, not duplicate database rows: edits appear in both places,
+membership changes move the note into the appropriate project view, and combined
+pagination stays ordered by writing time. Task notes are edited from their task;
+direct project notes stay independently editable. Historic links/times/revisions
+remain stored rather than being deleted by the simpler editor.
+
+Active work means unarchived work, including Done and Cancelled. The only task
+views are Active and Archived; old saved history/all filters normalize to Active.
+Task archiving is explicit through the header's Archive/Restore action. Existing
+archived records are not changed retroactively. The shared task creation form
+uses a single project selector without a search field. It offers the selected
+project's active stages immediately below that selector without an extra heading,
+hides the stage control when none are available, resets stage on project changes,
+and accepts a stage supplied by a project capture link. The owner-protected
+`/api/projects?options=1` projection loads active project IDs/names without fetching
+progress counts or requiring pagination in the creation form.
+
+Event start/end controls use minute precision without seconds. Clock-change
+occurrence choices appear only for ambiguous event times and do not create
+recurring events. Project target dates are informational all-day calendar markers
+under Project milestones & targets, colored by the project activity type. They
+respect project, activity, range and history filters and never create Event rows.
+No schema migration is needed for these refinements.
+
+Music volume defaults to 30% on supported browsers and is saved per browser in
+local storage. The persistent player continues across internal page navigation.
+iPhone/iPad embedded YouTube volume uses device controls; the app does not promise
+YouTube playback after leaving the PWA. See Google's [iOS player limitations](https://developers.google.com/youtube/data/guides/ios_youtube_helper)
+and [embedded-player policies](https://developers.google.com/youtube/terms/developer-policies-guide).
+Time Manager and its proxy API, component, navigation entry and example
+configuration have been removed; no external Time Manager service was changed.
+
+Verification: `node --test tests/*.test.mjs`; disposable DB tests for work
+foundation/projects and finance activities/reporting; and browser checks with
+`RUN_DASHBOARD_USABILITY_BROWSER_TEST=1 node tests/dashboard-usability.browser.mjs`
+and `RUN_FINANCE_ACTIVITY_BROWSER_TEST=1 node tests/finance-activities.browser.mjs`
+against the isolated port-3002 application. Browser checks mock the YouTube API
+and native share-sheet responses; physical iPhone/iOS acceptance remains necessary.
+
+`RUN_WORK_NOTE_WORKFLOW_DB_TEST=1 node --test tests/work-note-workflow.integration.mjs`
+checks atomic status/note saving, retries, late rollback, ownership, merged project
+pagination, stage membership, project targets and active/archived behavior on the
+disposable database. `RUN_WORK_FINANCE_REFINEMENTS_BROWSER_TEST=1 node
+tests/work-finance-refinements.browser.mjs` checks the corresponding phone/desktop
+flows against the isolated port-3002 app.

@@ -9,8 +9,12 @@ export function usePersistentQuery(key: string, path: string, query: string) {
     // Retired task filters must not return as hidden constraints when a
     // saved URL is restored after the fields have been removed.
     const retired = ["context", "company", "course"];
-    if (retired.some((field) => current.has(field))) {
+    if (
+      retired.some((field) => current.has(field)) ||
+      ["history", "all"].includes(current.get("view") || "")
+    ) {
       retired.forEach((field) => current.delete(field));
+      if (["history", "all"].includes(current.get("view") || "")) current.delete("view");
       window.history.replaceState(null, "", `${path}${current.size ? `?${current}` : ""}`);
       return;
     }
@@ -19,6 +23,7 @@ export function usePersistentQuery(key: string, path: string, query: string) {
       if (!query && saved) {
         const restored = new URLSearchParams(saved);
         retired.forEach((field) => restored.delete(field));
+        if (["history", "all"].includes(restored.get("view") || "")) restored.delete("view");
         if (restored.size) window.history.replaceState(null, "", `${path}?${restored}`);
         else setSaved("");
         return;

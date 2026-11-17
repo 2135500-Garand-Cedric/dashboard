@@ -49,6 +49,21 @@ test("saved timezone scopes survive awaits without leaking between concurrent re
 });
 
 test("wall-time input uses the selected zone and preserves DST gaps and both fold instants", () => {
+  const choices = clock.repeatedTimeChoices("2026-11-01T01:30", "America/New_York");
+  assert.equal(choices.minutesApart, 60);
+  assert.deepEqual(
+    choices.choices.map((choice) => choice.value),
+    ["earlier", "later"],
+  );
+  assert.match(choices.choices[0].label, /GMT-04:00/);
+  assert.match(choices.choices[1].label, /GMT-05:00/);
+  assert.equal(
+    clock.repeatedTimeChoices("2026-04-05T01:45", "Australia/Lord_Howe").minutesApart,
+    30,
+  );
+  assert.equal(clock.repeatedTimeChoices("2026-11-02T10:00", "America/New_York"), null);
+  assert.equal(clock.repeatedTimeChoices("2026-03-08T02:30", "America/New_York"), null);
+  assert.equal(clock.repeatedTimeChoices("", "America/New_York"), null);
   assert.deepEqual(
     clock.resolveLocalInstants("2026-11-12T09:30", "Asia/Tokyo").map((date) => date.toISOString()),
     ["2026-11-12T00:30:00.000Z"],

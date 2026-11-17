@@ -13,6 +13,9 @@ interface MusicPlayerContextType {
   video: Video | null;
   playing: boolean;
   progress: number;
+  volume: number;
+  setVolume: (volume: number) => void;
+  volumeSupported: boolean;
   play: () => void;
   pause: () => void;
   skipForward: () => void;
@@ -27,6 +30,27 @@ export const MusicPlayerProvider = ({ children }: { children: ReactNode }) => {
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [playerReady, setPlayerReady] = useState(false);
+  const [volume, updateVolume] = useState(30);
+  const [volumeSupported, setVolumeSupported] = useState(true);
+  const volumeRef = useRef(30);
+  useEffect(() => {
+    setVolumeSupported(
+      !(
+        /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+      ),
+    );
+    try {
+      const saved = localStorage.getItem("dashboard:music-volume");
+      const value = saved === null ? 30 : Number(saved);
+      if (Number.isFinite(value) && value >= 0 && value <= 100) {
+        volumeRef.current = value;
+        updateVolume(value);
+      }
+    } catch {
+      // Playback still works if browser storage is unavailable.
+    }
+  }, []);
 
   const playerRef = useRef<YouTubePlayer | null>(null);
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
@@ -77,6 +101,7 @@ export const MusicPlayerProvider = ({ children }: { children: ReactNode }) => {
           events: {
             onReady: () => {
               if (disposed) return;
+              player?.setVolume(volumeRef.current);
               setPlayerReady(true);
               void fetchVideo();
             },
@@ -93,7 +118,7 @@ export const MusicPlayerProvider = ({ children }: { children: ReactNode }) => {
                 void fetchVideo(true);
             },
           },
-          playerVars: { controls: 0, modestbranding: 1, autoplay: 0 },
+          playerVars: { controls: 0, modestbranding: 1, autoplay: 0, playsinline: 1 },
         });
         playerRef.current = player;
       })
@@ -137,6 +162,18 @@ export const MusicPlayerProvider = ({ children }: { children: ReactNode }) => {
   }, [playing]);
 
   // Control functions
+  const setVolume = (value: number) => {
+    if (!Number.isFinite(value)) return;
+    const next = Math.max(0, Math.min(100, Math.round(value)));
+    volumeRef.current = next;
+    updateVolume(next);
+    if (playerReady) playerRef.current?.setVolume(next);
+    try {
+      localStorage.setItem("dashboard:music-volume", String(next));
+    } catch {
+      // Volume remains usable for this session.
+    }
+  };
   const play = () => {
     if (!playerReady || !video || !playerRef.current) return;
     playbackRequestedRef.current = true;
@@ -160,7 +197,19 @@ export const MusicPlayerProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <MusicPlayerContext.Provider
-      value={{ video, playing, progress, play, pause, skipForward, skipBack, setVideo }}
+      value={{
+        video,
+        playing,
+        progress,
+        volume,
+        setVolume,
+        volumeSupported,
+        play,
+        pause,
+        skipForward,
+        skipBack,
+        setVideo,
+      }}
     >
       {children}
       <div ref={playerContainerRef} style={{ display: "none" }} />

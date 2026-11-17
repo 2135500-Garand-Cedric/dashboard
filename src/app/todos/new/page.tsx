@@ -5,8 +5,7 @@ import { createWorkWriter, workRead } from "@/lib/work-management/client";
 import { useSnackbar } from "@/context/SnackbarContext";
 import { useWorkDraftGuard } from "@/components/work/useWorkDraftGuard";
 import { useViewState } from "@/context/ViewStateContext";
-import ProjectPicker from "@/components/projects/ProjectPicker";
-import type { WorkActivityType, WorkTodo } from "@/lib/work-management/types";
+import type { WorkActivityType, WorkTodo, WorkProject } from "@/lib/work-management/types";
 import { KIND_LABELS, PRIORITY_LABELS } from "@/lib/work-management/types";
 
 const write = createWorkWriter();
@@ -22,6 +21,7 @@ function TaskForm() {
       description: "",
       activityType: params.get("activityType") || "",
       project: params.get("project") || "",
+      stage: params.get("stage") || "",
       priority: "NORMAL",
       kind: "TASK",
     }),
@@ -29,6 +29,10 @@ function TaskForm() {
   );
   const [draft, setDraft] = useViewState(`new-task:${search}`, initial);
   const [activityTypes, setActivityTypes] = useState<WorkActivityType[]>([]),
+    [projects, setProjects] = useState<{ id: number; name: string }[]>([]),
+    [projectError, setProjectError] = useState(""),
+    [projectDetails, setProjectDetails] = useState<WorkProject | null>(null),
+    [stageError, setStageError] = useState(""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [catalogError, setCatalogError] = useState("");
@@ -50,9 +54,39 @@ function TaskForm() {
       setCatalogError(error instanceof Error ? error.message : "Unable to load activity types.");
     }
   }
+  async function loadProjects() {
+    setProjectError("");
+    try {
+      setProjects(
+        (await workRead<{ items: { id: number; name: string }[] }>("/api/projects?options=1"))
+          .items,
+      );
+    } catch {
+      setProjectError("Could not load projects.");
+    }
+  }
   useEffect(() => {
     void loadActivityTypes();
+    void loadProjects();
   }, []);
+  useEffect(() => {
+    let active = true;
+    setProjectDetails(null);
+    setStageError("");
+    if (/^[1-9]\d*$/.test(draft.project)) {
+      void workRead<WorkProject>(`/api/projects/${draft.project}`)
+        .then((value) => {
+          if (active) setProjectDetails(value);
+        })
+        .catch(() => {
+          if (active)
+            setStageError("Could not load project stages. Reselect the project to retry.");
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [draft.project]);
   const field = (key: keyof typeof draft, value: string) =>
     setDraft((old) => ({ ...old, [key]: value }));
   return (
@@ -92,9 +126,7 @@ function TaskForm() {
                   }
                 : {}),
               projectId: draft.project && draft.project !== "none" ? Number(draft.project) : null,
-              ...(params.get("stage") && draft.project === params.get("project")
-                ? { stageId: Number(params.get("stage")) }
-                : {}),
+              stageId: draft.stage ? Number(draft.stage) : null,
               priorityLevel: draft.priority,
               kind: draft.kind,
             });
@@ -159,11 +191,62 @@ function TaskForm() {
                 ))}
             </select>
           </label>
-          <ProjectPicker
-            label="Project"
-            value={draft.project}
-            onChange={(value) => field("project", value)}
-          />
+          <div className="min-w-0 space-y-2">
+            <label className="block text-sm">
+              Project
+              <select
+                aria-label="Project"
+                className={input}
+                disabled={busy}
+                value={draft.project === "none" ? "" : draft.project}
+                onChange={(event) =>
+                  setDraft((old) => ({ ...old, project: event.target.value, stage: "" }))
+                }
+              >
+                <option value="">No project</option>
+                {projectDetails && !projects.some((row) => row.id === projectDetails.id) && (
+                  <option value={projectDetails.id}>{projectDetails.name}</option>
+                )}
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {projectDetails?.id === Number(draft.project) &&
+              projectDetails.stages.some((stage) => stage.active) && (
+                <select
+                  aria-label="Task stage"
+                  value={draft.stage || ""}
+                  disabled={busy || !projectDetails}
+                  onChange={(event) => field("stage", event.target.value)}
+                  className="w-full rounded-lg border border-card-border bg-card-bg p-3 text-sm"
+                >
+                  <option value="">No stage</option>
+                  {projectDetails?.stages
+                    .filter((stage) => stage.active)
+                    .map((stage) => (
+                      <option key={stage.id} value={stage.id}>
+                        {stage.name}
+                      </option>
+                    ))}
+                </select>
+              )}
+            {stageError && (
+              <p role="alert" className="text-sm text-rose-500">
+                {stageError}
+              </p>
+            )}
+            {projectError && (
+              <p role="alert" className="text-sm text-rose-500">
+                {projectError}{" "}
+                <button type="button" onClick={() => void loadProjects()} className="underline">
+                  Retry
+                </button>
+              </p>
+            )}
+          </div>
           <label className="text-sm">
             Priority
             <select

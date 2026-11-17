@@ -91,6 +91,13 @@ export function receiptDifference(subtotal: string, tax: string, tip: string, to
   const absolute = (difference < BigInt(0) ? -difference : difference).toString().padStart(5, "0");
   return `${difference < BigInt(0) ? "-" : ""}${absolute.slice(0, -4)}.${absolute.slice(-4)}`;
 }
+export function receiptTotal(subtotal: string, tax = "0", tip = "0") {
+  const units = [subtotal, tax || "0", tip || "0"]
+    .reduce((sum, value) => sum + BigInt(receiptMoney(value).replace(".", "")), BigInt(0))
+    .toString()
+    .padStart(5, "0");
+  return `${units.slice(0, -4)}.${units.slice(-4)}`;
+}
 export function receiptInput(value: unknown, editing = false): ReceiptInput {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new FinanceValidationError("Receipt details must be a JSON object.");
@@ -146,7 +153,7 @@ export function receiptInput(value: unknown, editing = false): ReceiptInput {
     categoryId: id(body.categoryId),
     currency: body.currency,
     subtotal: receiptMoney(body.subtotal),
-    tax: receiptMoney(body.tax),
+    tax: receiptMoney(body.tax ?? "0"),
     tip: receiptMoney(body.tip ?? "0"),
     total: receiptMoney(body.total),
     notes: text(body.notes, "Notes", 2000),

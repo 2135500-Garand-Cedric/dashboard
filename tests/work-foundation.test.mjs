@@ -170,11 +170,17 @@ test("retired task metadata is rejected by the public command schema", () => {
   }
 });
 
-test("closing automatically archives and reopening returns the task to active work", () => {
+test("closing does not archive; explicit archiving and restoring remain available", () => {
   const now = new Date("2026-11-13T15:00:00Z");
   for (const status of ["DONE", "CANCELLED"]) {
     const closed = fields.lifecycleData(row(), { status }, {}, now);
-    assert.equal(closed.archivedAt, now);
+    assert.equal(closed.archivedAt, undefined);
+    assert.equal(fields.lifecycleData(row(), { status }, { archived: true }, now).archivedAt, now);
+    assert.equal(
+      fields.lifecycleData(row({ status, archivedAt: now }), {}, { archived: false }, now)
+        .archivedAt,
+      null,
+    );
     const reopened = fields.lifecycleData(
       row({ status, archivedAt: now }),
       { status: "TODO" },

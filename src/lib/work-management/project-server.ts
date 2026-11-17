@@ -52,6 +52,15 @@ export async function getProjectInDb(db: DB, id: number) {
 }
 export const getProject = (id: number) =>
   prisma.$transaction((db) => getProjectInDb(db, id), { isolationLevel: "RepeatableRead" });
+export async function projectOptions() {
+  return {
+    items: await prisma.workProject.findMany({
+      where: { userId: WORK_USER_ID, archivedAt: null, status: "ACTIVE" },
+      select: { id: true, name: true },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+    }),
+  };
+}
 export async function listProjects(params: URLSearchParams) {
   const q = (params.get("q") || "").trim(),
     view = params.get("view") || "active",

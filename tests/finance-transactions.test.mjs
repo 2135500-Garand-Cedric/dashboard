@@ -35,7 +35,9 @@ test("transaction money remains exact decimal text, including values beyond floa
   assert.equal(decimalAmount("900719925474099.1234"), "900719925474099.1234");
   assert.equal(decimalAmount("0.1"), "0.1000");
   assert.equal(decimalAmount("-5.20", true), "-5.2000");
-  assert.equal(displayAmount("-900719925474099.1234", "CAD"), "−900,719,925,474,099.1234 CAD");
+  assert.equal(displayAmount("-900719925474099.1234", "CAD"), "−900,719,925,474,099.12 CAD");
+  assert.equal(displayAmount("1.0050", "CAD"), "+1.01 CAD");
+  assert.equal(displayAmount("-1.0050", "CAD"), "−1.01 CAD");
   assert.equal(displayAmount("0.3000", "USD"), "+0.30 USD");
   for (const value of [
     0.1,

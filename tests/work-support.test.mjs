@@ -13,6 +13,16 @@ test("notes reject writable timestamps, unsafe links, empty/oversized text and a
     occurredAt: null,
   };
   assert.equal(noteInput.noteInput(base).body, base.body);
+  assert.deepEqual(noteInput.noteInput({ body: "Simple note" }).documentationUrls, []);
+  assert.equal(noteInput.noteInput({ body: "Simple note" }).occurredAt, null);
+  assert.equal(
+    noteInput.noteInput({ body: "Sent email", taskStatus: "WAITING", taskRevision: 3 }).taskStatus,
+    "WAITING",
+  );
+  assert.throws(() => noteInput.noteInput({ body: "Sent email", taskStatus: "WAITING" }));
+  assert.throws(() =>
+    noteInput.noteInput({ body: "Sent email", taskStatus: "INVALID", taskRevision: 3 }),
+  );
   assert.equal(
     noteInput
       .noteInput({ ...base, occurredAt: "2026-11-08T19:20:00-05:00" })

@@ -35,7 +35,7 @@ const allLayers = [
   ["sessions", "▣ Work sessions"],
   ["deadlines", "⚑ Deadlines"],
   ["followups", "↻ Follow-ups"],
-  ["milestones", "◇ Project milestones"],
+  ["milestones", "◇ Project milestones & targets"],
 ];
 const defaultLayers = allLayers.map(([key]) => key);
 type Move = { id: number; revision: number; title: string; date: string; endDate: string };

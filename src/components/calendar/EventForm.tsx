@@ -1,4 +1,5 @@
 "use client";
+import RepeatedTimeChoice from "@/components/shared/RepeatedTimeChoice";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { createWorkWriter, workRead } from "@/lib/work-management/client";
@@ -45,8 +46,12 @@ export default function EventForm({
       event?.allDayStart ? "ALL_DAY" : event?.date || initialTask ? "TIMED" : "TBD",
     ),
     [zone] = useState(timeZone);
-  const [start, setStart] = useState(event?.date ? localParts(event.date, timeZone) : ""),
-    [end, setEnd] = useState(event?.endDate ? localParts(event.endDate, timeZone) : "");
+  const [start, setStart] = useState(
+      event?.date ? localParts(event.date, timeZone).slice(0, 16) : "",
+    ),
+    [end, setEnd] = useState(
+      event?.endDate ? localParts(event.endDate, timeZone).slice(0, 16) : "",
+    );
   const [first, setFirst] = useState(event?.allDayStart ?? ""),
     [last, setLast] = useState(event?.allDayEnd ? shift(event.allDayEnd, -1) : "");
   const [startOccurrence, setStartOccurrence] = useState(""),
@@ -386,7 +391,7 @@ export default function EventForm({
                   <input
                     aria-label={`${label} date and time`}
                     type="datetime-local"
-                    step="1"
+                    step="60"
                     required={label === "Start" || kind === "WORK_SESSION"}
                     value={String(value)}
                     disabled={saving}
@@ -397,20 +402,16 @@ export default function EventForm({
                     className={input}
                   />
                 </label>
-                <label className="block text-xs text-gray-500">
-                  If {String(label).toLowerCase()} time repeats
-                  <select
-                    aria-label={`${label} repeated time`}
-                    value={String(occurrence)}
-                    disabled={saving}
-                    onChange={(e) => (setOccurrence as (value: string) => void)(e.target.value)}
-                    className={input}
-                  >
-                    <option value="">Require explicit choice</option>
-                    <option value="earlier">Earlier occurrence</option>
-                    <option value="later">Later occurrence</option>
-                  </select>
-                </label>
+                <RepeatedTimeChoice
+                  local={String(value)}
+                  timeZone={timeZone}
+                  value={String(occurrence)}
+                  disabled={saving}
+                  label={`${label} clock-change occurrence`}
+                  ariaLabel={`${label} repeated time`}
+                  onChange={setOccurrence as (value: string) => void}
+                  className={input}
+                />
               </div>
             ))}
           </div>

@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { encode } from "next-auth/jwt";
 
 test(
-  "rewarded practice, open people selectors, inline scheduling and automatic task archiving",
+  "rewarded practice, open people selectors, inline scheduling and explicit task archiving",
   {
     skip: process.env.RUN_PRACTICE_TASK_BROWSER_TEST !== "1",
   },
@@ -68,7 +68,7 @@ test(
         assert.equal(await article.getByRole("navigation", { name: "Task sections" }).count(), 0);
         assert.equal(
           await article.getByRole("button", { name: "Archive task", exact: true }).count(),
-          0,
+          1,
         );
         assert.equal(await article.getByText("Organization & people", { exact: true }).count(), 0);
         assert.equal(await article.getByText("Tags", { exact: true }).count(), 0);
@@ -164,7 +164,7 @@ test(
           .getByRole("button", { name: "Complete task", exact: true })
           .click();
         await article.getByRole("button", { name: "Reopen task", exact: true }).waitFor();
-        assert.ok((await read(`/api/todos/${task.id}`)).archivedAt);
+        assert.equal((await read(`/api/todos/${task.id}`)).archivedAt, null);
         assert.ok(
           (
             await read(`/api/work-items?view=history&q=${encodeURIComponent(task.title)}`)
@@ -186,7 +186,7 @@ test(
           .getByRole("button", { name: "Confirm cancellation", exact: true })
           .click();
         await article.getByRole("button", { name: "Reopen task", exact: true }).waitFor();
-        assert.ok((await read(`/api/todos/${task.id}`)).archivedAt);
+        assert.equal((await read(`/api/todos/${task.id}`)).archivedAt, null);
 
         const balance = await read("/api/users");
         await page.goto(`${base}/japanese/practice`);
@@ -235,7 +235,7 @@ test(
           await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
         );
         console.log(
-          `Verified practice preview/save/retry/history rewards, people, inline normal/DST scheduling, automatic archive/reopen at ${viewport.width}px.`,
+          `Verified practice preview/save/retry/history rewards, people, inline normal/DST scheduling, explicit archive/reopen at ${viewport.width}px.`,
         );
       }
       assert.deepEqual(errors, []);

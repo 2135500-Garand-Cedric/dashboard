@@ -1,7 +1,9 @@
 "use client";
 /* eslint-disable @next/next/no-img-element -- Private originals must bypass the public image optimizer. */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import TaskModal from "@/components/shared/TaskModal";
 import {
   MAX_RECEIPT_BYTES,
   RECEIPT_FILE_ACCEPT,
@@ -26,6 +28,58 @@ export default function FinanceDocumentPanel({
   onDelete: () => void;
 }) {
   const [fileError, setFileError] = useState("");
+  const [originalOpen, setOriginalOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadMessage, setDownloadMessage] = useState("");
+  const originalFile = useRef<{ id: number; file: File } | null>(null);
+  async function downloadOriginal() {
+    if (!document || downloading) return;
+    setOriginalOpen(true);
+    setDownloading(true);
+    setDownloadMessage("");
+    try {
+      let original = originalFile.current?.id === document.id ? originalFile.current.file : null;
+      if (!original) {
+        const response = await fetch(`${baseUrl}?v=${document.id}&download=1`, {
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error("Could not download the document. Try again.");
+        original = new File([await response.blob()], document.originalName, {
+          type: document.mimeType,
+        });
+        originalFile.current = { id: document.id, file: original };
+      }
+      if (
+        navigator.canShare?.({ files: [original] }) &&
+        window.matchMedia("(pointer: coarse)").matches
+      ) {
+        await navigator.share({ files: [original], title });
+      } else {
+        const url = URL.createObjectURL(original);
+        const link = window.document.createElement("a");
+        link.href = url;
+        link.download = document.originalName;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        window.document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+      }
+    } catch (error) {
+      if (!(error instanceof Error && error.name === "AbortError")) {
+        setDownloadMessage(
+          error instanceof Error && error.name === "NotAllowedError"
+            ? "Your file is ready. Tap Save or share original to save it to Files."
+            : error instanceof Error
+              ? error.message
+              : "Could not download the document. Try again.",
+        );
+      }
+    } finally {
+      setDownloading(false);
+    }
+  }
   function choose(selected?: File) {
     if (!selected) return;
     if (!selected.size || selected.size > MAX_RECEIPT_BYTES) {
@@ -141,13 +195,22 @@ export default function FinanceDocumentPanel({
           <div className="flex flex-wrap gap-2">
             <a
               href={storedUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+              onClick={(event) => {
+                event.preventDefault();
+                setOriginalOpen(true);
+              }}
               className={secondaryButton}
             >
               Open original
             </a>
-            <a href={`${storedUrl}&download=1`} className={secondaryButton}>
+            <a
+              href={`${storedUrl}&download=1`}
+              onClick={(event) => {
+                event.preventDefault();
+                void downloadOriginal();
+              }}
+              className={secondaryButton}
+            >
               Download original
             </a>
             <button type="button" className={`${secondaryButton} text-rose-500`} onClick={onDelete}>
@@ -156,6 +219,47 @@ export default function FinanceDocumentPanel({
           </div>
         </>
       )}
+      {originalOpen &&
+        document &&
+        createPortal(
+          <TaskModal open title={`${title} original`} onClose={() => setOriginalOpen(false)}>
+            <p className="mb-3 break-words text-sm">{document.originalName}</p>
+            <div className="max-h-[60dvh] overflow-auto rounded-lg border border-card-border">
+              {document.mimeType === "application/pdf" ? (
+                <ReceiptPdfPreview url={storedUrl} label={title} />
+              ) : (
+                <img
+                  src={storedUrl}
+                  alt={`${title} original`}
+                  className="h-auto w-full object-contain"
+                />
+              )}
+            </div>
+            {downloadMessage && (
+              <p role="alert" className="mt-3 text-sm text-rose-500">
+                {downloadMessage}
+              </p>
+            )}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={downloading}
+                className={secondaryButton}
+                onClick={() => void downloadOriginal()}
+              >
+                {downloading ? "Preparing file…" : "Save or share original"}
+              </button>
+              <button
+                type="button"
+                className={secondaryButton}
+                onClick={() => setOriginalOpen(false)}
+              >
+                Back to {title === "Receipt" ? "expense" : "income"}
+              </button>
+            </div>
+          </TaskModal>,
+          window.document.body,
+        )}
     </section>
   );
 }

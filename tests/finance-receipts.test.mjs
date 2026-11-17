@@ -50,6 +50,7 @@ const base = {
 };
 test("receipt validation supports zero tax, optional tips and exact monetary reconciliation", () => {
   assert.equal(receipts.receiptInput(base).tax, "0.0000");
+  assert.equal(receipts.receiptInput({ ...base, tax: undefined }).tax, "0.0000");
   assert.equal(receipts.receiptInput({ ...base, tip: undefined }).tip, "0.0000");
   assert.equal(receipts.receiptDifference("0.1", "0.2", "0", "0.3"), "0.0000");
   assert.equal(
@@ -73,6 +74,16 @@ test("receipt validation supports zero tax, optional tips and exact monetary rec
     { notes: "\0" },
   ])
     assert.throws(() => receipts.receiptInput({ ...base, ...patch }));
+});
+
+test("expense totals sum optional tax and tip using exact decimal arithmetic", () => {
+  assert.equal(receipts.receiptTotal("0.1", "0.2", ""), "0.3000");
+  assert.equal(receipts.receiptTotal("10", "", "2.25"), "12.2500");
+  assert.equal(
+    receipts.receiptTotal("900719925474099.1234", "0.0001", "0"),
+    "900719925474099.1235",
+  );
+  assert.throws(() => receipts.receiptTotal("-1", "0", "0"));
 });
 test("receipt uploads verify actual file bytes, reject active or corrupt content, bound multipart reads, and store files privately", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "finance-file-unit-"));

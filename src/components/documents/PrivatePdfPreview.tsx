@@ -57,7 +57,7 @@ export default function PrivatePdfPreview({
         if (!cancelled) {
           setError(
             error?.name === "PasswordException"
-              ? "This PDF is password-protected. Use Open original to view it."
+              ? "This PDF is password-protected. Download the original to view it."
               : "Could not preview this PDF. You can still open or download the original.",
           );
           setRendering(false);

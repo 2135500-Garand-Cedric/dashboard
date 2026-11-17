@@ -62,7 +62,7 @@ export default function AllWork({
   query.delete("task");
   const queryString = query.toString(),
     mode = params.get("mode") === "board" ? "board" : "list",
-    view = params.get("view") || "active";
+    view = params.get("view") === "archived" ? "archived" : "active";
   const selectedId =
     params.get("task") && /^\d+$/.test(params.get("task")!) ? Number(params.get("task")) : null;
   const [data, setData] = useState<WorkResults | null>(null),
@@ -95,13 +95,8 @@ export default function AllWork({
     else window.history.pushState(null, "", href);
   }
   function filter(key: string, value: string) {
-    const viewChange: Record<string, string | null> =
-      key === "status" && value && view !== "archived" && view !== "all"
-        ? { view: isClosed(value) ? "history" : null }
-        : {};
     navigate(
       {
-        ...viewChange,
         ...(key === "project" ? { stage: null } : {}),
         ...(key === "status" && isClosed(value) ? { planning: null } : {}),
         [key]: value,
@@ -301,9 +296,7 @@ export default function AllWork({
             <div className="flex flex-wrap gap-2" aria-label="Work views">
               {[
                 ["active", "Active"],
-                ["history", "Completed history"],
                 ["archived", "Archived"],
-                ["all", "All unarchived"],
               ].map(([key, label]) => (
                 <button
                   key={key}

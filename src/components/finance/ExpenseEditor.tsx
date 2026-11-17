@@ -8,9 +8,13 @@ import FinanceDocumentPanel from "./FinanceDocumentPanel";
 import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
 import { useSnackbar } from "@/context/SnackbarContext";
-import { receiptDifference, type FinanceReceipt } from "@/lib/finance/receipts";
-import type { FinanceAccount, FinanceCategory } from "@/lib/finance/validation";
-import { type FinanceTransaction } from "@/lib/finance/transactions";
+import { receiptDifference, receiptTotal, type FinanceReceipt } from "@/lib/finance/receipts";
+import {
+  currencyOptionLabel,
+  type FinanceAccount,
+  type FinanceCategory,
+} from "@/lib/finance/validation";
+import { twoDecimalAmount, type FinanceTransaction } from "@/lib/finance/transactions";
 import {
   fieldClass,
   financeRequest,
@@ -149,20 +153,25 @@ function ReceiptForm({
     categoryId: String(existing?.category?.id ?? initialTransaction?.category?.id ?? ""),
     currency: existing?.currency ?? initialTransaction?.currency ?? prefill?.currency ?? "CAD",
     subtotal:
-      existing?.subtotal ?? initialTransaction?.amount.replace(/^-/, "") ?? prefill?.amount ?? "",
-    tax: existing?.tax ?? "0",
-    tip: existing?.tip ?? "0",
-    total: existing?.total ?? initialTransaction?.amount.replace(/^-/, "") ?? prefill?.amount ?? "",
+      (existing?.subtotal ?? initialTransaction?.amount.replace(/^-/, "") ?? prefill?.amount)
+        ? twoDecimalAmount(
+            (existing?.subtotal ??
+              initialTransaction?.amount.replace(/^-/, "") ??
+              prefill?.amount)!,
+          )
+        : "",
+    tax: twoDecimalAmount(existing?.tax ?? "0"),
+    tip: twoDecimalAmount(existing?.tip ?? "0"),
+    total:
+      (existing?.total ?? initialTransaction?.amount.replace(/^-/, "") ?? prefill?.amount)
+        ? twoDecimalAmount(
+            (existing?.total ?? initialTransaction?.amount.replace(/^-/, "") ?? prefill?.amount)!,
+          )
+        : "",
     notes: existing?.notes ?? initialTransaction?.notes ?? "",
     transactionAction: existing?.transaction || initialTransaction ? "LINK" : "CREATE",
     transactionId: String(existing?.transaction?.id ?? initialTransaction?.id ?? ""),
   }));
-  const [breakdown, setBreakdown] = useState(
-    !!existing &&
-      (existing.tax !== "0.0000" ||
-        existing.tip !== "0.0000" ||
-        existing.subtotal !== existing.total),
-  );
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<FinanceRequestError | null>(null);
@@ -174,13 +183,23 @@ function ReceiptForm({
   const router = useRouter(),
     { showMessage } = useSnackbar();
   const patch = (key: keyof typeof draft, value: string) => {
-    setDraft((previous) => ({ ...previous, [key]: value }));
+    setDraft((previous) => {
+      const next = { ...previous, [key]: value };
+      if (["subtotal", "tax", "tip"].includes(key)) {
+        try {
+          next.total = twoDecimalAmount(receiptTotal(next.subtotal, next.tax, next.tip));
+        } catch {
+          // Leave the last valid total while an amount is incomplete.
+        }
+      }
+      return next;
+    });
     setAcknowledge(false);
     setAllowDuplicate(false);
   };
   let difference: string | null = null;
   try {
-    difference = receiptDifference(draft.subtotal, draft.tax, draft.tip || "0", draft.total);
+    difference = receiptDifference(draft.subtotal, draft.tax || "0", draft.tip || "0", draft.total);
   } catch {
     /* Show the warning only once all amounts are valid. */
   }
@@ -206,6 +225,7 @@ function ReceiptForm({
         ...draft,
         accountId: Number(draft.accountId),
         categoryId: Number(draft.categoryId),
+        tax: draft.tax || "0",
         tip: draft.tip || "0",
         transactionId: draft.transactionAction === "LINK" ? Number(draft.transactionId) : null,
         acknowledgeMismatch: acknowledge,
@@ -215,6 +235,11 @@ function ReceiptForm({
           ? { expectedUpdatedAt: existing.updatedAt }
           : { requestKey: requestKey.current }),
       };
+      // Preserve legacy precision when a displayed amount was left unchanged.
+      for (const key of ["subtotal", "tax", "tip", "total"] as const) {
+        if (existing && draft[key] === twoDecimalAmount(existing[key]))
+          details[key] = existing[key];
+      }
       const body = new FormData();
       body.append("details", JSON.stringify(details));
       if (file) body.append("file", file);
@@ -437,7 +462,9 @@ function ReceiptForm({
                     onChange={(event) => patch("currency", event.target.value)}
                   >
                     {currencies.map((currency) => (
-                      <option key={currency}>{currency}</option>
+                      <option key={currency} value={currency}>
+                        {currencyOptionLabel(currency)}
+                      </option>
                     ))}
                   </select>
                 </label>
@@ -474,58 +501,45 @@ function ReceiptForm({
                 {(
                   [
                     ["subtotal", "Subtotal"],
-                    ["tax", "Tax"],
+                    ["tax", "Tax (optional)"],
                     ["tip", "Tip (optional)"],
                     ["total", "Total"],
                   ] as const
-                )
-                  .filter(([key]) => breakdown || key === "total")
-                  .map(([key, label]) => (
-                    <label key={key} className="block space-y-1">
-                      {label}
-                      <input
-                        aria-label={label}
-                        inputMode="decimal"
-                        autoComplete="off"
-                        required={key !== "tip"}
-                        maxLength={20}
-                        className={fieldClass}
-                        value={draft[key]}
-                        onChange={(event) => {
-                          patch(key, event.target.value);
-                          if (key === "total" && !breakdown) patch("subtotal", event.target.value);
-                        }}
-                      />
-                    </label>
-                  ))}
+                ).map(([key, label]) => (
+                  <label key={key} className="block space-y-1">
+                    {label}
+                    <input
+                      aria-label={label}
+                      inputMode="decimal"
+                      autoComplete="off"
+                      required={key === "subtotal" || key === "total"}
+                      maxLength={20}
+                      pattern="[0-9]+(\.[0-9]{1,2})?"
+                      className={fieldClass}
+                      value={draft[key]}
+                      onChange={(event) => {
+                        const value = event.target.value.startsWith(".")
+                          ? `0${event.target.value}`
+                          : event.target.value;
+                        if (/^\d*(?:\.\d{0,2})?$/.test(value)) patch(key, value);
+                      }}
+                      onBlur={() => {
+                        const value = draft[key].replace(/\.$/, "");
+                        if (value && twoDecimalAmount(value) !== draft[key])
+                          patch(key, twoDecimalAmount(value));
+                      }}
+                    />
+                  </label>
+                ))}
               </div>
-              {
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={breakdown}
-                    onChange={(event) => {
-                      setBreakdown(event.target.checked);
-                      if (!event.target.checked)
-                        setDraft((previous) => ({
-                          ...previous,
-                          subtotal: previous.total,
-                          tax: "0",
-                          tip: "0",
-                        }));
-                    }}
-                  />
-                  Add tax / tip breakdown
-                </label>
-              }
               {mismatch && (
                 <div
                   role="alert"
                   className="space-y-2 rounded-lg bg-amber-500/10 p-3 text-sm text-amber-500"
                 >
                   <p>
-                    Subtotal + tax + tip does not equal total. Difference: {difference}{" "}
-                    {draft.currency}.
+                    Subtotal + tax + tip does not equal total. Difference:{" "}
+                    {twoDecimalAmount(difference!)} {draft.currency}.
                   </p>
                   <label className="flex items-start gap-2">
                     <input

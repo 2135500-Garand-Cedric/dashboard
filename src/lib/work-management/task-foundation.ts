@@ -204,7 +204,6 @@ export function lifecycleData(
   }
   if (body.archived !== undefined)
     result.archivedAt = body.archived ? (row.archivedAt ?? now) : null;
-  if (status !== row.status && isClosed(status)) result.archivedAt = row.archivedAt ?? now;
   if (isClosed(row.status) && !isClosed(status)) result.archivedAt = null;
   return result;
 }

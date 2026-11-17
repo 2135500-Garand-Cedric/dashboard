@@ -1,4 +1,5 @@
 "use client";
+import RepeatedTimeChoice from "@/components/shared/RepeatedTimeChoice";
 import TaskModal from "@/components/shared/TaskModal";
 import { PlusIcon, PencilSquareIcon } from "@heroicons/react/24/outline";
 import { useDateTime } from "@/context/SettingsContext";
@@ -186,19 +187,15 @@ export default function ProjectMilestones({
               />
             </label>
             {draft.kind === "TIME" && (
-              <>
-                <select
-                  aria-label="Milestone repeated time"
-                  value={draft.occurrence}
-                  disabled={busy}
-                  onChange={(e) => setDraft({ ...draft, occurrence: e.target.value })}
-                  className={input}
-                >
-                  <option value="">Require explicit repeated-time choice</option>
-                  <option value="earlier">Earlier occurrence</option>
-                  <option value="later">Later occurrence</option>
-                </select>
-              </>
+              <RepeatedTimeChoice
+                local={draft.value}
+                timeZone={draft.zone}
+                value={draft.occurrence}
+                disabled={busy}
+                ariaLabel="Milestone repeated time"
+                onChange={(value) => setDraft({ ...draft, occurrence: value })}
+                className={input}
+              />
             )}
             <div className="flex gap-3">
               <button type="submit" disabled={busy} className={`${button} bg-blue-600 text-white`}>

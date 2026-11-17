@@ -548,6 +548,45 @@ export async function calendarFeed(params: URLSearchParams) {
         for (const row of rows) marker("followup", row.id, row.todo, row, "↻ Follow up");
       }
       if (layers.includes("milestones")) {
+        if (project !== "none") {
+          const targets = await db.workProject.findMany({
+            where: {
+              userId: WORK_USER_ID,
+              archivedAt: null,
+              ...(projectId ? { id: projectId } : {}),
+              ...(activity ? { activityTypeId: activityId } : {}),
+              ...(!history ? { status: "ACTIVE" } : {}),
+              targetDate: { gte: from, lt: through },
+            },
+            include: { activityType: true },
+            take: 1001,
+          });
+          if (targets.length > 1000)
+            throw new WorkValidationError("Too many project targets. Narrow the range.", 422);
+          for (const target of targets)
+            items.push({
+              id: `project-target:${target.id}`,
+              title: `Project target · ${target.name}`,
+              start: target.targetDate,
+              allDay: true,
+              display: "list-item",
+              editable: false,
+              classNames: ["calendar-marker", "calendar-milestone"],
+              backgroundColor: "transparent",
+              borderColor: target.activityType?.color ?? "#38bdf8",
+              extendedProps: {
+                layer: "milestones",
+                kind: "PROJECT_TARGET",
+                plainTitle: target.name,
+                activityType: target.activityType?.name ?? null,
+                href: `/projects/${target.id}`,
+                projectId: target.id,
+                marker: true,
+                actionable: false,
+                busy: false,
+              },
+            });
+        }
         const projectDates =
           project === "none"
             ? []

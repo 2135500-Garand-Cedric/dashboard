@@ -42,6 +42,7 @@ export function supportModules(db) {
   const server = loadWorkModule("src/lib/work-management/server.ts", deps),
     noteInput = loadWorkModule("src/lib/work-management/note-input.ts", {
       "./validation": validation,
+      "./types": loadWorkModule("src/lib/work-management/types.ts"),
     });
   const supportingDeps = {
     ...deps,

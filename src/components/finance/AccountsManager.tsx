@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { ACCOUNT_TYPES, type AccountType, type FinanceAccount } from "@/lib/finance/validation";
+import {
+  currencyOptionLabel,
+  ACCOUNT_TYPES,
+  type AccountType,
+  type FinanceAccount,
+} from "@/lib/finance/validation";
 import Link from "next/link";
 import TaskModal from "@/components/shared/TaskModal";
 import {
@@ -199,7 +204,7 @@ export default function AccountsManager({ currencies }: { currencies: string[] }
                 >
                   {currencies.map((currency) => (
                     <option key={currency} value={currency}>
-                      {currency}
+                      {currencyOptionLabel(currency)}
                     </option>
                   ))}
                 </select>

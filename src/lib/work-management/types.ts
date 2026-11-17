@@ -156,6 +156,8 @@ export interface WorkNote {
   createdAt: string;
   updatedAt: string;
   removedAt: string | null;
+  sourceTask?: { id: number; reference: string; title: string } | null;
+  statusChange?: { before: WorkStatus; after: WorkStatus } | null;
 }
 export interface WorkNoteVersion {
   id: number;

@@ -25,7 +25,9 @@ export function parseWorkQuery(params: URLSearchParams) {
   return {
     q: text("q", 500),
     planning: choice("planning", ["", ...PLANNING_SECTIONS], ""),
-    view: choice("view", ["active", "history", "archived", "all"], "active"),
+    view: ["history", "all"].includes(params.get("view") || "")
+      ? "active"
+      : choice("view", ["active", "archived"], "active"),
     activityType: id("activityType", true),
     project: id("project", true),
     stage: id("stage"),
@@ -55,9 +57,7 @@ export function workQueryWhere(
 ): Prisma.TodoWhereInput {
   const AND: Prisma.TodoWhereInput[] = [
     { userId },
-    ...(query.view === "history"
-      ? []
-      : [{ archivedAt: query.view === "archived" ? { not: null } : null }]),
+    { archivedAt: query.view === "archived" ? { not: null } : null },
   ];
   if (query.planning)
     AND.push(
@@ -70,8 +70,6 @@ export function workQueryWhere(
         userId,
       ),
     );
-  if (query.view === "active") AND.push({ status: { notIn: ["DONE", "CANCELLED"] } });
-  if (query.view === "history") AND.push({ status: { in: ["DONE", "CANCELLED"] } });
   if (query.project)
     AND.push(
       query.project === "none"

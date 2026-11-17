@@ -24,13 +24,14 @@ type DisplayItem = Pick<
 export function calendarAppearance(item: DisplayItem) {
   const layer = layers[item.extendedProps.layer || "events"] || layers.events;
   const info = item.extendedProps.kind === "INFORMATIONAL";
+  const target = item.extendedProps.kind === "PROJECT_TARGET";
   // Use the feed's actual color, including customized activity-label colors,
   // rather than assigning a second, conflicting palette to the agenda.
   const candidate = item.borderColor || item.backgroundColor;
   return {
     ...layer,
-    label: info ? "Information" : layer.label,
-    symbol: info ? "ⓘ" : layer.symbol,
+    label: target ? "Project target" : info ? "Information" : layer.label,
+    symbol: target ? "◎" : info ? "ⓘ" : layer.symbol,
     color: candidate && /^#[0-9a-f]{6}$/i.test(candidate) ? candidate : layer.color,
     title: item.extendedProps.plainTitle || item.title,
     activityType: item.extendedProps.activityType,

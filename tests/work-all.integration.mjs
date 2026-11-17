@@ -309,10 +309,10 @@ test(
           await assert.rejects(create({ company: "Retired" }), (error) => error.status === 400);
           await assert.rejects(create({ course: "Retired" }), (error) => error.status === 400);
           const done = await patch(row, { status: "DONE" });
-          assert.ok(!(await search({})).items.some((task) => task.id === row.id));
-          assert.ok((await search({ view: "history" })).items.some((task) => task.id === row.id));
+          assert.ok((await search({})).items.some((task) => task.id === row.id));
+          assert.ok((await search({ view: "active" })).items.some((task) => task.id === row.id));
           const archived = await patch(done, { archived: true });
-          assert.ok((await search({ view: "history" })).items.some((task) => task.id === row.id));
+          assert.ok(!(await search({ view: "active" })).items.some((task) => task.id === row.id));
           assert.ok((await search({ view: "archived" })).items.some((task) => task.id === row.id));
           assert.equal((await api.getTodo(archived.id)).id, row.id);
         },

@@ -69,13 +69,13 @@ test(
         await activate(notes.getByRole("button", { name: "Add note", exact: true }));
         const body = `<script>window.workInjected = true</script>\n${"Progress 日本語 ".repeat(70)}`;
         await notes.getByRole("textbox", { name: "Note text", exact: true }).fill(body);
-        await activate(notes.locator("summary").filter({ hasText: "Links and occurred-at time" }));
-        await notes
-          .getByRole("textbox", { name: "Documentation links", exact: true })
-          .fill("https://example.com/guide");
-        await notes.getByLabel("Note occurred at", { exact: true }).fill("2026-10-30T19:00");
-        page.once("dialog", (dialog) => dialog.dismiss());
-        await activate(panel.getByRole("button", { name: "Close details", exact: true }));
+        assert.equal(await notes.getByLabel("Documentation links", { exact: true }).count(), 0);
+        assert.equal(await notes.getByLabel("Note occurred at", { exact: true }).count(), 0);
+        await page
+          .getByRole("dialog", { name: "Add note", exact: true })
+          .getByRole("button", { name: "Close Add note", exact: true })
+          .click();
+        await activate(notes.getByRole("button", { name: "Add note", exact: true }));
         assert.equal(
           await notes.getByRole("textbox", { name: "Note text", exact: true }).inputValue(),
           body,
@@ -90,11 +90,11 @@ test(
         ]);
         assert.equal(savedResponse.status(), 201);
         const saved = await savedResponse.json();
-        assert.equal(saved.occurredAt, "2026-10-30T23:00:00.000Z");
+        assert.equal(saved.occurredAt, null);
         let card = notes.getByRole("article", { name: `Note ${saved.id}`, exact: true });
         await card.waitFor();
         assert.equal(await page.evaluate(() => !!window.workInjected), false);
-        assert.ok((await card.getByRole("link").getAttribute("rel")).includes("noopener"));
+        assert.equal(await card.getByRole("link").count(), 0);
         await activate(card.getByRole("button", { name: `Edit note ${saved.id}`, exact: true }));
         await notes
           .getByRole("textbox", { name: "Note text", exact: true })
@@ -140,13 +140,11 @@ test(
             .getAttribute("capture"),
           "environment",
         );
-        await attachments
-          .getByLabel("Attachment file", { exact: true })
-          .setInputFiles({
-            name: "broken.png",
-            mimeType: "image/png",
-            buffer: Buffer.from("not a real image"),
-          });
+        await attachments.getByLabel("Attachment file", { exact: true }).setInputFiles({
+          name: "broken.png",
+          mimeType: "image/png",
+          buffer: Buffer.from("not a real image"),
+        });
         await activate(attachments.getByRole("button", { name: "Upload attachment", exact: true }));
         await attachments.getByRole("alert").filter({ hasText: "Choose a valid JPEG" }).waitFor();
         assert.ok(
@@ -157,13 +155,11 @@ test(
         await attachments
           .getByLabel("Attachment file", { exact: true })
           .setInputFiles({ name: "phone-photo.png", mimeType: "image/png", buffer: samplePng });
-        await attachments
-          .getByLabel("Attachment file", { exact: true })
-          .setInputFiles({
-            name: "unsafe.svg",
-            mimeType: "image/svg+xml",
-            buffer: Buffer.from("<svg><script>alert(1)</script></svg>"),
-          });
+        await attachments.getByLabel("Attachment file", { exact: true }).setInputFiles({
+          name: "unsafe.svg",
+          mimeType: "image/svg+xml",
+          buffer: Buffer.from("<svg><script>alert(1)</script></svg>"),
+        });
         await attachments
           .getByRole("alert")
           .filter({ hasText: "previous selection was kept" })
@@ -235,13 +231,11 @@ test(
           (await request.get(`${base}/api/todos/${task.id}/attachments/${image.id}/file`)).status(),
           404,
         );
-        await attachments
-          .getByLabel("Attachment file", { exact: true })
-          .setInputFiles({
-            name: "recovery-original.png",
-            mimeType: "image/png",
-            buffer: samplePng,
-          });
+        await attachments.getByLabel("Attachment file", { exact: true }).setInputFiles({
+          name: "recovery-original.png",
+          mimeType: "image/png",
+          buffer: samplePng,
+        });
         await activate(attachments.getByRole("button", { name: "Upload attachment", exact: true }));
         await attachments.getByText("Attachment saved.", { exact: true }).waitFor();
         await activate(notes.getByRole("button", { name: "Notes only", exact: true }));

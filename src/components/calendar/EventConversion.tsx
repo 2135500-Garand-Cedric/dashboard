@@ -1,4 +1,5 @@
 "use client";
+import RepeatedTimeChoice from "@/components/shared/RepeatedTimeChoice";
 import { useDateTime } from "@/context/SettingsContext";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -370,16 +371,15 @@ export default function EventConversion({
                         />
                       </label>
 
-                      <select
-                        aria-label="Converted repeated time"
+                      <RepeatedTimeChoice
+                        local={local}
+                        timeZone={zone}
                         value={occurrence}
-                        onChange={(e) => setOccurrence(e.target.value)}
+                        disabled={busy}
+                        ariaLabel="Converted repeated time"
+                        onChange={setOccurrence}
                         className={input}
-                      >
-                        <option value="">Require explicit choice if repeated</option>
-                        <option value="earlier">Earlier occurrence</option>
-                        <option value="later">Later occurrence</option>
-                      </select>
+                      />
                     </>
                   )}
                 </>

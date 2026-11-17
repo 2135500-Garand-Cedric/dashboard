@@ -230,7 +230,7 @@ test(
         },
       );
       await t.test(
-        "counts retain automatically archived completed work without claiming effort progress",
+        "counts distinguish completed, cancelled and explicitly archived work without claiming effort progress",
         async () => {
           cancelled = await task({ projectId: a.id });
           await tasks.patchTodo(cancelled.id, { status: "CANCELLED" }, command(cancelled));
@@ -248,7 +248,7 @@ test(
           );
           assert.equal(row.counts.completed, 1);
           assert.equal(row.counts.cancelled, 1);
-          assert.equal(row.counts.archived, 3);
+          assert.equal(row.counts.archived, 1);
         },
       );
       await t.test(

@@ -10,6 +10,7 @@ import {
   version,
   workTransaction,
   WORK_USER_ID,
+  patchTodoInTransaction,
 } from "./server";
 import { workId, WorkValidationError, type WorkCommand } from "./validation";
 import { noteInput } from "./note-input";
@@ -52,7 +53,12 @@ async function noteRow(db: DB, parent: WorkParent, id: number) {
   if (!row) throw new WorkValidationError("Note not found.", 404);
   return row;
 }
-async function noteRevision(db: DB, note: WorkNote, action: string) {
+async function noteRevision(
+  db: DB,
+  note: WorkNote,
+  action: string,
+  statusChange?: { before: string; after: string },
+) {
   const entry = await db.workNoteRevision.create({
     data: {
       noteId: note.id,
@@ -75,6 +81,7 @@ async function noteRevision(db: DB, note: WorkNote, action: string) {
       noteRevisionId: entry.id,
       action,
       changes: {
+        ...(statusChange ? { statusChange } : {}),
         note: {
           before: note.revision > 1 ? { id: note.id, revision: note.revision - 1 } : null,
           after: { id: note.id, revision: note.revision },
@@ -85,9 +92,25 @@ async function noteRevision(db: DB, note: WorkNote, action: string) {
   });
 }
 export async function createNote(parent: WorkParent, value: unknown, command: WorkCommand) {
-  const data = noteInput(value);
-  return mutation(`${parentIdentity(parent)}:note:create`, data, command, async (db) => {
-    await parentRow(db, parent);
+  const parsed = noteInput(value);
+  const { taskStatus, taskRevision, ...data } = parsed;
+  if (typeof parent !== "number" && taskStatus !== null)
+    throw new WorkValidationError("Only task notes can change a task status.");
+  return mutation(`${parentIdentity(parent)}:note:create`, parsed, command, async (db) => {
+    const before = await parentRow(db, parent);
+    let statusChange: { before: string; after: string } | undefined;
+    let updatedTask: Awaited<ReturnType<typeof patchTodoInTransaction>> | undefined;
+    if (typeof parent === "number" && taskStatus !== null) {
+      const task = await patchTodoInTransaction(
+        db,
+        parent,
+        { status: taskStatus },
+        { ...command, revision: taskRevision! },
+      );
+      updatedTask = task;
+      if ("status" in before && before.status !== task.status)
+        statusChange = { before: before.status, after: task.status };
+    }
     const now = new Date();
     const row = await db.workNote.create({
       data: {
@@ -99,8 +122,12 @@ export async function createNote(parent: WorkParent, value: unknown, command: Wo
         updatedAt: now,
       },
     });
-    await noteRevision(db, row, "NOTE_CREATED");
-    return row;
+    await noteRevision(db, row, "NOTE_CREATED", statusChange);
+    return {
+      ...row,
+      statusChange: statusChange ?? null,
+      ...(updatedTask ? { task: updatedTask } : {}),
+    };
   });
 }
 export async function patchNote(
@@ -109,9 +136,23 @@ export async function patchNote(
   value: unknown,
   command: WorkCommand,
 ) {
-  const data = noteInput(value);
-  return mutation(`${parentIdentity(parent)}:note:${id}:patch`, data, command, async (db) => {
+  const parsed = noteInput(value);
+  if (parsed.taskStatus !== null)
+    throw new WorkValidationError("Change task status when adding a new note.");
+  const input = {
+    body: parsed.body,
+    documentationUrls: parsed.documentationUrls,
+    occurredAt: parsed.occurredAt,
+  };
+  return mutation(`${parentIdentity(parent)}:note:${id}:patch`, parsed, command, async (db) => {
     const row = await noteRow(db, parent, id);
+    const data = {
+      ...input,
+      documentationUrls: Object.hasOwn(value as object, "documentationUrls")
+        ? input.documentationUrls
+        : row.documentationUrls,
+      occurredAt: Object.hasOwn(value as object, "occurredAt") ? input.occurredAt : row.occurredAt,
+    };
     version(row, command);
     if (row.removedAt)
       throw new WorkValidationError(
@@ -155,6 +196,28 @@ export async function removeNote(parent: WorkParent, id: number, command: WorkCo
 function pageNumber(params: URLSearchParams) {
   return params.has("page") ? workId(params.get("page")) : 1;
 }
+const timelineNoteInclude = {
+  todo: { select: { id: true, title: true, userId: true, projectId: true } },
+  revisions: {
+    where: { revision: 1 },
+    select: {
+      activity: {
+        where: { action: "NOTE_CREATED" },
+        select: { changes: true },
+      },
+    },
+  },
+} satisfies Prisma.WorkNoteInclude;
+type TimelineNote = Prisma.WorkNoteGetPayload<{ include: typeof timelineNoteInclude }>;
+function timelineNote(note: TimelineNote) {
+  const { revisions, todo, ...record } = note;
+  const changes = revisions[0]?.activity[0]?.changes as Record<string, unknown> | undefined;
+  return {
+    ...record,
+    sourceTask: todo ? { id: todo.id, reference: taskReference(todo.id), title: todo.title } : null,
+    statusChange: changes?.statusChange ?? null,
+  };
+}
 export async function taskTimeline(parent: WorkParent, params: URLSearchParams) {
   const filter = params.get("filter") || "notes";
   if (!["notes", "all"].includes(filter))
@@ -163,7 +226,16 @@ export async function taskTimeline(parent: WorkParent, params: URLSearchParams) 
     pageSize = 20;
   return readSnapshot(prisma, async (db) => {
     await parentRow(db, parent);
-    const where = supportWhere(parent);
+    const where =
+      typeof parent === "number"
+        ? supportWhere(parent)
+        : {
+            userId: WORK_USER_ID,
+            OR: [
+              { projectId: parent.projectId, todoId: null, project: { userId: WORK_USER_ID } },
+              { projectId: null, todo: { projectId: parent.projectId, userId: WORK_USER_ID } },
+            ],
+          };
     const activityWhere = {
       ...where,
       action: { notIn: ["KEY_CREATE", "KEY_EDIT", "KEY_REMOVE"] },
@@ -199,6 +271,7 @@ export async function taskTimeline(parent: WorkParent, params: URLSearchParams) 
           OFFSET ${skip} LIMIT ${pageSize}`;
       const [notes, followUps] = await Promise.all([
         db.workNote.findMany({
+          include: timelineNoteInclude,
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           where: {
             ...where,
@@ -214,7 +287,16 @@ export async function taskTimeline(parent: WorkParent, params: URLSearchParams) 
           },
         }),
       ]);
-      return { filter, total, page, pageSize, entries, notes, followUps, activity: [] };
+      return {
+        filter,
+        total,
+        page,
+        pageSize,
+        entries,
+        notes: notes.map(timelineNote),
+        followUps,
+        activity: [],
+      };
     }
     if (filter === "notes")
       return {
@@ -222,12 +304,15 @@ export async function taskTimeline(parent: WorkParent, params: URLSearchParams) 
         total,
         page,
         pageSize,
-        notes: await db.workNote.findMany({
-          where,
-          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-          skip,
-          take: pageSize,
-        }),
+        notes: (
+          await db.workNote.findMany({
+            include: timelineNoteInclude,
+            where,
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            skip,
+            take: pageSize,
+          })
+        ).map(timelineNote),
         activity: [],
       };
     const activity = await db.workActivity.findMany({
@@ -235,7 +320,7 @@ export async function taskTimeline(parent: WorkParent, params: URLSearchParams) 
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip,
       take: pageSize,
-      include: { noteRevision: { include: { note: true } } },
+      include: { noteRevision: { include: { note: { include: timelineNoteInclude } } } },
     });
     return {
       filter,
@@ -247,9 +332,13 @@ export async function taskTimeline(parent: WorkParent, params: URLSearchParams) 
         ...entry,
         noteRevision:
           entry.noteRevision?.note.userId === WORK_USER_ID &&
-          entry.noteRevision.note.todoId === parentFields(parent).todoId &&
-          entry.noteRevision.note.projectId === parentFields(parent).projectId
-            ? entry.noteRevision
+          (typeof parent === "number"
+            ? entry.noteRevision.note.todoId === parent &&
+              entry.noteRevision.note.projectId === null
+            : entry.noteRevision.note.projectId === parent.projectId ||
+              (entry.noteRevision.note.todo?.userId === WORK_USER_ID &&
+                entry.noteRevision.note.todo.projectId === parent.projectId))
+            ? { ...entry.noteRevision, note: timelineNote(entry.noteRevision.note) }
             : null,
       })),
     };

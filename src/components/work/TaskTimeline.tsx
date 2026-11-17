@@ -10,8 +10,12 @@ import type {
   WorkNote,
   WorkNoteVersion,
   WorkFollowUp,
+  WorkTodo,
 } from "@/lib/work-management/types";
 import { valueLabel as formatValueLabel } from "@/components/todos/TaskActivityPreview";
+import TaskModal from "@/components/shared/TaskModal";
+import Link from "next/link";
+import { WORK_STATUSES, STATUS_LABELS } from "@/lib/work-management/types";
 const buttonClass =
   "scroll-mt-24 rounded-lg border border-card-border px-3 py-2 text-sm disabled:opacity-50";
 const inputClass =
@@ -138,9 +142,7 @@ function RevisionHistory({ basePath, noteId }: { basePath: string; noteId: numbe
 type Draft = {
   editing: WorkNote | null;
   body: string;
-  urls: string;
-  occurred: string;
-  occurrence?: string;
+  taskStatus?: string;
 };
 const drafts = new Map<string, Draft>(),
   writer = createWorkWriter();
@@ -152,15 +154,25 @@ const TaskTimeline = forwardRef<
     revision: number;
     onStateChange: (state: SupportEditorState) => void;
     onRecordsChanged: () => void;
+    onTaskChanged?: (task: WorkTodo) => void;
+    currentStatus?: WorkTodo["status"];
   }
 >(function TaskTimeline(
-  { id, basePath = `/api/todos/${id}`, revision, onStateChange, onRecordsChanged },
+  {
+    id,
+    basePath = `/api/todos/${id}`,
+    revision,
+    onStateChange,
+    onRecordsChanged,
+    onTaskChanged,
+    currentStatus,
+  },
   ref,
 ) {
-  const { timeZone, toLocalInput, parseLocalInput, describeWorkDate } = useDateTime();
-  const localTime = (value: string | null) => (value ? toLocalInput(value) : "");
+  const { timeZone, describeWorkDate } = useDateTime();
   const cached = drafts.get(basePath);
-  const [occurrence, setOccurrence] = useState(cached?.occurrence ?? "");
+  const [taskStatus, setTaskStatus] = useState(cached?.taskStatus ?? "");
+  const selectedTaskStatus = taskStatus === currentStatus ? "" : taskStatus;
   const [filter, setFilter] = useState("notes"),
     [page, setPage] = useState(1),
     [refresh, setRefresh] = useState(0);
@@ -175,32 +187,25 @@ const TaskTimeline = forwardRef<
     } | null>(null),
     [loadError, setLoadError] = useState("");
   const [adding, setAdding] = useState(!!cached),
+    [editorOpen, setEditorOpen] = useState(!!cached),
     [editing, setEditing] = useState<WorkNote | null>(cached?.editing ?? null),
-    [body, setBody] = useState(cached?.body ?? ""),
-    [urls, setUrls] = useState(cached?.urls ?? ""),
-    [occurred, setOccurred] = useState(cached?.occurred ?? "");
+    [body, setBody] = useState(cached?.body ?? "");
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(cached ? "Unsaved note restored." : ""),
     [history, setHistory] = useState<string | null>(null);
   const lock = useRef(false),
     liveDraft = useRef<Draft | null>(null);
-  const dirty =
-    adding &&
-    (body !== (editing?.body ?? "") ||
-      urls !== (editing?.documentationUrls.join("\n") ?? "") ||
-      occurred !== localTime(editing?.occurredAt ?? null) ||
-      !!occurrence);
-  liveDraft.current = dirty ? { editing, body, urls, occurred, occurrence } : null;
+  const dirty = adding && (body !== (editing?.body ?? "") || !!selectedTaskStatus);
+  liveDraft.current = dirty ? { editing, body, taskStatus } : null;
   const discard = useCallback(() => {
     drafts.delete(basePath);
     liveDraft.current = null;
     setAdding(false);
+    setEditorOpen(false);
     setEditing(null);
     setBody("");
-    setUrls("");
-    setOccurred("");
-    setOccurrence("");
+    setTaskStatus("");
     setError("");
   }, [basePath]);
   useImperativeHandle(ref, () => ({ discard, isDirty: () => dirty, isBusy: () => lock.current }), [
@@ -258,15 +263,15 @@ const TaskTimeline = forwardRef<
     drafts.delete(basePath);
     setEditing(note);
     setBody(note?.body ?? "");
-    setUrls(note?.documentationUrls.join("\n") ?? "");
-    setOccurred(localTime(note?.occurredAt ?? null));
-    setOccurrence("");
+    setTaskStatus("");
     setAdding(true);
+    setEditorOpen(true);
     setError("");
   }
   function card(note: WorkNote, version?: WorkNoteVersion) {
     const cardKey = `${note.id}-${version?.revision ?? "current"}`;
     const latest = !version || version.revision === note.revision;
+    const inherited = basePath.startsWith("/api/projects/") && !!note.sourceTask;
     return (
       <article
         key={`${note.id}-${version?.revision ?? "current"}`}
@@ -279,7 +284,7 @@ const TaskTimeline = forwardRef<
             {note.revision > 1 ? ` · ${note.removedAt ? "Removed" : "Edited"}` : ""}
             {version ? ` · Version ${version.revision}` : ""}
           </p>
-          {latest && !note.removedAt && (
+          {latest && !note.removedAt && !inherited && (
             <button
               type="button"
               disabled={busy}
@@ -291,9 +296,25 @@ const TaskTimeline = forwardRef<
             </button>
           )}
         </div>
-        {(version?.occurredAt ?? note.occurredAt) && (
-          <p className="text-xs text-gray-500">
-            Occurred: {timestamp((version?.occurredAt ?? note.occurredAt)!)}
+        {inherited && note.sourceTask && (
+          <Link
+            href={`/todos/${note.sourceTask.id}`}
+            className="inline-flex max-w-full items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/5 px-3 py-2 text-sm text-blue-500"
+          >
+            <span className="shrink-0 text-xs">{note.sourceTask.reference}</span>
+            <span className="min-w-0 break-words font-medium">{note.sourceTask.title}</span>
+          </Link>
+        )}
+        {basePath.startsWith("/api/projects/") && !inherited && (
+          <p className="text-xs font-medium text-violet-400">Project note</p>
+        )}
+        {note.statusChange && (
+          <p className="inline-flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-1.5 text-sm">
+            <span className="text-gray-500">Task status</span>
+            <span>
+              {STATUS_LABELS[note.statusChange.before]} →{" "}
+              <strong>{STATUS_LABELS[note.statusChange.after]}</strong>
+            </span>
           </p>
         )}
         {note.removedAt ? (
@@ -317,7 +338,7 @@ const TaskTimeline = forwardRef<
           >
             History
           </button>
-          {latest && !note.removedAt && (
+          {latest && !note.removedAt && !inherited && (
             <button
               type="button"
               disabled={busy}
@@ -345,7 +366,12 @@ const TaskTimeline = forwardRef<
             </button>
           )}
         </div>
-        {history === cardKey && <RevisionHistory basePath={basePath} noteId={note.id} />}
+        {history === cardKey && (
+          <RevisionHistory
+            basePath={inherited ? `/api/todos/${note.sourceTask!.id}` : basePath}
+            noteId={note.id}
+          />
+        )}
       </article>
     );
   }
@@ -396,43 +422,50 @@ const TaskTimeline = forwardRef<
         <h2 className="text-lg font-semibold text-violet-600 dark:text-violet-300">
           {basePath.startsWith("/api/projects/") ? "Notes & activity" : "Notes & follow-ups"}
         </h2>
-        <button type="button" disabled={busy} onClick={() => start(null)} className={buttonClass}>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => (adding ? setEditorOpen(true) : start(null))}
+          className={buttonClass}
+        >
           Add note
         </button>
       </div>
-      {adding && (
+      <TaskModal
+        open={editorOpen}
+        title={editing ? "Edit note" : "Add note"}
+        busy={busy}
+        onClose={() => setEditorOpen(false)}
+      >
         <form
           aria-label="Note editor"
           className="space-y-3 rounded-xl border border-card-border p-4"
           onSubmit={(event) => {
             event.preventDefault();
             void perform(async () => {
-              const originalOccurred = editing?.occurredAt ?? null;
-              const occurredAt =
-                occurred === localTime(originalOccurred) && !occurrence
-                  ? originalOccurred
-                  : occurred
-                    ? parseLocalInput(occurred, occurrence)
-                    : null;
-              await writer(
+              const saved = await writer<WorkNote & { task?: WorkTodo }>(
                 editing ? `${basePath}/notes/${editing.id}` : `${basePath}/notes`,
                 editing ? "PATCH" : "POST",
                 {
                   body,
-                  documentationUrls: urls
-                    .split(/\r?\n/)
-                    .map((value) => value.trim())
-                    .filter(Boolean),
-                  occurredAt,
+                  ...(!editing && !basePath.startsWith("/api/projects/") && selectedTaskStatus
+                    ? { taskStatus: selectedTaskStatus, taskRevision: revision }
+                    : {}),
                 },
                 editing?.revision,
               );
               discard();
+              if (saved.task) onTaskChanged?.(saved.task);
               setPage(1);
               setNotice("Note saved.");
             });
           }}
         >
+          {error && (
+            <p role="alert" className="text-sm text-rose-500">
+              {error}
+            </p>
+          )}
           <label className="block text-sm">
             Note
             <textarea
@@ -446,49 +479,27 @@ const TaskTimeline = forwardRef<
               className={`${inputClass} mt-1`}
             />
           </label>
-          <details open={!!urls || !!occurred}>
-            <summary className="cursor-pointer text-sm">
-              Links and occurred-at time (optional)
-            </summary>
-            <div className="mt-3 space-y-3">
-              <label className="block text-sm">
-                Documentation links (one URL per line)
-                <textarea
-                  aria-label="Documentation links"
-                  maxLength={21000}
-                  rows={2}
-                  disabled={busy}
-                  value={urls}
-                  onChange={(event) => setUrls(event.target.value)}
-                  className={`${inputClass} mt-1`}
-                />
-              </label>
-              <label className="block text-sm">
-                Occurred at (your local time)
-                <input
-                  aria-label="Note occurred at"
-                  type="datetime-local"
-                  disabled={busy}
-                  value={occurred}
-                  onChange={(event) => setOccurred(event.target.value)}
-                  className={`${inputClass} mt-1`}
-                />
-              </label>
-              <label className="block text-sm">
-                Repeated time
-                <select
-                  aria-label="Note time occurrence"
-                  value={occurrence}
-                  onChange={(event) => setOccurrence(event.target.value)}
-                  className={inputClass}
-                >
-                  <option value="">Choose if required</option>
-                  <option value="earlier">Earlier occurrence</option>
-                  <option value="later">Later occurrence</option>
-                </select>
-              </label>
-            </div>
-          </details>
+          {!editing && !basePath.startsWith("/api/projects/") && (
+            <label className="block space-y-1 text-sm">
+              Change task status
+              <select
+                aria-label="Note task status"
+                value={selectedTaskStatus}
+                disabled={busy}
+                onChange={(event) => setTaskStatus(event.target.value)}
+                className={inputClass}
+              >
+                <option value="">
+                  Keep current status{currentStatus ? ` (${STATUS_LABELS[currentStatus]})` : ""}
+                </option>
+                {WORK_STATUSES.filter((status) => status !== currentStatus).map((status) => (
+                  <option key={status} value={status}>
+                    {STATUS_LABELS[status]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
@@ -509,8 +520,8 @@ const TaskTimeline = forwardRef<
             </button>
           </div>
         </form>
-      )}
-      {error && (
+      </TaskModal>
+      {error && !editorOpen && (
         <p role="alert" className="text-sm text-rose-500">
           {error} Your note draft has been kept. Try saving again, or reload the timeline to review
           newer changes.

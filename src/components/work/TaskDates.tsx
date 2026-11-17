@@ -1,4 +1,5 @@
 "use client";
+import RepeatedTimeChoice from "@/components/shared/RepeatedTimeChoice";
 import { useInitialTaskLoad, useTaskRead } from "@/components/work/TaskInitialLoad";
 import TaskModal from "@/components/shared/TaskModal";
 import { useDateTime } from "@/context/SettingsContext";
@@ -323,20 +324,14 @@ export default forwardRef<
                       />
                     </label>
 
-                    <label className="block text-sm">
-                      If the clock repeats this time
-                      <select
-                        aria-label="Repeated time occurrence"
-                        value={draft.occurrence}
-                        disabled={busy || disabled}
-                        onChange={(event) => setDraft({ ...draft, occurrence: event.target.value })}
-                        className={`${input} mt-1`}
-                      >
-                        <option value="">Require a choice if ambiguous</option>
-                        <option value="earlier">Earlier occurrence</option>
-                        <option value="later">Later occurrence</option>
-                      </select>
-                    </label>
+                    <RepeatedTimeChoice
+                      local={draft.local}
+                      timeZone={draft.timeZone}
+                      value={draft.occurrence}
+                      disabled={busy || disabled}
+                      onChange={(value) => setDraft({ ...draft, occurrence: value })}
+                      className={input}
+                    />
                   </>
                 )}
               </>

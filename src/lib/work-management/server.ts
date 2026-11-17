@@ -414,6 +414,17 @@ export async function createTodo(value: unknown, command: WorkCommand) {
   });
 }
 export async function patchTodo(id: number, value: unknown, command: WorkCommand) {
+  const body = workBody(value, TASK_FIELDS);
+  return mutation(`todo:${id}:patch`, body, command, (db) =>
+    patchTodoInTransaction(db, id, body, command),
+  );
+}
+export async function patchTodoInTransaction(
+  db: DB,
+  id: number,
+  value: unknown,
+  command: WorkCommand,
+) {
   const body = workBody(value, TASK_FIELDS),
     parsed = parseTaskFields(body);
   if (body.projectId !== undefined || body.stageId !== undefined)
@@ -429,51 +440,49 @@ export async function patchTodo(id: number, value: unknown, command: WorkCommand
     throw new WorkValidationError(
       "Transition decisions apply only when starting or closing the task.",
     );
-  return mutation(`todo:${id}:patch`, body, command, async (db) => {
-    const row = await todoRow(db, id);
-    version(row, command);
-    if (body.priority === null && row.priorityLevel === "URGENT")
-      throw new WorkValidationError("Use the named priority when editing an Urgent task.", 409);
-    const data = lifecycleData(row, parsed, body, new Date());
-    await validateActivityType(db, data.activityTypeId, row.activityTypeId);
-    await validatePeople(db, body, row);
-    const status = data.status ?? row.status;
-    if (data.dependsOnId !== undefined) {
-      await legacyDependencyWrite(db, id, data.dependsOnId, status);
-      delete data.dependsOnId;
-    }
-    const review =
-      body.status !== undefined && ["IN_PROGRESS", "DONE", "CANCELLED"].includes(status)
-        ? await validateTransition(db, id, status, body)
-        : null;
-    if (!isClosed(row.status) && isClosed(status)) await retireFollowUps(db, id);
-    await replaceAffected(db, id, body);
-    const updated = await db.todo.update({
-      where: { id, userId: WORK_USER_ID },
-      data: { ...data, revision: { increment: 1 } },
-      include: todoInclude,
-    });
-    await recordTaskActivity(db, row, updated);
-    if (review?.blockingCount)
-      await appendTaskActivity(db, id, "BLOCKED_OVERRIDE", {
-        decision: {
-          before: review.decision.blockers,
-          after: {
-            action: status,
-            reason: String(body.overrideReason).trim(),
-            reviewedToken: review.token,
-          },
-        },
-      });
-    if (review?.unfinishedChildCount)
-      await appendTaskActivity(db, id, "UNFINISHED_CHILDREN_ACKNOWLEDGED", {
-        decision: {
-          before: review.decision.unfinishedChildren,
-          after: { action: status, explicitlyAcknowledged: true, reviewedToken: review.token },
-        },
-      });
-    return (await serializeTodos(db, [updated]))[0];
+  const row = await todoRow(db, id);
+  version(row, command);
+  if (body.priority === null && row.priorityLevel === "URGENT")
+    throw new WorkValidationError("Use the named priority when editing an Urgent task.", 409);
+  const data = lifecycleData(row, parsed, body, new Date());
+  await validateActivityType(db, data.activityTypeId, row.activityTypeId);
+  await validatePeople(db, body, row);
+  const status = data.status ?? row.status;
+  if (data.dependsOnId !== undefined) {
+    await legacyDependencyWrite(db, id, data.dependsOnId, status);
+    delete data.dependsOnId;
+  }
+  const review =
+    body.status !== undefined && ["IN_PROGRESS", "DONE", "CANCELLED"].includes(status)
+      ? await validateTransition(db, id, status, body)
+      : null;
+  if (!isClosed(row.status) && isClosed(status)) await retireFollowUps(db, id);
+  await replaceAffected(db, id, body);
+  const updated = await db.todo.update({
+    where: { id, userId: WORK_USER_ID },
+    data: { ...data, revision: { increment: 1 } },
+    include: todoInclude,
   });
+  await recordTaskActivity(db, row, updated);
+  if (review?.blockingCount)
+    await appendTaskActivity(db, id, "BLOCKED_OVERRIDE", {
+      decision: {
+        before: review.decision.blockers,
+        after: {
+          action: status,
+          reason: String(body.overrideReason).trim(),
+          reviewedToken: review.token,
+        },
+      },
+    });
+  if (review?.unfinishedChildCount)
+    await appendTaskActivity(db, id, "UNFINISHED_CHILDREN_ACKNOWLEDGED", {
+      decision: {
+        before: review.decision.unfinishedChildren,
+        after: { action: status, explicitlyAcknowledged: true, reviewedToken: review.token },
+      },
+    });
+  return (await serializeTodos(db, [updated]))[0];
 }
 export async function deleteTodo(id: number, command: WorkCommand) {
   return mutation(`todo:${id}:delete`, null, command, async (db) => {

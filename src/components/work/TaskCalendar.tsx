@@ -1,4 +1,5 @@
 "use client";
+import RepeatedTimeChoice from "@/components/shared/RepeatedTimeChoice";
 import { useInitialTaskLoad, useTaskRead } from "@/components/work/TaskInitialLoad";
 import Link from "next/link";
 import TaskModal from "@/components/shared/TaskModal";
@@ -90,12 +91,6 @@ const TaskCalendar = forwardRef<
       onClose();
     }
   };
-  let repeated = false;
-  try {
-    repeated = !!draft.start && resolveLocalInstants(draft.start, timeZone).length > 1;
-  } catch {
-    /* Incomplete local date input. */
-  }
   const [page, setPage] = useState(1),
     [reload, setReload] = useState(0),
     [data, setData] = useState<{
@@ -236,25 +231,14 @@ const TaskCalendar = forwardRef<
                 />
               </label>
             </div>
-            {repeated && (
-              <label className="block text-sm">
-                Repeated clock time
-                <select
-                  aria-label="Work session time occurrence"
-                  required
-                  value={draft.occurrence}
-                  disabled={saving || disabled}
-                  onChange={(event) =>
-                    setDraft((old) => ({ ...old, occurrence: event.target.value }))
-                  }
-                  className="ml-2 rounded border border-card-border bg-card-bg p-2"
-                >
-                  <option value="">Choose occurrence</option>
-                  <option value="earlier">Earlier</option>
-                  <option value="later">Later</option>
-                </select>
-              </label>
-            )}
+            <RepeatedTimeChoice
+              local={draft.start}
+              timeZone={timeZone}
+              value={draft.occurrence}
+              disabled={saving || disabled}
+              ariaLabel="Work session time occurrence"
+              onChange={(value) => setDraft((old) => ({ ...old, occurrence: value }))}
+            />
             <div className="flex flex-wrap gap-2">
               <button
                 type="submit"

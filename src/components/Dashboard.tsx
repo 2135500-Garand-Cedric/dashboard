@@ -7,6 +7,7 @@ import QuestTile from "@/components/QuestTile";
 import LevelBar from "@/components/LevelBar";
 import { useState, useEffect } from "react";
 import JapaneseDashboardTile from "@/components/JapaneseStatsTile";
+import FinanceTile from "@/components/FinanceTile";
 
 export default function Home() {
   const [userXp, setUserXp] = useState(0);
@@ -46,6 +47,7 @@ export default function Home() {
         <MusicTile />
         <QuestTile setUserXp={setUserXp} setUserCoins={setUserCoins} />
         <JapaneseDashboardTile />
+        <FinanceTile />
       </div>
     </div>
   );

@@ -1,14 +1,22 @@
 import { workBody, WorkValidationError } from "./validation";
+import { WORK_STATUSES, type WorkStatus } from "./types";
 export function noteInput(value: unknown) {
-  const body = workBody(value, ["body", "documentationUrls", "occurredAt"]);
+  const body = workBody(value, [
+    "body",
+    "documentationUrls",
+    "occurredAt",
+    "taskStatus",
+    "taskRevision",
+  ]);
   if (typeof body.body !== "string" || !body.body.trim() || body.body.length > 50000)
     throw new WorkValidationError("Write a note between 1 and 50,000 characters.");
   if (body.body.includes("\0"))
     throw new WorkValidationError("Notes cannot contain null characters.");
   const text = body.body.replace(/\r\n?/g, "\n");
-  if (!Array.isArray(body.documentationUrls) || body.documentationUrls.length > 10)
+  const documentationUrls = body.documentationUrls ?? [];
+  if (!Array.isArray(documentationUrls) || documentationUrls.length > 10)
     throw new WorkValidationError("Use up to 10 documentation links.");
-  const urls = body.documentationUrls.map((raw) => {
+  const urls = documentationUrls.map((raw) => {
     if (typeof raw !== "string" || raw.length > 2048 || /[\x00-\x20\x7f\\]/.test(raw))
       throw new WorkValidationError(
         "Use complete HTTP or HTTPS documentation URLs without spaces or credentials.",
@@ -50,5 +58,20 @@ export function noteInput(value: unknown) {
     )
       throw new WorkValidationError("Choose a valid occurred-at date and time.");
   }
-  return { body: text, documentationUrls: [...new Set(urls)], occurredAt };
+  const taskStatus =
+    body.taskStatus == null || body.taskStatus === "" ? null : String(body.taskStatus);
+  if (taskStatus !== null && !WORK_STATUSES.includes(taskStatus as WorkStatus))
+    throw new WorkValidationError("Choose a valid task status.");
+  if (
+    taskStatus !== null &&
+    (!Number.isSafeInteger(body.taskRevision) || Number(body.taskRevision) < 1)
+  )
+    throw new WorkValidationError("Reload the task before changing its status with a note.", 428);
+  return {
+    body: text,
+    documentationUrls: [...new Set(urls)],
+    occurredAt,
+    taskStatus: taskStatus as WorkStatus | null,
+    taskRevision: taskStatus === null ? null : Number(body.taskRevision),
+  };
 }

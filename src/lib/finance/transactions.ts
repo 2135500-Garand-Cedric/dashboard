@@ -220,7 +220,16 @@ export function transactionInput(value: unknown, editing = false): TransactionIn
   };
 }
 
+export function twoDecimalAmount(value: string) {
+  const match = /^(-?)(\d+)(?:\.(\d{1,4}))?$/.exec(value);
+  if (!match) throw new FinanceValidationError("Enter a valid decimal amount.");
+  const cents =
+    (BigInt(`${match[2]}${(match[3] || "").padEnd(4, "0")}`) + BigInt(50)) / BigInt(100);
+  const digits = cents.toString().padStart(3, "0");
+  return `${match[1] && cents !== BigInt(0) ? "-" : ""}${digits.slice(0, -2)}.${digits.slice(-2)}`;
+}
 export function displayAmount(amount: string, currency: string) {
+  amount = twoDecimalAmount(amount);
   const negative = amount.startsWith("-");
   const [integer, fraction = ""] = (negative ? amount.slice(1) : amount).split(".");
   const decimals = fraction.padEnd(2, "0").replace(/0+$/, "").padEnd(2, "0");

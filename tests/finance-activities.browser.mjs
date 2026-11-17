@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import { encode } from "next-auth/jwt";
 import sharp from "sharp";
+import { samplePdf } from "./helpers/work-support.mjs";
 
 test(
   "income, expenses, transfers and CSV matching form one coherent workflow on desktop and phone",
@@ -51,18 +52,33 @@ test(
       await page.getByLabel("Purchase date", { exact: true }).fill("2026-11-06");
       await page.getByLabel("Payment account", { exact: true }).selectOption(String(bank.id));
       await page.getByLabel("Expense category", { exact: true }).selectOption(String(category.id));
-      assert.equal(await page.getByLabel("Subtotal", { exact: true }).isVisible(), false);
+      assert.equal(await page.getByLabel("Subtotal", { exact: true }).isVisible(), true);
       assert.equal(await page.getByLabel("Associated transaction", { exact: true }).count(), 0);
-      await page.getByLabel("Total", { exact: true }).fill("40.20");
+      await page.getByLabel("Subtotal", { exact: true }).fill("40.20");
+      await page.getByLabel("Tax (optional)", { exact: true }).fill("1.25");
+      await page.getByLabel("Tip (optional)", { exact: true }).fill("2.55");
+      assert.equal(await page.getByLabel("Total", { exact: true }).inputValue(), "44.00");
+      await page.getByLabel("Total", { exact: true }).fill("43");
+      await page.getByText(/Subtotal \+ tax \+ tip does not equal total/).waitFor();
+      await page.getByLabel("Tax (optional)", { exact: true }).fill("");
+      await page.getByLabel("Tip (optional)", { exact: true }).fill("");
+      assert.equal(await page.getByLabel("Total", { exact: true }).inputValue(), "40.20");
       await page.getByRole("button", { name: "Save expense", exact: true }).click();
       await page.waitForURL(/\/finance\/expenses\/\d+$/);
       const expenseId = Number(new URL(page.url()).pathname.split("/").pop());
       await page.getByRole("heading", { name: "Expense details", exact: true }).waitFor();
       assert.equal((await request(`transactions/${expenseId}`)).transaction.amount, "-40.2000");
-      await page.getByLabel("Total", { exact: true }).fill("50.30");
-      await page.getByRole("button", { name: "Save expense", exact: true }).click();
+      await page.getByLabel("Subtotal", { exact: true }).fill("50.30");
+      await Promise.all([
+        page.waitForResponse(
+          (response) =>
+            response.request().method() === "PATCH" &&
+            /\/api\/finance\/expenses\/\d+$/.test(new URL(response.url()).pathname),
+        ),
+        page.getByRole("button", { name: "Save expense", exact: true }).click(),
+      ]);
       await page.waitForFunction(
-        () => document.querySelector('[aria-label="Total"]')?.value === "50.3000",
+        () => document.querySelector('[aria-label="Total"]')?.value === "50.30",
       );
       assert.equal((await request(`transactions/${expenseId}`)).transaction.amount, "-50.3000");
       const png = await sharp({
@@ -81,6 +97,65 @@ test(
       await page.getByAltText("Receipt preview", { exact: true }).waitFor();
       await page.getByRole("button", { name: "Save expense", exact: true }).click();
       await page.getByText(/receipt.png ·/).waitFor();
+      const checkDocument = async (title, back) => {
+        const originalUrl = page.url();
+        for (const width of [390, 1440]) {
+          await page.setViewportSize({ width, height: 900 });
+          await page.getByRole("link", { name: "Open original", exact: true }).click();
+          const modal = page.getByRole("dialog", { name: `${title} original`, exact: true });
+          await modal.getByAltText(`${title} original`, { exact: true }).waitFor();
+          if (width === 390)
+            await page.screenshot({
+              path: `/tmp/dashboard-${title === "Receipt" ? "receipt" : "paystub"}-phone.png`,
+            });
+          assert.equal(page.url(), originalUrl);
+          await modal.getByRole("button", { name: back, exact: true }).click();
+          await modal.waitFor({ state: "hidden" });
+          const download = page.waitForEvent("download");
+          await page.getByRole("link", { name: "Download original", exact: true }).click();
+          assert.equal(
+            (await download).suggestedFilename(),
+            title === "Receipt" ? "receipt.png" : "pay-stub.png",
+          );
+          assert.equal(page.url(), originalUrl);
+          await modal.getByRole("button", { name: back, exact: true }).click();
+        }
+        // Exercise the phone's share-sheet path without navigating the PWA.
+        await page.evaluate(() => {
+          const match = window.matchMedia.bind(window);
+          window.matchMedia = (query) =>
+            query === "(pointer: coarse)" ? { matches: true } : match(query);
+          Object.defineProperty(navigator, "canShare", { configurable: true, value: () => true });
+          Object.defineProperty(navigator, "share", {
+            configurable: true,
+            value: async ({ files }) => {
+              if (!window.__shareRetried) {
+                window.__shareRetried = true;
+                throw new DOMException("User gesture required", "NotAllowedError");
+              }
+              window.__sharedOriginal = files[0].name;
+            },
+          });
+        });
+        await page.getByRole("link", { name: "Download original", exact: true }).click();
+        await page
+          .getByText("Your file is ready. Tap Save or share original to save it to Files.", {
+            exact: true,
+          })
+          .waitFor();
+        await page.getByRole("button", { name: "Save or share original", exact: true }).click();
+        await page.waitForFunction(() => !!window.__sharedOriginal);
+        assert.equal(
+          await page.evaluate(() => window.__sharedOriginal),
+          title === "Receipt" ? "receipt.png" : "pay-stub.png",
+        );
+        assert.equal(page.url(), originalUrl);
+        await page
+          .getByRole("dialog", { name: `${title} original`, exact: true })
+          .getByRole("button", { name: back, exact: true })
+          .click();
+      };
+      await checkDocument("Receipt", "Back to expense");
       const expense = (await request(`transactions/${expenseId}`)).transaction;
       assert.equal(expense.receipts.length, 1);
       assert.equal(
@@ -125,6 +200,19 @@ test(
       await page.getByAltText("Pay stub preview", { exact: true }).waitFor();
       await page.getByRole("button", { name: "Save income record", exact: true }).click();
       await page.getByText(/pay-stub.png ·/).waitFor();
+      await checkDocument("Pay stub", "Back to income");
+      await page.getByLabel("Choose pay stub file", { exact: true }).setInputFiles({
+        name: "pay-stub.pdf",
+        mimeType: "application/pdf",
+        buffer: Buffer.concat([samplePdf(), Buffer.from(`\n% ${prefix}\n`)]),
+      });
+      await page.getByRole("button", { name: "Save income record", exact: true }).click();
+      await page.getByText(/pay-stub.pdf ·/).waitFor();
+      await page.getByRole("link", { name: "Open original", exact: true }).click();
+      const pdfViewer = page.getByRole("dialog", { name: "Pay stub original", exact: true });
+      await pdfViewer.getByText("Page 1 of 1", { exact: true }).waitFor();
+      await pdfViewer.locator("canvas").waitFor();
+      await pdfViewer.getByRole("button", { name: "Back to income", exact: true }).click();
       for (const [destination, amount] of [
         [savings, "20"],
         [card, "25"],
@@ -207,7 +295,7 @@ test(
           await popup
             .getByLabel(label === "expense" ? "Total" : "Net income", { exact: true })
             .inputValue(),
-          amount,
+          label === "expense" ? amount.replace(/(\.\d{2})\d*$/, "$1") : amount,
         );
         await popup.close();
       }
@@ -234,6 +322,13 @@ test(
         await page.getByLabel("Activity notes", { exact: true }).waitFor();
         assert.equal(await page.getByLabel(field, { exact: true }).isDisabled(), true);
         assert.equal(await page.getByLabel("Activity notes", { exact: true }).isEnabled(), true);
+        await page.getByRole("link", { name: "Open original", exact: true }).click();
+        const viewer = page.getByRole("dialog", {
+          name: `${kind === "expenses" ? "Receipt" : "Pay stub"} original`,
+          exact: true,
+        });
+        assert.equal(await viewer.getByRole("button", { name: /^Back to/ }).isEnabled(), true);
+        await viewer.getByRole("button", { name: /^Back to/ }).click();
         assert.equal(await page.getByText("Notes remain editable", { exact: true }).count(), 0);
         const notesSection = page
           .getByLabel("Activity notes", { exact: true })

@@ -79,6 +79,11 @@ test("agenda and legend use actual feed colors and label task markers distinctly
 });
 
 test("date-only task markers and historical items keep their meaning", () => {
+  const target = {
+    ...item("project-target:1", "2027-06-15", "milestones", true),
+    extendedProps: { layer: "milestones", kind: "PROJECT_TARGET", href: "/projects/1" },
+  };
+  assert.equal(calendarAppearance(target).label, "Project target");
   const due = {
     ...item("due", "2026-11-16", "deadlines", true),
     classNames: ["calendar-historical"],

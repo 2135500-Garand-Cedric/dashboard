@@ -222,7 +222,7 @@ of an image rollback.
   client is generated inside the builder, never replaced by a host-generated copy.
 - Supply `DATABASE_URL`, PostgreSQL settings, `NEXTAUTH_URL` (public HTTPS),
   `NEXTAUTH_SECRET`, `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` at runtime using
-  the existing NAS `.env`. Preserve optional YouTube/time-manager API keys,
+  the existing NAS `.env`. Preserve the optional YouTube API key,
   timezone settings and stable Web Push configuration. Upload paths are still
   set in Compose. There are currently no `NEXT_PUBLIC_*` build inputs; introducing
   one later requires review because Next.js embeds those values during compilation.

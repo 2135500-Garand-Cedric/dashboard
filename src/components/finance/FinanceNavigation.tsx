@@ -15,7 +15,7 @@ export default function FinanceNavigation() {
   return (
     <nav
       aria-label="Finance navigation"
-      className="flex min-w-0 max-w-full gap-2 overflow-x-auto border-b border-card-border pb-4 md:flex-wrap"
+      className="grid min-w-0 grid-cols-3 gap-2 border-b border-card-border pb-4 md:flex md:flex-wrap"
     >
       {[
         { href: "/finance", label: "Overview" },
@@ -29,7 +29,7 @@ export default function FinanceNavigation() {
           key={item.href}
           href={item.href}
           aria-current={isActive(item.href) ? "page" : undefined}
-          className={`inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-colors ${isActive(item.href) ? "bg-blue-600 text-white" : "hover:bg-blue-500/10"}`}
+          className={`inline-flex min-h-11 items-center justify-center rounded-lg border px-2 py-2 text-sm font-medium transition-colors md:px-4 ${isActive(item.href) ? "border-blue-500 bg-blue-600 text-white" : "border-card-border hover:bg-blue-500/10"}`}
         >
           {item.label}
         </Link>
