@@ -33,6 +33,12 @@ The command defaults to a dry run. For development, replace `docker-compose.prod
 
 ## Getting Started
 
+For Docker development, run `docker compose -f docker-compose.dev.yml up -d --build`.
+The app and worker check their retained `node_modules` volumes against the current
+package files on startup and run `npm ci` when dependencies have changed. This
+prevents an older dependency volume from hiding packages installed in a rebuilt
+image. Database and uploaded-file volumes are retained.
+
 First, run the development server:
 
 ```bash
@@ -156,6 +162,30 @@ Checks:
 - `RUN_FINANCE_ACTIVITY_BROWSER_TEST=1 node tests/finance-activities.browser.mjs` uses the disposable app at `http://localhost:3002`; it creates fictional records there and tests income, expense, files, transfers and imports on desktop/phone.
 - `RUN_AUTH_HTTP_TEST=1 node tests/auth-security.integration.mjs` inside the development container checks protected APIs, owner reads and anonymous page access without creating finance records.
 
+## Dashboard settings
+
+The Settings sidebar opens a tile menu with separate pages for
+[timezone](src/app/settings/timezone/page.tsx),
+[calendar holidays](src/app/settings/holidays/page.tsx), and
+[notifications](src/app/settings/notifications/page.tsx),
+[birthdays](src/app/settings/birthdays/page.tsx), plus a link to Finance settings.
+Choose each holiday individually from its country's catalogue; regional variants
+are labeled in the holiday selector. Your selected tiles show the next date and
+chosen type (Holiday, Bank holiday, or Important date). Each selection's display
+name/type can be edited without changing the library's moving-date rule.
+Holiday creation uses a modal; holiday and birthday settings lists sort by the next
+date. Annual dates open read-only information pages from Calendar, where tasks can
+be linked or created for that specific occurrence. See [Recurring work and dates](docs/RECURRING_WORK.md).
+Existing whole-region holiday settings convert once
+into individual choices when first opened after migration.
+
+## Recurring work and holidays
+
+See [Recurring work](docs/RECURRING_WORK.md) for repeating tasks/events,
+project-based routines such as payroll, regional holiday settings, and maintenance.
+The existing notification worker also generates upcoming occurrences even when
+push delivery is disabled; no extra container is required.
+
 ## Work/calendar cleanup
 
 Tasks and projects use calendar activity types; the separate contexts manager and `WorkContext` table have been retired. `/todos/manage` manages contacts. The cleanup migration archives context definitions and old company/course/tags/waiting-contact/reward values into existing `WorkActivity` history before dropping their live columns. It preserves task/project IDs, dependencies, checklists, notes, attachments, event links, timestamps and user XP/gold balances. Existing explicit activity-type choices take precedence over a retired context.
@@ -236,7 +266,7 @@ Both Compose files include the worker. In production, it pulls the same GHCR ima
    docker compose -f docker-compose.prod.yml up -d --no-build dashboard notification-worker
    ```
 
-   App startup applies migrations before starting Next.js; the worker starts once the app is healthy. This feature adds an optional `Event.reminderMinutes` and the `NotificationSettings`, `PushSubscription`, and `PushDelivery` tables. Existing events inherit the notification defaults; no subscription or actual push message is created by migration. Without valid push configuration, the worker stays idle and Settings shows setup instructions.
+   App startup applies migrations before starting Next.js; the worker starts once the app is healthy. This feature adds an optional `Event.reminderMinutes` and the `NotificationSettings`, `PushSubscription`, and `PushDelivery` tables. Existing events inherit the notification defaults; no subscription or actual push message is created by migration. Without valid push configuration, push delivery is disabled and Settings shows setup instructions; recurring task/event generation still runs.
 
 For development, the same services are in `docker-compose.dev.yml`, but both the app and worker force push off unless `DEV_PUSH_ENABLED=true` is explicitly set. This prevents a restored production database from sending real reminders during ordinary development. Desktop browsers can test on `http://localhost:3000`; an iPhone opening a LAN HTTP address cannot use push. Use a real HTTPS development address for physical-phone tests. Keep the same keys in the app and worker; recreate their containers after changing `.env`.
 

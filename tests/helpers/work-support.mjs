@@ -5,6 +5,8 @@ import ts from "typescript";
 import sharp from "sharp";
 import { loadTaskFoundation } from "./task-foundation.mjs";
 const require = createRequire(import.meta.url);
+import * as recurrenceRules from "../../src/lib/recurrence/rules.mjs";
+import * as recurrenceEngine from "../../src/lib/recurrence/engine.mjs";
 export function loadWorkModule(file, deps = {}) {
   const exports = {},
     code = ts.transpileModule(
@@ -39,6 +41,31 @@ export function supportModules(db) {
     "@/lib/owner-policy": { OWNER_DATABASE_USER_ID: 1, OWNER_GITHUB_ID: "89470930" },
     "@/lib/event-dates": loadWorkModule("src/lib/event-dates.ts"),
   };
+  deps["./recurrence-visibility"] = loadWorkModule(
+    "src/lib/work-management/recurrence-visibility.ts",
+    {
+      ...deps,
+      "./date-format": loadWorkModule("src/lib/work-management/date-format.ts"),
+    },
+  );
+  deps["@/lib/recurrence/engine.mjs"] = recurrenceEngine;
+  deps["./recurrence-core"] = loadWorkModule("src/lib/work-management/recurrence-core.ts", {
+    ...deps,
+    "@/lib/recurrence/rules.mjs": recurrenceRules,
+    "@/lib/recurrence/engine.mjs": recurrenceEngine,
+  });
+  deps["@/lib/calendar-occasion-core"] = loadWorkModule("src/lib/calendar-occasion-core.ts", {
+    "./owner-policy": deps["@/lib/owner-policy"],
+    "./work-management/validation": validation,
+    "./work-management/dates": deps["./dates"],
+    "./time-zone-context": timeZoneTestDependency("@/lib/time-zone-context"),
+    "./holiday-types": loadWorkModule("src/lib/holiday-types.ts"),
+    "./holidays": loadWorkModule("src/lib/holidays.ts", {
+      "./work-management/validation": validation,
+    }),
+    "./calendar-annual": loadWorkModule("src/lib/calendar-annual.ts"),
+    "./work-management/activity-server": deps["./activity-server"],
+  });
   const server = loadWorkModule("src/lib/work-management/server.ts", deps),
     noteInput = loadWorkModule("src/lib/work-management/note-input.ts", {
       "./validation": validation,

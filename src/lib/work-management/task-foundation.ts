@@ -3,6 +3,9 @@ import { WorkValidationError, workId, workText } from "./validation";
 import { WORK_STATUSES, WORK_PRIORITIES, WORK_KINDS, isClosed, legacyPriorityLevel } from "./types";
 
 export const TASK_FIELDS = [
+  "occasion",
+  "recurrence",
+  "firstDeadline",
   "title",
   "description",
   "priority",

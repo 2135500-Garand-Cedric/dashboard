@@ -1,3 +1,8 @@
+import { birthdayItems } from "@/lib/birthday-server";
+import { taskOccasions } from "@/lib/calendar-occasion-core";
+import { recurrenceVisibility } from "./recurrence-visibility";
+import { ensureOccurrences } from "@/lib/recurrence/engine.mjs";
+import { holidayItems, initializeHolidaySelections } from "@/lib/holiday-server";
 import { readSnapshot } from "./read-snapshot";
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
@@ -314,10 +319,15 @@ export async function taskCalendar(id: number, params: URLSearchParams) {
     pageSize = 20;
   return readSnapshot(prisma, async (db) => {
     await todoRow(db, id);
-    const where = { taskLinks: { some: { todoId: id } }, userId: WORK_USER_ID },
+    const where = {
+        taskLinks: { some: { todoId: id } },
+        userId: WORK_USER_ID,
+        ...(await recurrenceVisibility(db)).event,
+      },
       total = await db.event.count({ where }),
       page = Math.min(requested, Math.max(1, Math.ceil(total / pageSize)));
     return {
+      occasionLinks: await taskOccasions(db, id),
       items: (
         await db.event.findMany({
           where,
@@ -347,7 +357,15 @@ export async function calendarFeed(params: URLSearchParams) {
     end = parseInstant("end");
   if (end <= start || end.getTime() - start.getTime() > 370 * 86400000)
     throw new WorkValidationError("Calendar ranges must be positive and at most one year.");
-  const validLayers = ["events", "sessions", "deadlines", "followups", "milestones"],
+  const validLayers = [
+      "events",
+      "sessions",
+      "deadlines",
+      "followups",
+      "milestones",
+      "holidays",
+      "birthdays",
+    ],
     layers = (params.get("layers") ?? validLayers.join(","))
       .split(",")
       .filter((layer) => !!layer && layer !== "keydates");
@@ -398,12 +416,59 @@ export async function calendarFeed(params: URLSearchParams) {
     ...eventContext,
     conversions: { none: { active: true, mode: "PLACEHOLDER" } },
   };
+  if (layers.includes("holidays")) await initializeHolidaySelections();
+  await ensureOccurrences(prisma, WORK_USER_ID, new Date(), through);
   return prisma.$transaction(
     async (db) => {
-      const items: Record<string, unknown>[] = [],
-        types = await db.activityType.findMany(),
-        color = (type: string | null, fallback: string) =>
-          types.find((row) => row.name.toLowerCase() === type?.toLowerCase())?.color ?? fallback;
+      const visible = await recurrenceVisibility(db);
+      const datedLinks =
+        project || activity
+          ? await db.calendarOccasionTaskLink.findMany({
+              where: {
+                userId: WORK_USER_ID,
+                date: { gte: from, lt: through },
+                todo: {
+                  userId: WORK_USER_ID,
+                  ...(project ? { projectId } : {}),
+                  ...(activity ? { activityTypeId: activityId } : {}),
+                },
+              },
+              select: { holidayId: true, birthdayId: true, date: true },
+            })
+          : null;
+      const scopedDates = datedLinks
+        ? new Set(
+            datedLinks.map((link) =>
+              link.holidayId != null
+                ? `holiday:${link.holidayId}:${link.date}`
+                : `birthday:${link.birthdayId}:${link.date}`,
+            ),
+          )
+        : null;
+      const annualItems = [
+        ...(layers.includes("holidays")
+          ? await holidayItems(
+              db,
+              from,
+              through,
+              datedLinks?.flatMap((link) => (link.holidayId != null ? [link.holidayId] : [])),
+            )
+          : []),
+        ...(layers.includes("birthdays")
+          ? await birthdayItems(
+              db,
+              from,
+              through,
+              datedLinks?.flatMap((link) => (link.birthdayId != null ? [link.birthdayId] : [])),
+            )
+          : []),
+      ];
+      const items: Record<string, unknown>[] = annualItems.filter(
+        (item) => !scopedDates || scopedDates.has(item.id),
+      );
+      const types = await db.activityType.findMany();
+      const color = (type: string | null, fallback: string) =>
+        types.find((row) => row.name.toLowerCase() === type?.toLowerCase())?.color ?? fallback;
       const linkedActivity = (row: CalendarEventRow) => {
         const links = row.taskLinks.filter(
           (link) => link.todo.userId === WORK_USER_ID && link.todo.activityType,
@@ -422,6 +487,7 @@ export async function calendarFeed(params: URLSearchParams) {
           where: {
             AND: [
               eventBase,
+              visible.event,
               {
                 kind:
                   layers.includes("events") && layers.includes("sessions")
@@ -528,7 +594,7 @@ export async function calendarFeed(params: URLSearchParams) {
       };
       if (layers.includes("deadlines")) {
         const rows = await db.todo.findMany({
-          where: { AND: [taskWhere, dateRange("deadlineDate", "deadlineAt")] },
+          where: { AND: [taskWhere, visible.task, dateRange("deadlineDate", "deadlineAt")] },
           include: { activityType: true },
           take: 1001,
         });

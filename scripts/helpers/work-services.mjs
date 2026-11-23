@@ -17,8 +17,10 @@ export function loadWorkServices(db) {
       if (name === "@/lib/prisma") return { prisma: db };
       if (name.startsWith("@/generated/prisma"))
         return native(path.join(root, "src/generated/prisma/index.js"));
-      if (name.startsWith("@/")) return load(`src/${name.slice(2)}.ts`);
-      if (name.startsWith(".")) return load(path.resolve(path.dirname(file), `${name}.ts`));
+      if (name.startsWith("@/"))
+        return load(`src/${name.slice(2)}${path.extname(name) ? "" : ".ts"}`);
+      if (name.startsWith("."))
+        return load(path.resolve(path.dirname(file), `${name}${path.extname(name) ? "" : ".ts"}`));
       return native(name);
     };
     const code = ts.transpileModule(fs.readFileSync(file, "utf8"), {
@@ -32,6 +34,11 @@ export function loadWorkServices(db) {
     return unit.exports;
   }
   return {
+    recurrence: load("src/lib/work-management/recurrence-server.ts"),
+    holidays: load("src/lib/holidays.ts"),
+    holidaySelections: load("src/lib/holiday-server.ts"),
+    birthdays: load("src/lib/birthday-server.ts"),
+    occasions: load("src/lib/calendar-occasion-server.ts"),
     settings: load("src/lib/user-settings.ts"),
     timeZone: load("src/lib/time-zone-context.ts"),
     japaneseDates: load("src/lib/japanese/dates.ts"),

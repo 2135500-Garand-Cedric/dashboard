@@ -1,4 +1,5 @@
 "use client";
+import RepeatFields from "@/components/recurrence/RepeatFields";
 import RepeatedTimeChoice from "@/components/shared/RepeatedTimeChoice";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -30,6 +31,8 @@ export default function EventForm({
   onBusyChange?: (busy: boolean) => void;
   embedded?: boolean;
 }) {
+  const [frequency, setFrequency] = useState("");
+  const [until, setUntil] = useState("");
   const [reminder, setReminder] = useState(
     event?.reminderMinutes == null ? "" : String(event.reminderMinutes),
   );
@@ -98,6 +101,8 @@ export default function EventForm({
     }),
     originalTiming = useRef(timingFingerprint);
   const fingerprint = JSON.stringify({
+    frequency,
+    until,
     reminder,
     title,
     description,
@@ -184,6 +189,9 @@ export default function EventForm({
             );
       const reminderMinutes = reminder === "" ? null : Number(reminder);
       const fields = {
+        ...(!event && frequency && timing !== "TBD"
+          ? { recurrence: { frequency, until: until || null } }
+          : {}),
         ...(!event || reminderMinutes !== (event.reminderMinutes ?? null)
           ? { reminderMinutes }
           : {}),
@@ -417,6 +425,22 @@ export default function EventForm({
           </div>
         </>
       )}
+      {!event && timing !== "TBD" && (
+        <RepeatFields
+          frequency={frequency}
+          until={until}
+          onFrequency={setFrequency}
+          onUntil={setUntil}
+          disabled={saving}
+          start={first || start}
+        />
+      )}
+      {event && (
+        <p className="text-sm text-muted">
+          Changes apply to this occurrence. Use “Edit repeating schedule” on the event to update
+          future copies.
+        </p>
+      )}
       <fieldset className="min-w-0 space-y-3 rounded-lg border border-card-border p-3">
         <legend className="px-1 text-sm font-medium">Linked tasks</legend>
         <ul className="space-y-2">
@@ -523,7 +547,7 @@ export default function EventForm({
           <option value="10080">1 week before</option>
         </select>
       </label>
-      <Link href="/settings" className="inline-block text-sm text-blue-400 underline">
+      <Link href="/settings/notifications" className="inline-block text-sm text-blue-400 underline">
         Manage phone notifications
       </Link>
       <div className="flex flex-wrap gap-2">

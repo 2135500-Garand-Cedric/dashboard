@@ -25,6 +25,7 @@
     "@heroicons/react": "^2.2.0",
     "@prisma/client": "^6.15.0",
     "@tailwindcss/postcss": "^4",
+    "date-holidays": "^3.39.2",
     "luxon": "^3.7.2",
     "next": "15.5.29",
     "next-auth": "^4.24.11",

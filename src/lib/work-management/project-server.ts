@@ -1,3 +1,4 @@
+import { recurrenceVisibility } from "./recurrence-visibility";
 import { createHash } from "node:crypto";
 import type { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
@@ -17,10 +18,19 @@ import {
 const json = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value));
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 type DB = Prisma.TransactionClient;
-export async function projectCounts(db: DB, id: number) {
+export async function projectCounts(
+  db: DB,
+  id: number,
+  includeAll = false,
+  visible?: Prisma.TodoWhereInput,
+) {
   const groups = await db.todo.groupBy({
     by: ["status", "archivedAt"],
-    where: { projectId: id, userId: WORK_USER_ID },
+    where: {
+      projectId: id,
+      userId: WORK_USER_ID,
+      ...(includeAll ? {} : (visible ?? (await recurrenceVisibility(db)).task)),
+    },
     _count: true,
   });
   let total = 0,
@@ -97,6 +107,7 @@ export async function listProjects(params: URLSearchParams) {
   };
   return prisma.$transaction(
     async (db) => {
+      const visible = await recurrenceVisibility(db);
       const total = await db.workProject.count({ where }),
         page = Math.min(requested, Math.max(1, Math.ceil(total / 30)));
       const rows = await db.workProject.findMany({
@@ -111,7 +122,7 @@ export async function listProjects(params: URLSearchParams) {
           rows.map(async (row) => ({
             ...row,
             reference: projectReference(row.id),
-            counts: await projectCounts(db, row.id),
+            counts: await projectCounts(db, row.id, false, visible.task),
           })),
         ),
         total,
@@ -213,7 +224,7 @@ async function closureState(db: DB, id: number) {
     });
   return {
     project,
-    counts: await projectCounts(db, id),
+    counts: await projectCounts(db, id, true),
     openTaskCount: tasks.filter((task) => !["DONE", "CANCELLED"].includes(task.status)).length,
     token: hash({ project, tasks }),
   };

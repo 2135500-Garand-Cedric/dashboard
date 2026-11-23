@@ -99,7 +99,7 @@ export default function CalendarAgenda({
                       </span>
                       {style.label}
                     </span>
-                    {style.activityType && (
+                    {style.activityType && style.activityType !== style.label && (
                       <span className="text-gray-500 dark:text-gray-400">{style.activityType}</span>
                     )}
                     {style.historical && (

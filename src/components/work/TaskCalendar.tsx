@@ -1,4 +1,5 @@
 "use client";
+import type { OccasionLink } from "@/lib/calendar-annual";
 import RepeatedTimeChoice from "@/components/shared/RepeatedTimeChoice";
 import { useInitialTaskLoad, useTaskRead } from "@/components/work/TaskInitialLoad";
 import Link from "next/link";
@@ -95,6 +96,7 @@ const TaskCalendar = forwardRef<
     [reload, setReload] = useState(0),
     [data, setData] = useState<{
       items: CalendarEvent[];
+      occasionLinks?: OccasionLink[];
       total: number;
       page: number;
       pageSize: number;
@@ -266,6 +268,21 @@ const TaskCalendar = forwardRef<
       )}
       {!data && !error && <p role="status">Loading calendar links…</p>}
       <ul className="space-y-3">
+        {data?.occasionLinks?.map((link) => (
+          <li
+            key={`${link.kind}:${link.id}:${link.date}`}
+            className="space-y-1 border-t border-card-border pt-3"
+          >
+            <Link href={link.href} className="break-words text-sm text-blue-400 underline">
+              {link.kind === "birthday" ? "✧ Birthday" : "✦ Calendar date"} · {link.title}
+            </Link>
+            <p className="text-xs text-muted">
+              {new Intl.DateTimeFormat("en-CA", { dateStyle: "long", timeZone: "UTC" }).format(
+                new Date(`${link.date}T12:00:00Z`),
+              )}
+            </p>
+          </li>
+        ))}
         {data?.items.map((event) => (
           <li key={event.id} className="space-y-1 border-t border-card-border pt-3">
             <Link
@@ -282,7 +299,9 @@ const TaskCalendar = forwardRef<
           </li>
         ))}
       </ul>
-      {data?.total === 0 && <p className="text-sm text-gray-500">No sessions or related events.</p>}
+      {data?.total === 0 && !data?.occasionLinks?.length && (
+        <p className="text-sm text-gray-500">No sessions or related events.</p>
+      )}
       <div className="flex flex-wrap gap-2">
         <button type="button" onClick={() => setReload((value) => value + 1)} className={button}>
           Reload calendar links

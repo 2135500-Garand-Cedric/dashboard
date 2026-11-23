@@ -30,6 +30,14 @@ model User {
   email     String    @unique
   name      String?
   timeZone  String? @db.VarChar(100)
+  calendarHolidays CalendarHoliday[]
+  calendarBirthdays CalendarBirthday[]
+  holidaySelectionConfigured Boolean @default(false)
+  // Previous calendar preferences are read once when upgrading to individual selections.
+  holidayCountry String? @db.VarChar(2)
+  holidayRegion String? @db.VarChar(10)
+  holidayBanks Boolean @default(false)
+  recurrenceSeries RecurrenceSeries[]
   
   // Gamification
   totalXp    Int       @default(0)     // total XP accumulated
@@ -92,6 +100,11 @@ model UserQuest {
 
 
 model Todo {
+  occasionLinks CalendarOccasionTaskLink[]
+  recurrenceId Int?
+  recurrenceDate String? @db.VarChar(10)
+  recurrence RecurrenceSeries? @relation(fields: [recurrenceId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
+  @@unique([recurrenceId, recurrenceDate])
   id           Int        @id @default(autoincrement())
   title        String
   description  String?    
@@ -223,6 +236,10 @@ model Subtask {
 }
 
 model Event {
+  recurrenceId Int?
+  recurrenceDate String? @db.VarChar(10)
+  recurrence RecurrenceSeries? @relation(fields: [recurrenceId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
+  @@unique([recurrenceId, recurrenceDate])
   reminderMinutes Int?
   kind String @default("ORDINARY") @db.VarChar(30)
   busy Boolean?
@@ -1125,4 +1142,88 @@ model PushDelivery {
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
   @@unique([subscriptionId, occurrenceKey])
   @@index([status, nextAttemptAt, leaseUntil])
+}
+
+// A series owns the repeat rule; individual tasks/events keep their own history.
+model RecurrenceSeries {
+  id Int @id @default(autoincrement())
+  userId Int
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  kind String @db.VarChar(10)
+  frequency String @db.VarChar(10)
+  anchor String @db.VarChar(19)
+  timeZone String @db.VarChar(100)
+  until String? @db.VarChar(10)
+  active Boolean @default(true)
+  revision Int @default(1)
+  template Json
+  generatedThrough String @db.VarChar(10)
+  tasks Todo[]
+  events Event[]
+  skips RecurrenceSkip[]
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  @@unique([id, userId])
+  @@index([userId, active, generatedThrough])
+}
+
+// Tombstones keep a deleted occurrence from returning after a schedule edit.
+model RecurrenceSkip {
+  id Int @id @default(autoincrement())
+  recurrenceId Int
+  date String @db.VarChar(10)
+  recurrence RecurrenceSeries @relation(fields: [recurrenceId], references: [id], onDelete: Cascade)
+  @@unique([recurrenceId, date])
+}
+
+model CalendarHoliday {
+  taskLinks CalendarOccasionTaskLink[]
+  @@unique([id, userId])
+  id Int @id @default(autoincrement())
+  userId Int
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  key String @db.VarChar(64)
+  country String @db.VarChar(2)
+  state String @default("") @db.VarChar(20)
+  region String @default("") @db.VarChar(30)
+  location String @db.VarChar(500)
+  // Display metadata is editable; the library name/type remain in options.
+  name String @db.VarChar(500)
+  type String @db.VarChar(20)
+  rule String @db.VarChar(1000)
+  options Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@unique([userId, key])
+  @@index([userId])
+}
+
+model CalendarBirthday {
+  id Int @id @default(autoincrement())
+  userId Int
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  name String @db.VarChar(200)
+  month Int
+  day Int
+  taskLinks CalendarOccasionTaskLink[]
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  @@unique([id, userId])
+  @@unique([userId, name, month, day])
+}
+
+// Links target an annual occurrence, not every future year of a date.
+model CalendarOccasionTaskLink {
+  id Int @id @default(autoincrement())
+  userId Int
+  holidayId Int?
+  holiday CalendarHoliday? @relation(fields: [holidayId, userId], references: [id, userId], onDelete: Cascade, onUpdate: NoAction)
+  birthdayId Int?
+  birthday CalendarBirthday? @relation(fields: [birthdayId, userId], references: [id, userId], onDelete: Cascade, onUpdate: NoAction)
+  todoId Int
+  todo Todo @relation(fields: [todoId, userId], references: [id, userId], onDelete: Cascade, onUpdate: NoAction)
+  date String @db.VarChar(10)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@unique([holidayId, date, todoId])
+  @@unique([birthdayId, date, todoId])
+  @@index([todoId, date])
 }

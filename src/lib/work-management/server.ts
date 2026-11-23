@@ -1,3 +1,8 @@
+import { linkOccasionTask } from "@/lib/calendar-occasion-core";
+import { recurrenceVisibility } from "./recurrence-visibility";
+import { ensureOccurrences } from "@/lib/recurrence/engine.mjs";
+import { attachRecurrence, skipOccurrence } from "./recurrence-core";
+import { parseWorkDate } from "./dates";
 import { readSnapshot, memoTaskRead } from "./read-snapshot";
 import { createHash } from "node:crypto";
 import type { Prisma } from "@/generated/prisma";
@@ -204,12 +209,17 @@ export async function todoRow(db: DB, id: number) {
   });
 }
 export async function listTodos(includeArchived = false) {
+  await ensureOccurrences(prisma, WORK_USER_ID);
   return prisma.$transaction(
     async (db) =>
       serializeTodos(
         db,
         await db.todo.findMany({
-          where: { userId: WORK_USER_ID, ...(includeArchived ? {} : { archivedAt: null }) },
+          where: {
+            userId: WORK_USER_ID,
+            ...(includeArchived ? {} : { archivedAt: null }),
+            ...(await recurrenceVisibility(db)).task,
+          },
           include: todoInclude,
           orderBy: { createdAt: "desc" },
         }),
@@ -246,9 +256,11 @@ export async function getTodo(id: number) {
 }
 export async function searchWork(params: URLSearchParams) {
   const query = parseWorkQuery(params),
-    where = workQueryWhere(query, WORK_USER_ID);
+    baseWhere = workQueryWhere(query, WORK_USER_ID);
+  await ensureOccurrences(prisma, WORK_USER_ID);
   return prisma.$transaction(
     async (db) => {
+      const where = { AND: [baseWhere, (await recurrenceVisibility(db)).task] };
       const total = await db.todo.count({ where }),
         page = Math.min(query.page, Math.max(1, Math.ceil(total / WORK_PAGE_SIZE)));
       let orderIds: number[] | null = null;
@@ -307,13 +319,18 @@ export async function searchWork(params: URLSearchParams) {
   );
 }
 export async function listEvents() {
-  return (
-    await prisma.event.findMany({
-      where: { userId: WORK_USER_ID },
-      include: eventInclude,
-      orderBy: { date: "asc" },
-    })
-  ).map(eventDTO);
+  await ensureOccurrences(prisma, WORK_USER_ID);
+  return prisma.$transaction(
+    async (db) =>
+      (
+        await db.event.findMany({
+          where: { userId: WORK_USER_ID, ...(await recurrenceVisibility(db)).event },
+          include: eventInclude,
+          orderBy: { date: "asc" },
+        })
+      ).map(eventDTO),
+    { isolationLevel: "RepeatableRead" },
+  );
 }
 export async function getEvent(id: number) {
   return eventDTO(await eventRow(prisma, id));
@@ -371,6 +388,8 @@ export async function createTodo(value: unknown, command: WorkCommand) {
     throw new WorkValidationError("Create the task first, then close it explicitly.");
   if (!data.title) throw new WorkValidationError("Enter a task title.");
   return mutation("todo:create", body, command, async (db) => {
+    const firstDeadline =
+      body.firstDeadline === undefined ? null : parseWorkDate(body.firstDeadline, getAppTimeZone());
     const project = await validateNewMembership(db, data.projectId, data.stageId);
     const activityTypeId =
       data.activityTypeId === undefined ? (project?.activityTypeId ?? null) : data.activityTypeId;
@@ -380,6 +399,13 @@ export async function createTodo(value: unknown, command: WorkCommand) {
     const row = await db.todo.create({
       data: {
         ...columns,
+        ...(firstDeadline
+          ? {
+              deadlineDate: firstDeadline.date,
+              deadlineAt: firstDeadline.at ? new Date(firstDeadline.at) : null,
+              deadlineTimeZone: firstDeadline.timeZone,
+            }
+          : {}),
         title: data.title!,
         userId: WORK_USER_ID,
         activityTypeId,
@@ -401,6 +427,8 @@ export async function createTodo(value: unknown, command: WorkCommand) {
         recordDependent: false,
       });
     await replaceAffected(db, row.id, body);
+    if (body.occasion !== undefined) await linkOccasionTask(db, body.occasion, row.id);
+    if (body.recurrence != null) await attachRecurrence(db, "TASK", row.id, body.recurrence);
     const created = await todoRow(db, row.id);
     await recordTaskActivity(db, null, created);
     if (created.projectId !== null) {
@@ -427,6 +455,12 @@ export async function patchTodoInTransaction(
 ) {
   const body = workBody(value, TASK_FIELDS),
     parsed = parseTaskFields(body);
+  if (
+    body.recurrence !== undefined ||
+    body.firstDeadline !== undefined ||
+    body.occasion !== undefined
+  )
+    throw new WorkValidationError("Use the repeating schedule controls to change recurrence.");
   if (body.projectId !== undefined || body.stageId !== undefined)
     throw new WorkValidationError("Use the project selector to move this task.");
   if (body.parentId !== undefined || body.parentRevision !== undefined)
@@ -547,6 +581,7 @@ export async function deleteTodo(id: number, command: WorkCommand) {
     });
     await db.todoAffectedContact.deleteMany({ where: { todoId: id } });
     await db.subtask.deleteMany({ where: { todoId: id } });
+    await skipOccurrence(db, row);
     await db.todo.delete({ where: { id, userId: WORK_USER_ID } });
     return { ok: true };
   });
@@ -634,12 +669,15 @@ export async function createEvent(value: unknown, command: WorkCommand) {
     await appendEventActivity(db, row.id, "CREATED", {
       event: { before: null, after: eventDTO(row) },
     });
+    if (body.recurrence != null) await attachRecurrence(db, "EVENT", row.id, body.recurrence);
     return eventDTO(await eventRow(db, row.id));
   });
 }
 export async function patchEvent(id: number, value: unknown, command: WorkCommand) {
   const body = workBody(value, EVENT_FIELDS),
     data = parseEventFields(body);
+  if (body.recurrence !== undefined)
+    throw new WorkValidationError("Use the repeating schedule controls to change recurrence.");
   if (body.linkedTodoId !== undefined && body.links !== undefined)
     throw new WorkValidationError("Send only one task-link representation.");
   return mutation(`event:${id}:patch`, body, command, async (db) => {
@@ -708,6 +746,7 @@ export async function deleteEvent(id: number, command: WorkCommand) {
     version(row, command);
     await appendEventActivity(db, id, "DELETED", { event: { before: eventDTO(row), after: null } });
     await removeEventLinks(db, row);
+    await skipOccurrence(db, row);
     await db.event.delete({ where: { id, userId: WORK_USER_ID } });
     return { success: true };
   });

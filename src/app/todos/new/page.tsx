@@ -1,4 +1,5 @@
 "use client";
+import RepeatFields from "@/components/recurrence/RepeatFields";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createWorkWriter, workRead } from "@/lib/work-management/client";
@@ -17,6 +18,9 @@ function TaskForm() {
     search = params.toString();
   const initial = useMemo(
     () => ({
+      firstDeadline: params.get("deadline") || "",
+      frequency: "",
+      until: "",
       title: "",
       description: "",
       activityType: params.get("activityType") || "",
@@ -43,7 +47,7 @@ function TaskForm() {
   );
   const rawReturn = params.get("returnTo") || "/todos";
   const returnTo =
-    /^\/(todos|my-work|projects)(?:[/?]|$)/.test(rawReturn) && !rawReturn.includes("\\")
+    /^\/(todos|my-work|projects|events)(?:[/?]|$)/.test(rawReturn) && !rawReturn.includes("\\")
       ? rawReturn
       : "/todos";
   async function loadActivityTypes() {
@@ -117,6 +121,21 @@ function TaskForm() {
           setError("");
           try {
             const row = await write<WorkTodo>("/api/todos", "POST", {
+              ...(draft.firstDeadline
+                ? { firstDeadline: { kind: "DATE", date: draft.firstDeadline } }
+                : {}),
+              ...(draft.frequency
+                ? { recurrence: { frequency: draft.frequency, until: draft.until || null } }
+                : {}),
+              ...(params.get("occasionKind")
+                ? {
+                    occasion: {
+                      kind: params.get("occasionKind"),
+                      id: Number(params.get("occasionId")),
+                      date: params.get("occasionDate"),
+                    },
+                  }
+                : {}),
               title: draft.title,
               description: draft.description || null,
               ...(draft.activityType
@@ -278,6 +297,26 @@ function TaskForm() {
             </select>
           </label>
         </div>
+        <label className="block text-sm">
+          {draft.frequency ? "First deadline" : "Deadline"}
+          <input
+            aria-label="Task deadline"
+            type="date"
+            required={!!draft.frequency}
+            value={draft.firstDeadline}
+            disabled={busy}
+            onChange={(event) => field("firstDeadline", event.target.value)}
+            className={input}
+          />
+        </label>
+        <RepeatFields
+          frequency={draft.frequency}
+          until={draft.until}
+          onFrequency={(value) => field("frequency", value)}
+          onUntil={(value) => field("until", value)}
+          disabled={busy}
+          start={draft.firstDeadline}
+        />
         {catalogError && (
           <p role="alert" className="text-rose-500">
             {catalogError}{" "}

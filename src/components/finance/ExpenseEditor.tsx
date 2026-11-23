@@ -160,8 +160,8 @@ function ReceiptForm({
               prefill?.amount)!,
           )
         : "",
-    tax: twoDecimalAmount(existing?.tax ?? "0"),
-    tip: twoDecimalAmount(existing?.tip ?? "0"),
+    tax: existing ? twoDecimalAmount(existing.tax) : "",
+    tip: existing ? twoDecimalAmount(existing.tip) : "",
     total:
       (existing?.total ?? initialTransaction?.amount.replace(/^-/, "") ?? prefill?.amount)
         ? twoDecimalAmount(

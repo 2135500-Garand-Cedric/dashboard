@@ -28,6 +28,14 @@ export async function readTaskDetails(id: number) {
       add(`/api/todos/${id}/attachments?page=1`, listAttachments(id, new URLSearchParams())),
       add(`/api/todos/${id}/timeline?filter=notes&page=1`, taskTimeline(id, new URLSearchParams())),
       add(`/api/todos/${id}/dates`, readTaskDates(id, new URLSearchParams())),
+      add(
+        `/api/todos/${id}/recurrence`,
+        task.recurrenceId
+          ? db.recurrenceSeries
+              .findFirst({ where: { id: task.recurrenceId, userId: WORK_USER_ID } })
+              .then((series) => ({ series }))
+          : Promise.resolve({ series: null }),
+      ),
       add(`/api/todos/${id}/focus`, readFocus(id)),
       add(`/api/todos/${id}/calendar?page=1`, taskCalendar(id, new URLSearchParams())),
       add("/api/work-contacts?q=&page=1", listWorkContacts(new URLSearchParams())),

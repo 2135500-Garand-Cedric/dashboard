@@ -1,107 +1,63 @@
-"use client";
-import { useState } from "react";
-import NotificationSettings from "@/components/notifications/NotificationSettings";
-import { useSettings } from "@/context/SettingsContext";
+import Link from "next/link";
+import {
+  GlobeAltIcon,
+  CalendarDaysIcon,
+  BellIcon,
+  BanknotesIcon,
+  CakeIcon,
+  ArrowRightIcon,
+} from "@heroicons/react/24/outline";
+const sections = [
+  {
+    href: "/settings/timezone",
+    title: "Display timezone",
+    icon: GlobeAltIcon,
+    tone: "text-sky-400 bg-sky-500/10",
+  },
+  {
+    href: "/settings/holidays",
+    title: "Calendar holidays",
+    icon: CalendarDaysIcon,
+    tone: "text-teal-400 bg-teal-500/10",
+  },
+  {
+    href: "/settings/birthdays",
+    title: "Birthdays",
+    icon: CakeIcon,
+    tone: "text-pink-400 bg-pink-500/10",
+  },
+  {
+    href: "/settings/notifications",
+    title: "Notifications",
+    icon: BellIcon,
+    tone: "text-amber-400 bg-amber-500/10",
+  },
+  {
+    href: "/finance/settings",
+    title: "Finance settings",
+    icon: BanknotesIcon,
+    tone: "text-emerald-400 bg-emerald-500/10",
+  },
+];
 export default function SettingsPage() {
-  const { timeZone, saveTimeZone } = useSettings();
-  const [selected, setSelected] = useState(timeZone),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState(""),
-    [notice, setNotice] = useState("");
-  const cities = [
-    ["Pacific/Honolulu", "Honolulu"],
-    ["America/Anchorage", "Anchorage"],
-    ["America/Los_Angeles", "Los Angeles / Vancouver"],
-    ["America/Denver", "Denver / Edmonton"],
-    ["America/Phoenix", "Phoenix"],
-    ["America/Chicago", "Chicago / Winnipeg"],
-    ["America/Toronto", "Toronto / New York"],
-    ["America/Halifax", "Halifax"],
-    ["America/St_Johns", "St. John's"],
-    ["America/Sao_Paulo", "São Paulo"],
-    ["UTC", "Coordinated Universal Time"],
-    ["Europe/London", "London"],
-    ["Europe/Paris", "Paris / Berlin"],
-    ["Africa/Johannesburg", "Johannesburg"],
-    ["Africa/Cairo", "Cairo"],
-    ["Europe/Helsinki", "Helsinki / Athens"],
-    ["Asia/Dubai", "Dubai"],
-    ["Asia/Kolkata", "New Delhi / Mumbai"],
-    ["Asia/Dhaka", "Dhaka"],
-    ["Asia/Bangkok", "Bangkok"],
-    ["Asia/Singapore", "Singapore / Beijing"],
-    ["Asia/Tokyo", "Tokyo / Seoul"],
-    ["Australia/Perth", "Perth"],
-    ["Australia/Adelaide", "Adelaide"],
-    ["Australia/Sydney", "Sydney"],
-    ["Pacific/Auckland", "Auckland"],
-  ];
-  if (!cities.some(([zone]) => zone === timeZone)) {
-    cities.push([timeZone, timeZone.split("/").at(-1)!.replaceAll("_", " ")]);
-  }
-  const offset = (zone: string) =>
-    new Intl.DateTimeFormat("en", {
-      timeZone: zone,
-      timeZoneName: "shortOffset",
-    })
-      .formatToParts(new Date())
-      .find((part) => part.type === "timeZoneName")!
-      .value.replace(/^GMT$/, "GMT+0");
-
   return (
-    <div className="mx-auto max-w-3xl space-y-5 pb-8 pt-12 md:pt-2">
+    <div className="mx-auto w-full max-w-[1600px] space-y-5 pb-8 pt-12 md:pt-2">
       <h1 className="text-2xl font-bold">Settings</h1>
-      <form
-        className="space-y-4 rounded-xl border border-card-border bg-card-bg p-5"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          setBusy(true);
-          setError("");
-          setNotice("");
-          try {
-            await saveTimeZone(selected);
-            setNotice("Settings saved.");
-          } catch (error) {
-            setError(error instanceof Error ? error.message : "Unable to save settings.");
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <label className="block text-sm">
-          Display timezone
-          <select
-            aria-label="Display timezone"
-            value={selected}
-            disabled={busy}
-            onChange={(event) => setSelected(event.target.value)}
-            className="mt-2 w-full rounded border border-card-border bg-card-bg p-3"
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        {sections.map(({ href, title, icon: Icon, tone }) => (
+          <Link
+            key={href}
+            href={href}
+            className="card flex min-w-0 items-center gap-4 transition-colors hover:border-blue-500 focus-visible:outline-2 focus-visible:outline-blue-500"
           >
-            {cities.map(([zone, city]) => (
-              <option key={zone} value={zone}>
-                {city} ({offset(zone)})
-              </option>
-            ))}
-          </select>
-        </label>
-        {error && (
-          <p role="alert" className="text-rose-500">
-            {error}
-          </p>
-        )}
-        {notice && (
-          <p role="status" className="text-emerald-500">
-            {notice}
-          </p>
-        )}
-        <button
-          disabled={busy}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
-        >
-          {busy ? "Saving…" : "Save settings"}
-        </button>
-      </form>
-      <NotificationSettings />
+            <span className={`rounded-xl p-3 ${tone}`}>
+              <Icon className="h-7 w-7" aria-hidden="true" />
+            </span>
+            <span className="min-w-0 flex-1 font-semibold">{title}</span>
+            <ArrowRightIcon className="h-5 w-5 shrink-0 text-gray-500" aria-hidden="true" />
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }

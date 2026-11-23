@@ -131,3 +131,21 @@ test("selected days follow the display timezone including DST and local midnight
   );
   assert.deepEqual(calendarItemsOnDay(rows, "2026-11-02", "America/New_York"), []);
 });
+
+test("library dates display their customized type in the agenda", () => {
+  for (const label of ["Holiday", "Bank holiday", "Important date"]) {
+    const result = calendarAppearance({
+      title: "Custom Easter",
+      backgroundColor: "#2563eb",
+      extendedProps: {
+        layer: "holidays",
+        kind: "HOLIDAY",
+        activityType: label,
+        plainTitle: "Custom Easter",
+      },
+    });
+    assert.equal(result.label, label);
+    assert.equal(result.title, "Custom Easter");
+    assert.equal(result.color, "#2563eb");
+  }
+});

@@ -3,6 +3,8 @@ import { localParts, localToday } from "./date-format";
 import { writtenEventDate } from "./event-display";
 
 const layers: Record<string, { label: string; symbol: string; color: string }> = {
+  birthdays: { label: "Birthday", symbol: "✧", color: "#db2777" },
+  holidays: { label: "Holiday", symbol: "✦", color: "#0d9488" },
   events: { label: "Event", symbol: "○", color: "#3b82f6" },
   sessions: { label: "Work session", symbol: "▣", color: "#8b5cf6" },
   deadlines: { label: "Deadline", symbol: "⚑", color: "#f43f5e" },
@@ -25,12 +27,17 @@ export function calendarAppearance(item: DisplayItem) {
   const layer = layers[item.extendedProps.layer || "events"] || layers.events;
   const info = item.extendedProps.kind === "INFORMATIONAL";
   const target = item.extendedProps.kind === "PROJECT_TARGET";
+  const holidayLabel =
+    item.extendedProps.kind === "HOLIDAY" &&
+    ["Holiday", "Bank holiday", "Important date"].includes(item.extendedProps.activityType || "")
+      ? item.extendedProps.activityType
+      : null;
   // Use the feed's actual color, including customized activity-label colors,
   // rather than assigning a second, conflicting palette to the agenda.
   const candidate = item.borderColor || item.backgroundColor;
   return {
     ...layer,
-    label: target ? "Project target" : info ? "Information" : layer.label,
+    label: holidayLabel || (target ? "Project target" : info ? "Information" : layer.label),
     symbol: target ? "◎" : info ? "ⓘ" : layer.symbol,
     color: candidate && /^#[0-9a-f]{6}$/i.test(candidate) ? candidate : layer.color,
     title: item.extendedProps.plainTitle || item.title,

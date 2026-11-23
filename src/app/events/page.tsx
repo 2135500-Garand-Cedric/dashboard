@@ -36,6 +36,8 @@ const allLayers = [
   ["deadlines", "⚑ Deadlines"],
   ["followups", "↻ Follow-ups"],
   ["milestones", "◇ Project milestones & targets"],
+  ["holidays", "✦ Holidays"],
+  ["birthdays", "✧ Birthdays"],
 ];
 const defaultLayers = allLayers.map(([key]) => key);
 type Move = { id: number; revision: number; title: string; date: string; endDate: string };
@@ -361,7 +363,10 @@ export default function EventsPage() {
                 eventClick={(info) => {
                   info.jsEvent.preventDefault();
                   const href = info.event.extendedProps.href;
-                  if (typeof href === "string" && /^\/(todos|events|projects)\//.test(href))
+                  if (
+                    typeof href === "string" &&
+                    /^\/(todos|events|projects|settings)(?:[\/#]|$)/.test(href)
+                  )
                     pageRouter("/events", href);
                 }}
                 eventContent={(info) => {

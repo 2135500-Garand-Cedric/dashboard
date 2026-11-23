@@ -2,6 +2,9 @@ import { PrismaClient } from "../src/generated/prisma/index.js";
 import { pushConfiguration } from "../src/lib/notifications/rules.mjs";
 import { runReminderPass } from "../src/lib/notifications/engine.mjs";
 
+import { ensureOccurrences } from "../src/lib/recurrence/engine.mjs";
+
+let lastGeneration = 0;
 const db = new PrismaClient({ log: [] });
 let stopping = false,
   wake,
@@ -21,6 +24,10 @@ console.log(
 try {
   while (!stopping) {
     try {
+      if (Date.now() - lastGeneration > 3600000) {
+        await ensureOccurrences(db);
+        lastGeneration = Date.now();
+      }
       const result = await runReminderPass(db, { config });
       if (result.sent)
         console.log(`[notifications] ${result.sent} reminders accepted by push services.`);

@@ -8,6 +8,7 @@ import { WorkValidationError, workBody, workId, workText } from "./validation";
 import { validateEventDates } from "@/lib/event-dates";
 type DB = Prisma.TransactionClient;
 export const EVENT_FIELDS = [
+  "recurrence",
   "reminderMinutes",
   "title",
   "description",

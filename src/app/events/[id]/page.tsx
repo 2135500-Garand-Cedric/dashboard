@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { workRead, createWorkWriter } from "@/lib/work-management/client";
 import { type CalendarEvent } from "@/lib/work-management/calendar-types";
+import RecurrenceControl from "@/components/recurrence/RecurrenceControl";
 import EventOverview from "@/components/calendar/EventOverview";
 import { useSettings } from "@/context/SettingsContext";
 import { writtenEventDate } from "@/lib/work-management/event-display";
@@ -143,6 +144,14 @@ export default function EventPage() {
                 ),
               )
             }
+          />
+          <RecurrenceControl
+            kind="EVENT"
+            id={event.id}
+            revision={event.revision}
+            date={event.allDayStart || event.date}
+            disabled={busy}
+            onChanged={() => void load()}
           />
           <EventConversion
             key={`${event.id}-${event.revision}`}

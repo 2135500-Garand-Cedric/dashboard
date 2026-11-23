@@ -124,7 +124,7 @@ test(
         const page = await context.newPage();
         const errors = [];
         page.on("pageerror", (error) => errors.push(error.message));
-        await page.goto(`${base}/settings`);
+        await page.goto(`${base}/settings/notifications`);
         const section = page.getByRole("region", { name: "Phone and notifications" });
         await section.getByRole("button", { name: "Enable on this device" }).waitFor();
         assert.equal(
@@ -175,7 +175,7 @@ test(
       });
       await ios.addCookies([{ name: "next-auth.session-token", value: token, url: base }]);
       const iosPage = await ios.newPage();
-      await iosPage.goto(`${base}/settings`);
+      await iosPage.goto(`${base}/settings/notifications`);
       await iosPage
         .getByText("Open the installed Home Screen app to enable iPhone notifications.", {
           exact: true,

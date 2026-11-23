@@ -1,3 +1,5 @@
+import { recurrenceVisibility } from "./recurrence-visibility";
+import { ensureOccurrences } from "@/lib/recurrence/engine.mjs";
 import { readSnapshot } from "./read-snapshot";
 import { prisma } from "@/lib/prisma";
 import { getAppTimeZone } from "@/lib/time-zone-context";
@@ -85,8 +87,10 @@ export async function myWork(params: URLSearchParams, now = new Date()) {
     date = localToday(now, getAppTimeZone()),
     window = planningWindow(date, getAppTimeZone()),
     pageSize = 6;
+  await ensureOccurrences(prisma, WORK_USER_ID, now);
   return prisma.$transaction(
     async (db) => {
+      const visible = await recurrenceVisibility(db, now);
       const sections: Record<
         string,
         {
@@ -96,7 +100,7 @@ export async function myWork(params: URLSearchParams, now = new Date()) {
       > = {};
       for (const name of PLANNING_SECTIONS) {
         const where = {
-          AND: [base, planningWhere(name, date, getAppTimeZone(), now, WORK_USER_ID)],
+          AND: [base, visible.task, planningWhere(name, date, getAppTimeZone(), now, WORK_USER_ID)],
         };
         const total = await db.todo.count({ where });
         const rows = await serializeTodos(
@@ -134,6 +138,7 @@ export async function myWork(params: URLSearchParams, now = new Date()) {
       };
       const where = {
         userId: WORK_USER_ID,
+        ...visible.event,
         kind: "WORK_SESSION",
         completed: false,
         date: { lt: window.end },
@@ -165,7 +170,7 @@ export async function myWork(params: URLSearchParams, now = new Date()) {
         timeZone: getAppTimeZone(),
         generatedAt: now.toISOString(),
         nextDayAt: window.end.toISOString(),
-        totalActive: await db.todo.count({ where: base }),
+        totalActive: await db.todo.count({ where: { AND: [base, visible.task] } }),
         pageSize,
         sections,
         sessions: { items: sessions, total, page, pageSize },

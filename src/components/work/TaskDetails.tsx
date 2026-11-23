@@ -33,6 +33,7 @@ import TaskClosureDialog from "@/components/todos/TaskClosureDialog";
 import TaskProject from "@/components/projects/TaskProject";
 import FocusControl from "./FocusControl";
 import TaskCalendar from "./TaskCalendar";
+import RecurrenceControl from "@/components/recurrence/RecurrenceControl";
 import TaskDates from "./TaskDates";
 import TaskRelationships from "./TaskRelationships";
 import TaskTimeline from "./TaskTimeline";
@@ -684,6 +685,17 @@ export default function TaskDetails({
             {notice}
           </p>
         )}
+        <RecurrenceControl
+          kind="TASK"
+          id={todo.id}
+          revision={todo.revision}
+          date={todo.deadlineDate || todo.deadlineAt}
+          disabled={busy || supportingBusy || editing || !!todo.archivedAt}
+          onChanged={() => {
+            void perform(load);
+            onChanged?.();
+          }}
+        />
         <TaskDates
           ref={dates}
           task={todo}
