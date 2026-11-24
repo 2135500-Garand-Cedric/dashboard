@@ -388,12 +388,6 @@ function EntryForm({
                 />
               </label>
             </div>
-            {draft.type === "TRANSFER" && (
-              <p className="rounded-lg bg-blue-500/10 p-3 text-sm">
-                Use transfers for moves between your own accounts, including credit card bill
-                payments and cash withdrawals into a tracked cash account.
-              </p>
-            )}
 
             <label className="block space-y-2">
               <span className="text-sm font-medium">Description</span>

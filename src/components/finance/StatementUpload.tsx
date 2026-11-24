@@ -31,6 +31,7 @@ export default function StatementUpload() {
     if (guard.current) return;
     if (!file?.size || file.size > MAX_CSV_BYTES) {
       setError("Choose a non-empty CSV up to 2 MB.");
+      showMessage("Choose a non-empty CSV up to 2 MB.");
       return;
     }
     guard.current = true;

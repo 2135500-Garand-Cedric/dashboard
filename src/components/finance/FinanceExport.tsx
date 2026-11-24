@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { useSnackbar } from "@/context/SnackbarContext";
 import { secondaryButton } from "./shared";
 export default function FinanceExport({
   kind,
@@ -12,6 +13,7 @@ export default function FinanceExport({
 }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const { showMessage } = useSnackbar();
   async function download() {
     if (busy) return;
     setBusy(true);
@@ -33,11 +35,12 @@ export default function FinanceExport({
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
-      setError(
+      const message =
         error instanceof Error
           ? error.message
-          : "Could not download the export. Check your connection and retry.",
-      );
+          : "Could not download the export. Check your connection and retry.";
+      setError(message);
+      showMessage(message);
     } finally {
       setBusy(false);
     }

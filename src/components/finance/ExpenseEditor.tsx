@@ -282,11 +282,9 @@ function ReceiptForm({
       showMessage("Document deleted. Receipt details were kept.");
       refresh?.();
     } catch (error) {
-      setFailure(
-        new FinanceRequestError(
-          error instanceof Error ? error.message : "Could not delete the receipt.",
-        ),
-      );
+      const message = error instanceof Error ? error.message : "Could not delete the receipt.";
+      setFailure(new FinanceRequestError(message));
+      showMessage(message);
     } finally {
       saving.current = false;
       setBusy(false);

@@ -102,7 +102,9 @@ function Workspace({
       if (confirmation === "draft") window.location.assign("/finance/imports");
       else reload();
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Could not delete this item.");
+      const message = error instanceof Error ? error.message : "Could not delete this item.";
+      setError(message);
+      showMessage(message);
     } finally {
       guard.current = false;
       setBusy(false);

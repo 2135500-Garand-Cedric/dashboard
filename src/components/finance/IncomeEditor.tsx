@@ -208,9 +208,30 @@ function IncomeForm({
     types.data?.types.filter(
       (item) => item.active || existing?.deductions.some((line) => line.typeId === item.id),
     ) ?? [];
+  const availableTypes = typeOptions.filter(
+    (type) => type.active && !deductions.some((line) => Number(line.typeId) === type.id),
+  );
+  const normalizedDeductions = deductions.map((line) => ({
+    ...line,
+    amount: line.amount.trim() || "0",
+  }));
+  function addDeductions(all: boolean) {
+    const additions = all ? availableTypes : availableTypes.slice(0, 1);
+    if (deductions.length + additions.length > 30) {
+      showMessage(
+        "An income record can have up to 30 deductions. Add the ones you need individually.",
+      );
+      return;
+    }
+    setDeductions((previous) => [
+      ...previous,
+      ...additions.map((type) => ({ typeId: String(type.id), amount: "" })),
+    ]);
+    setAcknowledge(false);
+  }
   let amounts: ReturnType<typeof incomeAmounts> | null = null;
   try {
-    amounts = incomeAmounts(draft.grossAmount || null, deductions, draft.netAmount);
+    amounts = incomeAmounts(draft.grossAmount || null, normalizedDeductions, draft.netAmount);
   } catch {
     /* Wait for valid decimal fields. */
   }
@@ -242,7 +263,7 @@ function IncomeForm({
         periodStart: draft.periodStart || null,
         periodEnd: draft.periodEnd || null,
         grossAmount: draft.grossAmount || null,
-        deductions: deductions.map((line) => ({
+        deductions: normalizedDeductions.map((line) => ({
           typeId: Number(line.typeId),
           amount: line.amount,
         })),
@@ -512,32 +533,24 @@ function IncomeForm({
               <section className="space-y-3 border-t border-card-border pt-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h3 className="font-semibold">Deductions</h3>
-                  <button
-                    type="button"
-                    className={secondaryButton}
-                    disabled={
-                      deductions.length >= 30 ||
-                      !typeOptions.some(
-                        (type) =>
-                          type.active &&
-                          !deductions.some((line) => Number(line.typeId) === type.id),
-                      )
-                    }
-                    onClick={() => {
-                      const type = typeOptions.find(
-                        (type) =>
-                          type.active &&
-                          !deductions.some((line) => Number(line.typeId) === type.id),
-                      );
-                      setDeductions([
-                        ...deductions,
-                        { typeId: String(type?.id ?? ""), amount: "0" },
-                      ]);
-                      setAcknowledge(false);
-                    }}
-                  >
-                    Add deduction
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className={secondaryButton}
+                      disabled={deductions.length >= 30 || !availableTypes.length}
+                      onClick={() => addDeductions(false)}
+                    >
+                      Add deduction
+                    </button>
+                    <button
+                      type="button"
+                      className={secondaryButton}
+                      disabled={deductions.length >= 30 || !availableTypes.length}
+                      onClick={() => addDeductions(true)}
+                    >
+                      Add all deductions
+                    </button>
+                  </div>
                 </div>
                 {deductions.map((line, index) => (
                   <div
@@ -579,7 +592,6 @@ function IncomeForm({
                       Amount
                       <input
                         aria-label={`Deduction ${index + 1} amount`}
-                        required
                         inputMode="decimal"
                         maxLength={20}
                         autoComplete="off"

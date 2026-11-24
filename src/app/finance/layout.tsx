@@ -1,3 +1,4 @@
+import FinanceValidation from "@/components/finance/FinanceValidation";
 import ProtectedLayout from "@/components/ProtectedLayout";
 import FinanceNavigation from "@/components/finance/FinanceNavigation";
 
@@ -9,7 +10,7 @@ export default function FinanceLayout({ children }: { children: React.ReactNode 
       >
         <h1 className="text-3xl font-bold">Finance</h1>
         <FinanceNavigation />
-        {children}
+        <FinanceValidation>{children}</FinanceValidation>
       </div>
     </ProtectedLayout>
   );

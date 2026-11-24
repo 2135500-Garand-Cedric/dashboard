@@ -61,7 +61,9 @@ export default function ActivityDetail({
       showMessage("Financial record deleted.");
       router.push(`/finance/${kind}`);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Unable to delete this record.");
+      const message = error instanceof Error ? error.message : "Unable to delete this record.";
+      setError(message);
+      showMessage(message);
     } finally {
       setBusy(false);
     }

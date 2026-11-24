@@ -66,7 +66,9 @@ export default function IncomeSettings({ source }: { source: boolean }) {
       reset();
       result.retry();
     } catch (error) {
-      setError(error instanceof Error ? error.message : `Could not save ${label}.`);
+      const message = error instanceof Error ? error.message : `Could not save ${label}.`;
+      setError(message);
+      showMessage(message);
     } finally {
       guard.current = false;
       setBusy(false);
@@ -88,7 +90,9 @@ export default function IncomeSettings({ source }: { source: boolean }) {
       );
       result.retry();
     } catch (error) {
-      setError(error instanceof Error ? error.message : `Could not update ${label}.`);
+      const message = error instanceof Error ? error.message : `Could not update ${label}.`;
+      setError(message);
+      showMessage(message);
     } finally {
       guard.current = false;
       setBusy(false);
