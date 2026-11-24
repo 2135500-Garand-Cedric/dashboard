@@ -1,3 +1,4 @@
+import { workArticles } from "@/lib/knowledge/server";
 import { prisma } from "@/lib/prisma";
 import { getTodoInDb, listWorkContacts, WORK_USER_ID } from "./server";
 import { taskReadSnapshot } from "./read-snapshot";
@@ -25,6 +26,10 @@ export async function readTaskDetails(id: number) {
         select: { id: true, name: true },
         orderBy: [{ name: "asc" }, { id: "asc" }],
       }),
+      add(
+        `/api/knowledge/work?kind=task&id=${id}&page=1`,
+        workArticles("task", id, new URLSearchParams(), db),
+      ),
       add(`/api/todos/${id}/attachments?page=1`, listAttachments(id, new URLSearchParams())),
       add(`/api/todos/${id}/timeline?filter=notes&page=1`, taskTimeline(id, new URLSearchParams())),
       add(`/api/todos/${id}/dates`, readTaskDates(id, new URLSearchParams())),

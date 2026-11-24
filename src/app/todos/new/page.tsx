@@ -47,7 +47,8 @@ function TaskForm() {
   );
   const rawReturn = params.get("returnTo") || "/todos";
   const returnTo =
-    /^\/(todos|my-work|projects|events)(?:[/?]|$)/.test(rawReturn) && !rawReturn.includes("\\")
+    /^\/(todos|my-work|projects|events|knowledge)(?:[/?]|$)/.test(rawReturn) &&
+    !rawReturn.includes("\\")
       ? rawReturn
       : "/todos";
   async function loadActivityTypes() {
@@ -121,6 +122,9 @@ function TaskForm() {
           setError("");
           try {
             const row = await write<WorkTodo>("/api/todos", "POST", {
+              ...(params.get("knowledgeArticleId")
+                ? { knowledgeArticleId: Number(params.get("knowledgeArticleId")) }
+                : {}),
               ...(draft.firstDeadline
                 ? { firstDeadline: { kind: "DATE", date: draft.firstDeadline } }
                 : {}),

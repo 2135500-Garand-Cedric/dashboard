@@ -12,6 +12,7 @@
     "backfill:verb-conditionals": "node scripts/backfill-verb-conditionals.mjs",
     "work:inventory": "node scripts/work-management-inventory.mjs",
     "seed:work-examples": "node scripts/seed-work-examples.mjs",
+    "seed:knowledge-examples": "node scripts/seed-knowledge-examples.mjs",
     "notifications:worker": "node scripts/notification-worker.mjs",
     "notifications:keys": "node scripts/generate-push-keys.mjs"
   },
@@ -26,7 +27,9 @@
     "@prisma/client": "^6.15.0",
     "@tailwindcss/postcss": "^4",
     "date-holidays": "^3.39.2",
+    "fflate": "^0.8.3",
     "luxon": "^3.7.2",
+    "markdown-it": "^15.0.3",
     "next": "15.5.29",
     "next-auth": "^4.24.11",
     "pdfjs-dist": "6.5.438",

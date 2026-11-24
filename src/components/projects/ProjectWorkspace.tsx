@@ -1,4 +1,5 @@
 "use client";
+import WorkDocumentation from "@/components/knowledge/WorkDocumentation";
 import {
   CalendarDaysIcon,
   ArrowPathIcon,
@@ -297,6 +298,7 @@ export default function ProjectWorkspace({ id }: { id: number }) {
       <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
         <div className="min-w-0 space-y-5">
           <ProjectMilestones project={project} onChanged={setProject} />
+          <WorkDocumentation kind="project" id={id} title={project.name} />
           <div className="rounded-xl border border-card-border bg-card-bg p-4">
             <TaskTimeline
               ref={notes}

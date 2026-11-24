@@ -22,25 +22,74 @@ import {
   appendProjectActivity,
   type WorkParent,
 } from "./project-core";
+import { activeDraft } from "@/lib/knowledge/draft-core";
+import { articleRow, recordArticleRevision } from "@/lib/knowledge/core";
 type DB = Prisma.TransactionClient;
-function supportWhere(parent: WorkParent) {
+export type AttachmentParent =
+  WorkParent | { knowledgeArticleId: number } | { knowledgeDraftId: string };
+function isDraftParent(parent: AttachmentParent): parent is { knowledgeDraftId: string } {
+  return typeof parent !== "number" && "knowledgeDraftId" in parent;
+}
+function isKnowledgeParent(parent: AttachmentParent): parent is { knowledgeArticleId: number } {
+  return typeof parent !== "number" && "knowledgeArticleId" in parent;
+}
+function supportFields(parent: AttachmentParent) {
+  if (isDraftParent(parent))
+    return {
+      knowledgeDraftId: parent.knowledgeDraftId,
+      knowledgeArticleId: null,
+      todoId: null,
+      projectId: null,
+    };
+  return isKnowledgeParent(parent)
+    ? { knowledgeArticleId: parent.knowledgeArticleId, todoId: null, projectId: null }
+    : parentFields(parent);
+}
+function supportIdentity(parent: AttachmentParent) {
+  if (isDraftParent(parent)) return `knowledge-draft:${parent.knowledgeDraftId}`;
+  return isKnowledgeParent(parent)
+    ? `knowledge:${parent.knowledgeArticleId}`
+    : parentIdentity(parent);
+}
+function supportWhere(parent: AttachmentParent) {
   return {
-    ...parentFields(parent),
+    ...supportFields(parent),
     userId: WORK_USER_ID,
-    ...(typeof parent === "number"
-      ? { todo: { userId: WORK_USER_ID } }
-      : { project: { userId: WORK_USER_ID } }),
+    ...(isDraftParent(parent)
+      ? { knowledgeDraft: { userId: WORK_USER_ID } }
+      : isKnowledgeParent(parent)
+        ? { knowledgeArticle: { userId: WORK_USER_ID } }
+        : typeof parent === "number"
+          ? { todo: { userId: WORK_USER_ID } }
+          : { project: { userId: WORK_USER_ID } }),
   };
 }
-async function parentRow(db: DB, parent: WorkParent) {
+async function parentRow(db: DB, parent: AttachmentParent) {
+  if (isDraftParent(parent)) return activeDraft(db, parent.knowledgeDraftId);
+  if (isKnowledgeParent(parent)) return articleRow(db, parent.knowledgeArticleId);
   return typeof parent === "number" ? todoRow(db, parent) : projectRow(db, parent.projectId);
 }
 async function appendParentActivity(
   db: DB,
-  parent: WorkParent,
+  parent: AttachmentParent,
   action: string,
   changes: Prisma.InputJsonValue,
 ) {
+  if (isDraftParent(parent)) {
+    await db.knowledgeDraft.update({
+      where: { id: parent.knowledgeDraftId },
+      data: { updatedAt: new Date() },
+    });
+    return;
+  }
+  if (isKnowledgeParent(parent)) {
+    await db.knowledgeArticle.update({
+      where: { id: parent.knowledgeArticleId },
+      data: { revision: { increment: 1 } },
+    });
+    await recordArticleRevision(db, parent.knowledgeArticleId, action);
+    return;
+  }
   if (typeof parent === "number") await appendTaskActivity(db, parent, action, changes);
   else await appendProjectActivity(db, parent.projectId, action, changes);
 }
@@ -369,6 +418,8 @@ export async function noteRevisions(parent: WorkParent, id: number, params: URLS
 }
 const attachmentDTO = (row: WorkAttachment) => ({
   id: row.id,
+  knowledgeArticleId: row.knowledgeArticleId,
+  inlineImage: row.inlineImage,
   todoId: row.todoId,
   projectId: row.projectId,
   originalName: row.originalName,
@@ -380,19 +431,19 @@ const attachmentDTO = (row: WorkAttachment) => ({
   removedAt: row.removedAt,
   cleanupPending: row.pendingDeletionKeys.length > 0,
 });
-async function attachmentRow(db: DB, parent: WorkParent, id: number) {
+async function attachmentRow(db: DB, parent: AttachmentParent, id: number) {
   const row = await db.workAttachment.findFirst({
     where: { id, ...supportWhere(parent) },
   });
   if (!row) throw new WorkValidationError("Attachment not found.", 404);
   return row;
 }
-export async function listAttachments(parent: WorkParent, params: URLSearchParams) {
+export async function listAttachments(parent: AttachmentParent, params: URLSearchParams) {
   const requested = pageNumber(params),
     pageSize = 12;
   return readSnapshot(prisma, async (db) => {
     await parentRow(db, parent);
-    const where = supportWhere(parent),
+    const where = { ...supportWhere(parent), inlineImage: false },
       total = await db.workAttachment.count({ where });
     const page = Math.min(requested, Math.max(1, Math.ceil(total / pageSize)));
     const rows = await db.workAttachment.findMany({
@@ -404,7 +455,7 @@ export async function listAttachments(parent: WorkParent, params: URLSearchParam
     return { total, page, pageSize, items: rows.map(attachmentDTO) };
   });
 }
-export async function cleanupAttachment(parent: WorkParent, id: number) {
+export async function cleanupAttachment(parent: AttachmentParent, id: number) {
   try {
     return await workTransaction(async (db) => {
       const row = await attachmentRow(db, parent, id),
@@ -433,16 +484,18 @@ export async function cleanupAttachment(parent: WorkParent, id: number) {
   }
 }
 export async function uploadAttachment(
-  parent: WorkParent,
+  parent: AttachmentParent,
   file: PreparedDocument,
   command: WorkCommand,
   replacementId?: number,
+  inlineImage = false,
 ) {
   let stagedKey: string | null = null;
   try {
     const result = (await mutation(
-      `${parentIdentity(parent)}:attachment:${replacementId ?? "create"}:upload`,
+      `${supportIdentity(parent)}:attachment:${replacementId ?? "create"}:upload`,
       {
+        ...(inlineImage ? { inlineImage: true } : {}),
         hash: file.contentHash,
         name: file.originalName,
         type: file.mimeType,
@@ -450,7 +503,28 @@ export async function uploadAttachment(
       },
       command,
       async (db) => {
-        await parentRow(db, parent);
+        const parentRecord = await parentRow(db, parent);
+        if (inlineImage && isKnowledgeParent(parent))
+          version(parentRecord as { revision: number }, command);
+        if (inlineImage) {
+          if (!file.mimeType.startsWith("image/"))
+            throw new WorkValidationError(
+              "Choose an image for the article. PDFs belong in attachments.",
+            );
+          const images = await db.workAttachment.aggregate({
+            where: { ...supportWhere(parent), inlineImage: true, removedAt: null },
+            _count: true,
+            _sum: { byteSize: true },
+          });
+          if (
+            images._count >= 30 ||
+            (images._sum.byteSize || 0) + file.buffer.length > 100 * 1024 * 1024
+          )
+            throw new WorkValidationError(
+              "Use up to 30 inline images and 100 MB per article or draft.",
+              413,
+            );
+        }
         const previous = replacementId ? await attachmentRow(db, parent, replacementId) : null;
         if (previous) {
           version(previous, command);
@@ -478,7 +552,7 @@ export async function uploadAttachment(
               },
             })
           : await db.workAttachment.create({
-              data: { ...data, ...parentFields(parent), userId: WORK_USER_ID },
+              data: { ...data, ...supportFields(parent), userId: WORK_USER_ID, inlineImage },
             });
         await appendParentActivity(
           db,
@@ -493,9 +567,14 @@ export async function uploadAttachment(
             },
           },
         );
-        return attachmentDTO(row);
+        return {
+          ...attachmentDTO(row),
+          ...(inlineImage && isKnowledgeParent(parent)
+            ? { articleRevision: (await articleRow(db, parent.knowledgeArticleId)).revision }
+            : {}),
+        };
       },
-    )) as ReturnType<typeof attachmentDTO>;
+    )) as ReturnType<typeof attachmentDTO> & { articleRevision?: number };
     const cleanupPending = await cleanupAttachment(parent, result.id);
     return { ...result, cleanupPending };
   } catch (error) {
@@ -515,12 +594,22 @@ export async function uploadAttachment(
     throw error;
   }
 }
-export async function removeAttachment(parent: WorkParent, id: number, command: WorkCommand) {
+export async function removeAttachment(
+  parent: AttachmentParent,
+  id: number,
+  command: WorkCommand,
+  articleRevision?: number,
+) {
   const result = (await mutation(
-    `${parentIdentity(parent)}:attachment:${id}:remove`,
-    null,
+    `${supportIdentity(parent)}:attachment:${id}:remove`,
+    articleRevision === undefined ? null : { articleRevision },
     command,
     async (db) => {
+      if (isKnowledgeParent(parent) && articleRevision !== undefined)
+        version(await articleRow(db, parent.knowledgeArticleId), {
+          ...command,
+          revision: articleRevision,
+        });
       const row = await attachmentRow(db, parent, id);
       version(row, command);
       if (row.removedAt) return attachmentDTO(row);
@@ -535,14 +624,23 @@ export async function removeAttachment(parent: WorkParent, id: number, command: 
       await appendParentActivity(db, parent, "ATTACHMENT_REMOVED", {
         attachment: { before: { id, name: row.originalName }, after: null },
       });
-      return attachmentDTO(updated);
+      return {
+        ...attachmentDTO(updated),
+        ...(articleRevision !== undefined && isKnowledgeParent(parent)
+          ? { articleRevision: (await articleRow(db, parent.knowledgeArticleId)).revision }
+          : {}),
+      };
     },
-  )) as ReturnType<typeof attachmentDTO>;
+  )) as ReturnType<typeof attachmentDTO> & { articleRevision?: number };
   return { ...result, cleanupPending: await cleanupAttachment(parent, id) };
 }
-export async function retryAttachmentCleanup(parent: WorkParent, id: number, command: WorkCommand) {
+export async function retryAttachmentCleanup(
+  parent: AttachmentParent,
+  id: number,
+  command: WorkCommand,
+) {
   await mutation(
-    `${parentIdentity(parent)}:attachment:${id}:cleanup`,
+    `${supportIdentity(parent)}:attachment:${id}:cleanup`,
     null,
     command,
     async (db) => {
@@ -553,7 +651,7 @@ export async function retryAttachmentCleanup(parent: WorkParent, id: number, com
   );
   return { id, cleanupPending: await cleanupAttachment(parent, id) };
 }
-export async function readAttachment(parent: WorkParent, id: number) {
+export async function readAttachment(parent: AttachmentParent, id: number) {
   return workTransaction(async (db) => {
     const row = await attachmentRow(db, parent, id);
     if (row.removedAt) throw new WorkValidationError("This attachment was removed.", 404);

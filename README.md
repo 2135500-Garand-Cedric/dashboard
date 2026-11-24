@@ -287,3 +287,12 @@ Use iOS 16.4 or newer. In Safari, open the deployed dashboard and choose **Share
 Verification: `node --test tests/*.test.mjs`; disposable worker/registration checks with `RUN_NOTIFICATION_DB_TEST=1 WORK_MANAGEMENT_DISPOSABLE=1 node --test tests/notifications.integration.mjs` on the isolated `work-db`; desktop/phone layout and permission-flow checks with `RUN_NOTIFICATION_BROWSER_TEST=1 node tests/notifications.browser.mjs` against the disposable port-3002 app. The browser test mocks push permission and delivery; actual iPhone delivery must be checked on an installed HTTPS PWA. Reference: [Apple/WebKit Web Push requirements](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/).
 
 PWA implementation verification: production build and strict TypeScript passed; all 40 unit-test files passed; three rollback-only notification worker/API/rescheduling checks passed; 27 calendar/project regression checks passed; mocked phone/desktop notification setup, iPhone installation gating and safe sign-in redirects passed. Live authorization checks covered 152 protected API handlers. Both Compose files validate, Prisma reports no schema drift, and the worker starts/shuts down cleanly with push disabled. The runtime dependency audit reported zero known vulnerabilities at verification time. Real iPhone/APNs delivery remains a deployment/device acceptance step; no production deployment or real push send was performed during implementation.
+
+## Knowledge
+
+The sidebar Knowledge library organizes Markdown procedures, troubleshooting guides,
+and reference articles in folders and subfolders, with revision history, tags, backlinks, private images/PDFs,
+and links to existing tasks and projects. Creation also supports custom templates,
+work selections, and inline image uploads before the first save. See [Knowledge maintenance](docs/KNOWLEDGE_MAINTENANCE.md)
+for usage, backup requirements, limits, and tests. The original
+[architecture plan](docs/KNOWLEDGE_BASE_PLAN.md) records the design.

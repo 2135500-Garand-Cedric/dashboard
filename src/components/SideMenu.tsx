@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import {
   HomeIcon,
+  BookOpenIcon,
   Cog6ToothIcon,
   DocumentTextIcon,
   FolderIcon,
@@ -21,6 +22,7 @@ export default function SideMenu() {
     { name: "My Work", href: "/my-work", icon: DocumentTextIcon },
     { name: "All Work", href: "/todos", icon: DocumentTextIcon },
     { name: "Projects", href: "/projects", icon: FolderIcon },
+    { name: "Knowledge", href: "/knowledge", icon: BookOpenIcon },
     { name: "Calendar", href: "/events", icon: FolderIcon },
     { name: "Finance", href: "/finance", icon: BanknotesIcon },
     { name: "Japanese Statistics", href: "/japanese/statistics", icon: ChartPieIcon },

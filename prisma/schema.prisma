@@ -30,6 +30,11 @@ model User {
   email     String    @unique
   name      String?
   timeZone  String? @db.VarChar(100)
+  knowledgeTemplates KnowledgeTemplate[]
+  knowledgeDrafts KnowledgeDraft[]
+  knowledgeFolders KnowledgeFolder[]
+  knowledgeArticles KnowledgeArticle[]
+  knowledgeTags KnowledgeTag[]
   calendarHolidays CalendarHoliday[]
   calendarBirthdays CalendarBirthday[]
   holidaySelectionConfigured Boolean @default(false)
@@ -100,6 +105,7 @@ model UserQuest {
 
 
 model Todo {
+  knowledgeLinks KnowledgeTaskLink[]
   occasionLinks CalendarOccasionTaskLink[]
   recurrenceId Int?
   recurrenceDate String? @db.VarChar(10)
@@ -891,6 +897,13 @@ model WorkNoteRevision {
 }
 
 model WorkAttachment {
+  inlineImage Boolean @default(false)
+  knowledgeDraftId String? @db.Uuid
+  knowledgeDraft KnowledgeDraft? @relation(fields: [knowledgeDraftId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
+  @@index([knowledgeDraftId])
+  knowledgeArticleId Int?
+  knowledgeArticle KnowledgeArticle? @relation(fields: [knowledgeArticleId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
+  @@index([knowledgeArticleId])
   id Int @id @default(autoincrement())
   userId Int
   todoId Int?
@@ -1025,6 +1038,7 @@ model WorkEventActivity {
 
 
 model WorkProject {
+  knowledgeLinks KnowledgeProjectLink[]
   id Int @id @default(autoincrement())
   userId Int
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
@@ -1226,4 +1240,149 @@ model CalendarOccasionTaskLink {
   @@unique([holidayId, date, todoId])
   @@unique([birthdayId, date, todoId])
   @@index([todoId, date])
+}
+
+model KnowledgeArticle {
+  sourceDraft KnowledgeDraft?
+  folderId Int?
+  folder KnowledgeFolder? @relation(fields: [folderId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
+  @@index([userId, folderId, archivedAt])
+  id Int @id @default(autoincrement())
+  userId Int
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  title String @db.VarChar(300)
+  summary String @default("") @db.VarChar(1000)
+  body String @default("")
+  type String @default("REFERENCE") @db.VarChar(30)
+  pinned Boolean @default(false)
+  revision Int @default(1)
+  archivedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  revisions KnowledgeArticleRevision[]
+  tags KnowledgeArticleTag[]
+  outgoing KnowledgeArticleLink[] @relation("KnowledgeOutgoing")
+  incoming KnowledgeArticleLink[] @relation("KnowledgeIncoming")
+  tasks KnowledgeTaskLink[]
+  projects KnowledgeProjectLink[]
+  attachments WorkAttachment[]
+  @@unique([id, userId])
+  @@index([userId, archivedAt, updatedAt])
+}
+model KnowledgeArticleRevision {
+  id Int @id @default(autoincrement())
+  articleId Int
+  userId Int
+  article KnowledgeArticle @relation(fields: [articleId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
+  revision Int
+  title String
+  summary String
+  body String
+  type String
+  tags String[]
+  action String
+  actorGithubId String
+  recordedAt DateTime @default(now()) @db.Timestamptz(3)
+  @@unique([articleId, revision])
+}
+model KnowledgeTag {
+  id Int @id @default(autoincrement())
+  userId Int
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  name String @db.VarChar(80)
+  normalizedName String @db.VarChar(80)
+  articles KnowledgeArticleTag[]
+  @@unique([id, userId])
+  @@unique([userId, normalizedName])
+}
+model KnowledgeArticleTag {
+  articleId Int
+  tagId Int
+  userId Int
+  article KnowledgeArticle @relation(fields: [articleId, userId], references: [id, userId], onDelete: Cascade, onUpdate: NoAction)
+  tag KnowledgeTag @relation(fields: [tagId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
+  @@id([articleId, tagId])
+  @@index([tagId])
+}
+model KnowledgeArticleLink {
+  sourceId Int
+  targetId Int
+  userId Int
+  source KnowledgeArticle @relation("KnowledgeOutgoing", fields: [sourceId, userId], references: [id, userId], onDelete: Cascade, onUpdate: NoAction)
+  target KnowledgeArticle @relation("KnowledgeIncoming", fields: [targetId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
+  @@id([sourceId, targetId])
+  @@index([targetId])
+}
+model KnowledgeTaskLink {
+  articleId Int
+  todoId Int
+  userId Int
+  actorGithubId String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  article KnowledgeArticle @relation(fields: [articleId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
+  todo Todo @relation(fields: [todoId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
+  @@id([articleId, todoId])
+  @@index([todoId])
+}
+model KnowledgeProjectLink {
+  articleId Int
+  projectId Int
+  userId Int
+  actorGithubId String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  article KnowledgeArticle @relation(fields: [articleId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
+  project WorkProject @relation(fields: [projectId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
+  @@id([articleId, projectId])
+  @@index([projectId])
+}
+
+model KnowledgeFolder {
+  id Int @id @default(autoincrement())
+  userId Int
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  name String @db.VarChar(120)
+  normalizedName String @db.VarChar(120)
+  parentId Int?
+  parent KnowledgeFolder? @relation("KnowledgeFolderTree", fields: [parentId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
+  children KnowledgeFolder[] @relation("KnowledgeFolderTree")
+  color String @default("#60a5fa") @db.VarChar(7)
+  icon String @default("folder") @db.VarChar(20)
+  revision Int @default(1)
+  archivedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  articles KnowledgeArticle[]
+  @@unique([id, userId])
+  @@index([userId, parentId])
+}
+
+model KnowledgeTemplate {
+  id Int @id @default(autoincrement())
+  userId Int
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  name String @db.VarChar(160)
+  normalizedName String @db.VarChar(160)
+  body String
+  type String @default("REFERENCE") @db.VarChar(30)
+  revision Int @default(1)
+  archivedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  @@unique([id, userId])
+  @@unique([userId, normalizedName])
+  @@index([userId, archivedAt])
+}
+model KnowledgeDraft {
+  id String @id @db.Uuid
+  userId Int
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  savedArticleId Int? @unique
+  @@unique([savedArticleId, userId])
+  savedArticle KnowledgeArticle? @relation(fields: [savedArticleId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
+  discardedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  attachments WorkAttachment[]
+  @@unique([id, userId])
+  @@index([userId, updatedAt])
 }

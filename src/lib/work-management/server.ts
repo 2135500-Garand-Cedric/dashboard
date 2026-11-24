@@ -1,3 +1,5 @@
+import { articleRow as knowledgeArticleRow } from "@/lib/knowledge/core";
+import { OWNER_GITHUB_ID as knowledgeActor } from "@/lib/owner-policy";
 import { linkOccasionTask } from "@/lib/calendar-occasion-core";
 import { recurrenceVisibility } from "./recurrence-visibility";
 import { ensureOccurrences } from "@/lib/recurrence/engine.mjs";
@@ -427,6 +429,18 @@ export async function createTodo(value: unknown, command: WorkCommand) {
         recordDependent: false,
       });
     await replaceAffected(db, row.id, body);
+    if (body.knowledgeArticleId != null) {
+      const article = await knowledgeArticleRow(db, workId(body.knowledgeArticleId));
+      await db.knowledgeTaskLink.create({
+        data: {
+          articleId: article.id,
+          todoId: row.id,
+          userId: WORK_USER_ID,
+          actorGithubId: knowledgeActor,
+        },
+      });
+      await appendTaskActivity(db, row.id, "DOCUMENTATION_LINKED", { articleId: article.id });
+    }
     if (body.occasion !== undefined) await linkOccasionTask(db, body.occasion, row.id);
     if (body.recurrence != null) await attachRecurrence(db, "TASK", row.id, body.recurrence);
     const created = await todoRow(db, row.id);
@@ -458,7 +472,8 @@ export async function patchTodoInTransaction(
   if (
     body.recurrence !== undefined ||
     body.firstDeadline !== undefined ||
-    body.occasion !== undefined
+    body.occasion !== undefined ||
+    body.knowledgeArticleId !== undefined
   )
     throw new WorkValidationError("Use the repeating schedule controls to change recurrence.");
   if (body.projectId !== undefined || body.stageId !== undefined)
@@ -531,11 +546,12 @@ export async function deleteTodo(id: number, command: WorkCommand) {
         409,
       );
     if (
+      (await db.knowledgeTaskLink.count({ where: { todoId: id, userId: WORK_USER_ID } })) ||
       (await db.workNote.count({ where: { todoId: id } })) ||
       (await db.workAttachment.count({ where: { todoId: id } }))
     )
       throw new WorkValidationError(
-        "Archive this task to preserve its notes, revisions and attachment history. Tasks with supporting records cannot be permanently deleted.",
+        "Archive this task to preserve its documentation, notes, revisions and attachment history. Tasks with supporting records cannot be permanently deleted.",
         409,
       );
     if (row.parentId !== null || (await db.todo.count({ where: { parentId: id } })))

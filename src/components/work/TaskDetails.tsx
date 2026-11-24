@@ -1,4 +1,5 @@
 "use client";
+import WorkDocumentation from "@/components/knowledge/WorkDocumentation";
 import type {
   InitialTaskReads,
   TaskDetailsResponse,
@@ -739,6 +740,7 @@ export default function TaskDetails({
                 </p>
               )}
             </section>
+            <WorkDocumentation kind="task" id={todoId} title={todo.title} />
             <TaskAttachments
               ref={files}
               id={todoId}

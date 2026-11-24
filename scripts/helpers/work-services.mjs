@@ -34,6 +34,11 @@ export function loadWorkServices(db) {
     return unit.exports;
   }
   return {
+    knowledgeImages: load("src/lib/knowledge/images.ts"),
+    knowledgeTemplates: load("src/lib/knowledge/templates.ts"),
+    knowledgeFolders: load("src/lib/knowledge/folders.ts"),
+    knowledge: load("src/lib/knowledge/server.ts"),
+    knowledgeExport: load("src/lib/knowledge/export.ts"),
     recurrence: load("src/lib/work-management/recurrence-server.ts"),
     holidays: load("src/lib/holidays.ts"),
     holidaySelections: load("src/lib/holiday-server.ts"),

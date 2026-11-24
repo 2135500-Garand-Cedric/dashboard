@@ -41,8 +41,8 @@ export async function fileOperation<T>(action: () => Promise<T>): Promise<T> {
 export async function workUpload(request: Request) {
   return fileOperation(() => documentForm(request));
 }
-export async function workNoteJson(request: Request) {
+export async function workNoteJson(request: Request, limit = 256 * 1024) {
   return fileOperation(
-    async () => JSON.parse((await boundedBody(request, 256 * 1024)).toString("utf8")) as unknown,
+    async () => JSON.parse((await boundedBody(request, limit)).toString("utf8")) as unknown,
   );
 }

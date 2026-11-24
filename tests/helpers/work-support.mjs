@@ -66,6 +66,14 @@ export function supportModules(db) {
     "./calendar-annual": loadWorkModule("src/lib/calendar-annual.ts"),
     "./work-management/activity-server": deps["./activity-server"],
   });
+  deps["@/lib/knowledge/draft-core"] = loadWorkModule("src/lib/knowledge/draft-core.ts", {
+    ...deps,
+    "@/lib/work-management/validation": validation,
+  });
+  deps["@/lib/knowledge/core"] = loadWorkModule("src/lib/knowledge/core.ts", {
+    ...deps,
+    "@/lib/work-management/validation": validation,
+  });
   const server = loadWorkModule("src/lib/work-management/server.ts", deps),
     noteInput = loadWorkModule("src/lib/work-management/note-input.ts", {
       "./validation": validation,
