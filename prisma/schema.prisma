@@ -52,6 +52,7 @@ model User {
   notificationSettings NotificationSettings?
   pushSubscriptions PushSubscription[]
   notifications UserNotification[]
+  emailDeliveries EmailDelivery[]
   workFocus WorkFocus[]
   workProjects WorkProject[]
   workNotes WorkNote[]
@@ -1110,6 +1111,7 @@ model NotificationSettings {
   deadlines Boolean @default(true)
   followUps Boolean @default(true)
   milestones Boolean @default(false)
+  weeklyReports Boolean @default(true)
   showDetails Boolean @default(true)
   leadMinutes Int @default(15)
   dateOnlyTime String @default("09:00") @db.VarChar(5)
@@ -1422,4 +1424,29 @@ model UserNotification {
   @@unique([userId, occurrenceKey])
   @@index([userId, lifecycle, dueAt, id])
   @@index([userId, readAt, dismissedAt, snoozedUntil])
+}
+
+// Shared outbox. Prepared messages never contain API keys; access is server-only.
+// Compact rows remain after message expiry so old jobs cannot be sent again.
+model EmailDelivery {
+  id String @id @default(uuid()) @db.Uuid
+  userId Int
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  kind String @db.VarChar(50)
+  dedupeKey String @db.VarChar(150)
+  payload Json
+  message Json?
+  status String @default("PENDING") @db.VarChar(20)
+  attempts Int @default(0)
+  claimToken String? @db.Uuid
+  leaseUntil DateTime? @db.Timestamptz(3)
+  nextAttemptAt DateTime @default(now()) @db.Timestamptz(3)
+  firstAttemptAt DateTime? @db.Timestamptz(3)
+  sentAt DateTime? @db.Timestamptz(3)
+  providerId String? @db.VarChar(100)
+  errorCode String? @db.VarChar(40)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  @@unique([userId, dedupeKey])
+  @@index([userId, status, nextAttemptAt, leaseUntil])
 }

@@ -4,7 +4,14 @@ import { reminderCandidate } from "./rules.mjs";
 
 export const DAY_MS = 86400000;
 export const CATCHUP_MS = 7 * DAY_MS;
-export const CATEGORIES = ["events", "sessions", "deadlines", "followUps", "milestones"];
+export const CATEGORIES = [
+  "events",
+  "sessions",
+  "deadlines",
+  "followUps",
+  "milestones",
+  "weeklyReports",
+];
 
 export function activeInboxWhere(userId, now = new Date()) {
   return {
@@ -58,7 +65,7 @@ export async function materializeInbox(db, userId, state, now) {
 }
 
 export async function reconcileItem(db, item, state, now) {
-  const resolved = await resolveReminder(db, item.userId, item.sourceKind, item.sourceId);
+  const resolved = await resolveReminder(db, item.userId, item.sourceKind, item.sourceId, now);
   const source = resolved.source;
   const candidate = source ? reminderCandidate(source, state.settings, state.zone) : null;
   let reason = resolved.reason;

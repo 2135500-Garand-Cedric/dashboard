@@ -40,7 +40,13 @@ test(
               target = new Date("2026-11-20T14:15:00Z");
             const previous = new Date(now.getTime() - 3600000);
             await tx.notificationSettings.create({
-              data: { userId, milestones: true, dateOnlyTime: "14:00", enabledAt: previous },
+              data: {
+                userId,
+                milestones: true,
+                weeklyReports: false,
+                dateOnlyTime: "14:00",
+                enabledAt: previous,
+              },
             });
             const device = (label, fields = {}) =>
               tx.pushSubscription.create({
@@ -80,7 +86,11 @@ test(
               data: { projectId: project.id, label: "Milestone", date: "2026-11-20" },
             });
             const sources = await reminderSources(db, userId, now);
-            assert.equal(sources.filter((source) => source.minutes !== -1).length, 4);
+            assert.equal(
+              sources.filter((source) => source.minutes !== -1 && source.kind !== "WEEKLY_REPORT")
+                .length,
+              4,
+            );
             assert.ok(
               sources.some((source) => source.kind === "FOLLOW_UP" && source.id === followUp.id),
             );

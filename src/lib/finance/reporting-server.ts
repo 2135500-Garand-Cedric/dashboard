@@ -4,7 +4,7 @@ import { FINANCE_USER_ID, accountSelect, categorySelect } from "./server";
 import { buildReport, moneyText, moneyUnits, type ReportFilters } from "./reporting";
 
 // One consistent snapshot for summaries, charts, pay details and reconciliation coverage.
-export async function financeReport(filters: ReportFilters) {
+export async function financeReport(filters: ReportFilters, recentLimit = 8) {
   return prisma.$transaction(
     async (db) => {
       const accounts = await db.financialAccount.findMany({
@@ -50,8 +50,7 @@ export async function financeReport(filters: ReportFilters) {
         where: { userId: FINANCE_USER_ID },
       });
       const manifest = examples?.manifest as
-        | { accountIds?: unknown; receiptIds?: unknown; incomeIds?: unknown }
-        | undefined;
+        { accountIds?: unknown; receiptIds?: unknown; incomeIds?: unknown } | undefined;
       const ids = (value: unknown) =>
         Array.isArray(value)
           ? value.filter(
@@ -132,7 +131,7 @@ export async function financeReport(filters: ReportFilters) {
           incomeIds: ids(manifest?.incomeIds),
         },
       };
-      return { ...buildReport(data, filters), overview: buildOverview(data, filters) };
+      return { ...buildReport(data, filters), overview: buildOverview(data, filters, recentLimit) };
     },
     { isolationLevel: "RepeatableRead", timeout: 30000 },
   );

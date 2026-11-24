@@ -90,7 +90,7 @@ export async function saveNotificationSettings(value: unknown) {
     const now = new Date();
     const cutoffs = { ...((previous?.categoryStartedAt || {}) as Record<string, string>) };
     for (const key of CATEGORIES as (
-      "events" | "sessions" | "deadlines" | "followUps" | "milestones"
+      "events" | "sessions" | "deadlines" | "followUps" | "milestones" | "weeklyReports"
     )[]) {
       if (data[key] === true && previous?.[key] === false) cutoffs[key] = now.toISOString();
     }

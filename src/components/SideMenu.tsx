@@ -14,6 +14,7 @@ import {
   Bars3Icon,
   BanknotesIcon,
   BellIcon,
+  CalendarDaysIcon,
 } from "@heroicons/react/24/solid";
 
 export default function SideMenu() {
@@ -21,6 +22,7 @@ export default function SideMenu() {
 
   const menuItems = [
     { name: "Main Dashboard", href: "/", icon: HomeIcon },
+    { name: "Weekly report", href: "/weekly-report", icon: CalendarDaysIcon },
     { name: "My Work", href: "/my-work", icon: DocumentTextIcon },
     { name: "All Work", href: "/todos", icon: DocumentTextIcon },
     { name: "Projects", href: "/projects", icon: FolderIcon },

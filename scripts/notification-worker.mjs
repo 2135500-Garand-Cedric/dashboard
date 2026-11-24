@@ -1,10 +1,12 @@
 import { PrismaClient } from "../src/generated/prisma/index.js";
 import { pushConfiguration } from "../src/lib/notifications/rules.mjs";
 import { runReminderPass } from "../src/lib/notifications/engine.mjs";
+import { runEmailWorkerPass } from "../src/lib/email/worker.mjs";
 
 import { ensureOccurrences } from "../src/lib/recurrence/engine.mjs";
 
 let lastGeneration = 0;
+let lastEmailPass = 0;
 const db = new PrismaClient({ log: [] });
 let stopping = false,
   wake,
@@ -39,6 +41,15 @@ try {
       console.error(
         "[notifications] Worker pass failed. Check database availability and migrations.",
       );
+    }
+    if (!stopping && Date.now() - lastEmailPass >= 60000) {
+      lastEmailPass = Date.now();
+      const mail = await runEmailWorkerPass();
+      if (mail.sent) console.log(`[email] ${mail.sent} messages accepted by the email provider.`);
+      if (mail.error)
+        console.error(
+          "[email] Delivery unavailable. Check email configuration and delivery status.",
+        );
     }
     if (!stopping)
       await new Promise((resolve) => {

@@ -63,7 +63,7 @@ they cannot promise exactly-once phone display or retract accepted pushes.
 | `public/sw.js`, `src/app/notifications/open/page.tsx` | Same-origin allowlisted links, old source payload compatibility, and destination preservation through sign-in. No private caching. |
 
 The worker imports only packaged `.mjs` services. Source polymorphism is limited
-to EVENT, DEADLINE, FOLLOW_UP and MILESTONE, with ownership checks in every resolver.
+to EVENT, DEADLINE, FOLLOW_UP, MILESTONE and WEEKLY_REPORT, with ownership checks in every resolver.
 Delivery responses expose device labels and statuses, never subscription endpoints,
 encryption keys, VAPID secrets, or raw provider errors.
 
@@ -199,3 +199,20 @@ docker compose -f docker-compose.dev.yml exec -T \
 
 The seed requires development mode and push disabled. It runs transactionally,
 never sends push, and does not duplicate or reset examples when rerun.
+
+
+## Weekly report notifications
+
+The existing worker now also handles `WEEKLY_REPORT` sources. The additive
+`20261124120000_weekly_report_notifications` migration adds the `weeklyReports`
+preference and permits that source in the inbox and delivery constraints. Apply
+it before updating/restarting the worker. Its `.mjs` source is packaged with the
+existing notification directory; no additional container or dependency is needed.
+
+The enabled-by-default **Weekly report ready** category announces the last
+completed week each Monday at the configured date-only reminder time. It links
+to that exact week, uses the normal inbox/push settings and contains no financial
+amounts. See [Weekly report maintenance](WEEKLY_REPORT_MAINTENANCE.md#weekly-availability-notification)
+for scheduling, catch-up and executed verification. Optional PDF email now uses a
+separate shared outbox; see [Email maintenance](EMAIL_MAINTENANCE.md). Its flags are
+independent of push and inbox category settings.

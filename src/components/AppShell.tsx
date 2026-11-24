@@ -1,3 +1,4 @@
+import { InboxProvider } from "@/components/notifications/InboxProvider";
 import PwaRegistration from "@/components/notifications/PwaRegistration";
 import { SettingsProvider } from "@/context/SettingsContext";
 import { ViewStateProvider } from "@/context/ViewStateContext";

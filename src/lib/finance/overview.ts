@@ -20,7 +20,7 @@ export type OverviewData = ReportData & { statements?: OverviewStatement[] };
 export type FinanceOverviewReport = FinanceReport & { overview: ReturnType<typeof buildOverview> };
 
 // A statement match confirms an existing activity; documents are never extra spending.
-export function buildOverview(data: OverviewData, filters: ReportFilters) {
+export function buildOverview(data: OverviewData, filters: ReportFilters, recentLimit = 8) {
   const accounts = new Map(data.accounts.map((row) => [row.id, row]));
   const categories = new Map(data.categories.map((row) => [row.id, row.name]));
   const sources = new Map(data.sources.map((row) => [row.id, row]));
@@ -167,7 +167,9 @@ export function buildOverview(data: OverviewData, filters: ReportFilters) {
     },
     statements,
     pendingStatementRows: statements.reduce((sum, row) => sum + row.remaining, 0),
-    recent: activities.sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id).slice(0, 8),
+    recent: activities
+      .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id)
+      .slice(0, recentLimit),
     accountCount: data.accounts.filter(
       (row) =>
         row.currency === filters.currency &&

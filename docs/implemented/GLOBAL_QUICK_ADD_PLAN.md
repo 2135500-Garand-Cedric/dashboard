@@ -7,7 +7,7 @@ task, event, expense, Knowledge article, or vocabulary from the main dashboard
 without first opening its module. It appears only on the main dashboard page
 (`/`), on both desktop and phone.
 
-This develops proposal 3 in [Dashboard improvement ideas](DASHBOARD_IMPROVEMENT_IDEAS.md),
+This develops proposal 3 in [Dashboard improvement ideas](../planned/DASHBOARD_IMPROVEMENT_IDEAS.md),
 with the requested dashboard-only placement replacing the original global button.
 Reuse the existing creation forms and return to the main dashboard afterward.
 

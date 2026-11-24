@@ -4,8 +4,19 @@ Written November 23, 2026, after reviewing the current navigation, dashboard,
 Knowledge module, My Work, finance overview, notification settings, and draft
 storage behavior.
 
-These are proposals for future work. This document does not implement features
-or change application data. The order below reflects where I would start.
+Implementation status, reviewed November 24, 2026:
+
+| Idea | Status |
+| --- | --- |
+| 1. Global search | Not yet implemented |
+| 2. Recoverable drafts | Not yet implemented as a general durable-draft feature |
+| 3. Quick add | [Implemented on the main dashboard only](../implemented/GLOBAL_QUICK_ADD_PLAN.md), following the revised scope |
+| 4. Notification inbox | [Implemented](../implemented/NOTIFICATION_INBOX_MAINTENANCE.md) |
+| 5. Weekly report | [Implemented](../implemented/WEEKLY_REPORT_MAINTENANCE.md) |
+
+The proposals below preserve the original ideas. Their implementation documents
+describe current behavior where the final scope differs. See the
+[documentation index](../README.md) for all implemented and planned work.
 
 ## 1. Search the whole dashboard from one place
 
@@ -141,9 +152,9 @@ Financial figures must retain explicit currencies, exclude owned-account
 transfers, and describe recorded activity rather than imply complete account
 balances. Missing history should be identified instead of estimated.
 
-## Suggested starting point
+## Remaining priorities
 
-I would implement global search first for everyday navigation, then recoverable
-Knowledge drafts to protect the work you spend time writing. Quick add would be
-the next relatively small convenience improvement. The notification inbox and
-weekly review would follow once those daily workflows feel comfortable.
+Global search would improve everyday navigation; recoverable Knowledge drafts
+would protect time spent writing. Quick add, the notification inbox and the weekly
+report now have their own implementation and maintenance references above. A
+separate [activity log proposal](AUDIT_LOG_PLAN.md) describes a new possible addition.

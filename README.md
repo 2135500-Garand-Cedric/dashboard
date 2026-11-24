@@ -1,16 +1,18 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-Production deployment: [Synology deployment guide](docs/deployment.md). GitHub
+Documentation: [implemented functionality and future plans](docs/README.md).
+
+Production deployment: [Synology deployment guide](docs/implemented/deployment.md). GitHub
 Actions builds and publishes the AMD64 image to GHCR on pushes to `main`; the NAS
 pulls it using `DASHBOARD_IMAGE`. Deployment remains manual, with no NAS builds.
 
-Work-management redesign: [roadmap](docs/work-management/README.md),
-[progress](docs/work-management/PROGRESS.md), and
-[Work-management operations](docs/work-management/OPERATIONS.md). Development startup no
+Work-management redesign: [roadmap](docs/implemented/work-management/README.md),
+[progress](docs/implemented/work-management/PROGRESS.md), and
+[Work-management operations](docs/implemented/work-management/OPERATIONS.md). Development startup no
 longer seeds example data automatically. Use the documented no-migration override
 for preservation work, and run demo seeding only explicitly on isolated data.
-The completed redesign's [maintenance handover](docs/work-management/HANDOVER.md)
-and [isolated examples](docs/work-management/SYNTHETIC_EXAMPLES.md) include migration,
+The completed redesign's [maintenance handover](docs/implemented/work-management/HANDOVER.md)
+and [isolated examples](docs/implemented/work-management/SYNTHETIC_EXAMPLES.md) include migration,
 backup, compatibility and verification procedures.
 
 ## Backfill conditional verb forms
@@ -132,7 +134,7 @@ This creates a dated `dashboard-*.dump` file containing **every database table a
 
 The directory is created if needed. Choose a path on your NAS; `/volume1/backups/dashboard` is an example. For a development backup, add `docker-compose.dev.yml` as the second argument. The command uses the Compose `dashboard-db` service and its configured database credentials.
 
-Uploaded receipt/pay-stub images and PDFs are stored outside PostgreSQL and are **not** in this database-only dump; the existing combined backup procedure in [Finance maintenance](docs/FINANCE_MAINTENANCE.md) includes those files. Keep your NAS `.env` separately as well. Copy a backup to another device when convenient so losing the NAS does not also lose every backup.
+Uploaded receipt/pay-stub images and PDFs are stored outside PostgreSQL and are **not** in this database-only dump; the existing combined backup procedure in [Finance maintenance](docs/implemented/FINANCE_MAINTENANCE.md) includes those files. Keep your NAS `.env` separately as well. Copy a backup to another device when convenient so losing the NAS does not also lose every backup.
 
 ## Personal finance
 
@@ -153,7 +155,7 @@ The old standalone receipt, reconciliation and transaction-history screens and r
 
 Statement imports select an account and date range, and accept `date,ref #,description,amount` CSV columns. Rows match same-account, same-currency income, expenses/refunds or transfers. Statements may be partially matched and saved. Matched income and expenses permit notes edits only. Original files are private, validated and owner-authenticated; CSV exports include metadata, not file bytes.
 
-See [Finance maintenance](docs/FINANCE_MAINTENANCE.md) for storage, exports, backup/restore and operational limitations. Normal startup never seeds example data. Historical Prisma migrations must remain unchanged so existing databases can upgrade safely.
+See [Finance maintenance](docs/implemented/FINANCE_MAINTENANCE.md) for storage, exports, backup/restore and operational limitations. Normal startup never seeds example data. Historical Prisma migrations must remain unchanged so existing databases can upgrade safely.
 
 Checks:
 
@@ -175,13 +177,13 @@ chosen type (Holiday, Bank holiday, or Important date). Each selection's display
 name/type can be edited without changing the library's moving-date rule.
 Holiday creation uses a modal; holiday and birthday settings lists sort by the next
 date. Annual dates open read-only information pages from Calendar, where tasks can
-be linked or created for that specific occurrence. See [Recurring work and dates](docs/RECURRING_WORK.md).
+be linked or created for that specific occurrence. See [Recurring work and dates](docs/implemented/RECURRING_WORK.md).
 Existing whole-region holiday settings convert once
 into individual choices when first opened after migration.
 
 ## Recurring work and holidays
 
-See [Recurring work](docs/RECURRING_WORK.md) for repeating tasks/events,
+See [Recurring work](docs/implemented/RECURRING_WORK.md) for repeating tasks/events,
 project-based routines such as payroll, regional holiday settings, and maintenance.
 The existing notification worker also generates upcoming occurrences even when
 push delivery is disabled; no extra container is required.
@@ -199,7 +201,7 @@ The full pre-cleanup development backup is under ignored `backups/module-cleanup
 ## Owner-only authentication
 
 Dashboard display settings and the current work/navigation flows are documented
-in [Display and navigation](docs/DISPLAY_AND_NAVIGATION.md). The Settings page
+in [Display and navigation](docs/implemented/DISPLAY_AND_NAVIGATION.md). The Settings page
 stores a display timezone for all modules; existing timed records remain UTC
 instants and date-only records keep their calendar dates.
 
@@ -238,7 +240,7 @@ Both Compose files include the worker. In production, it pulls the same GHCR ima
 ### One-time server setup
 
 1. Set the existing `NEXTAUTH_URL` to your dashboard's public **HTTPS** URL. Configure the GitHub OAuth application's callback for that domain (`https://your-domain/api/auth/callback/github`) as with normal dashboard deployment.
-2. Follow the [deployment guide](docs/deployment.md) to publish the image, authenticate the NAS to GHCR and set `DASHBOARD_IMAGE` in its `.env`. Pull the image without deploying it yet:
+2. Follow the [deployment guide](docs/implemented/deployment.md) to publish the image, authenticate the NAS to GHCR and set `DASHBOARD_IMAGE` in its `.env`. Pull the image without deploying it yet:
 
    ```sh
    docker compose -f docker-compose.prod.yml pull dashboard notification-worker
@@ -293,9 +295,9 @@ Original PWA implementation verification (before the inbox extension; see the ma
 The sidebar Knowledge library organizes Markdown procedures, troubleshooting guides,
 and reference articles in folders and subfolders, with revision history, tags, backlinks, private images/PDFs,
 and links to existing tasks and projects. Creation also supports custom templates,
-work selections, and inline image uploads before the first save. See [Knowledge maintenance](docs/KNOWLEDGE_MAINTENANCE.md)
+work selections, and inline image uploads before the first save. See [Knowledge maintenance](docs/implemented/KNOWLEDGE_MAINTENANCE.md)
 for usage, backup requirements, limits, and tests. The original
-[architecture plan](docs/KNOWLEDGE_BASE_PLAN.md) records the design.
+[architecture plan](docs/implemented/KNOWLEDGE_BASE_PLAN.md) records the design.
 
 
 ### Persistent notification inbox
@@ -306,7 +308,7 @@ Read/unread, dismissal with Undo, and timezone-aware snoozing sync through the
 database. Snoozing does not change source dates. The existing notification worker
 runs both inbox scheduling and optional push; no extra container or volume is needed.
 
-See [Notification inbox maintenance](docs/NOTIFICATION_INBOX_MAINTENANCE.md) for
+See [Notification inbox maintenance](docs/implemented/NOTIFICATION_INBOX_MAINTENANCE.md) for
 API/model structure, activation/catch-up rules, retention, tests, backup restore
 verification, known older regression failures, and coordinated app/worker rollout.
 Stop the old worker before the generation-aware migration; do not run an older
@@ -321,5 +323,26 @@ Page-based Quick add flows return there after saving or approved cancellation;
 module creation buttons keep their normal behavior. Event creation uses the
 existing editor in a centered modal and refreshes the calendar tile.
 
-See [Dashboard Quick add plan and implementation notes](docs/GLOBAL_QUICK_ADD_PLAN.md)
+See [Dashboard Quick add plan and implementation notes](docs/implemented/GLOBAL_QUICK_ADD_PLAN.md)
 for the action list, guarded exits, validated return marker, and verification.
+
+
+### Weekly report
+
+**Weekly report** in the navigation opens a visual summary of completed weeks:
+task totals, Japanese practice results, articles created/updated, and recorded
+finances. It defaults to the last completed Monday–Sunday week; the current week
+is unavailable. Dates use the saved dashboard timezone. The page uses CAD and all
+data; financial totals reuse the overview's duplicate-counting rules.
+
+The report reads existing records. The existing notification worker announces the
+new completed week each Monday at the configured date-only reminder time (9 a.m.
+by default), with an opt-out in notification settings. The weekly-notification
+migration adds a preference and permits its source kind; no new container is needed.
+See [Weekly report maintenance](docs/implemented/WEEKLY_REPORT_MAINTENANCE.md)
+for coverage limits, source calculations, pagination, and verification.
+
+Weekly reports can also be emailed as a one-page PDF through the shared Resend
+outbox. See [email configuration and maintenance](docs/implemented/EMAIL_MAINTENANCE.md)
+for `.env` variables, sender-domain verification, retries and future email templates.
+Email is disabled by default and requires no extra container.

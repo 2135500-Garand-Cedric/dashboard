@@ -1,4 +1,5 @@
 import { GRACE_MS } from "./rules.mjs";
+import { latestWeeklyReportSource, weeklyReportSource } from "./weekly-report.mjs";
 
 /** @param {import('../../generated/prisma/index.js').PrismaClient} db */
 export async function reminderSources(db, userId, now = new Date(), pastMs = GRACE_MS) {
@@ -10,7 +11,7 @@ export async function reminderSources(db, userId, now = new Date(), pastMs = GRA
     lte: end.toISOString().slice(0, 10),
   };
   const activeTask = { userId, archivedAt: null, status: { notIn: ["DONE", "CANCELLED"] } };
-  const [events, tasks, followUps, milestones] = await Promise.all([
+  const [events, tasks, followUps, milestones, user] = await Promise.all([
     db.event.findMany({
       where: {
         userId,
@@ -49,8 +50,13 @@ export async function reminderSources(db, userId, now = new Date(), pastMs = GRA
       },
       select: { id: true, label: true, at: true, date: true, projectId: true },
     }),
+    db.user.findUnique({ where: { id: userId }, select: { timeZone: true } }),
   ]);
+  const report = user
+    ? latestWeeklyReportSource(user.timeZone || process.env.APP_TIME_ZONE || "America/Toronto", now)
+    : null;
   return [
+    ...(report ? [report] : []),
     ...events
       .filter(
         (event) =>
@@ -116,9 +122,18 @@ function taskReason(task) {
 
 // Lookup by identity deliberately has no date window. Older active reminders
 // must survive worker downtime and remain resolvable when snoozed.
-export async function resolveReminder(db, userId, kind, id) {
+export async function resolveReminder(db, userId, kind, id, now = new Date()) {
   let source, reason;
-  if (kind === "EVENT") {
+  if (kind === "WEEKLY_REPORT") {
+    const user = await db.user.findUnique({ where: { id: userId }, select: { timeZone: true } });
+    if (!user) return { reason: "SOURCE_REMOVED" };
+    source = weeklyReportSource(
+      id,
+      user.timeZone || process.env.APP_TIME_ZONE || "America/Toronto",
+      now,
+    );
+    return source ? { source } : { reason: "SOURCE_REMOVED" };
+  } else if (kind === "EVENT") {
     const event = await db.event.findFirst({
       where: { id, userId },
       include: {

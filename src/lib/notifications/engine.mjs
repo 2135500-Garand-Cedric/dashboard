@@ -190,7 +190,7 @@ export async function runReminderPass(
     });
     const resolved =
       current?.settings.enabled && device
-        ? await resolveReminder(db, userId, job.sourceKind, job.sourceId)
+        ? await resolveReminder(db, userId, job.sourceKind, job.sourceId, now)
         : null;
     const source = resolved?.source;
     let candidate =

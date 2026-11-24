@@ -15,6 +15,7 @@ services:
       - .env
     environment:
       NODE_ENV: development
+      EMAIL_ENABLED: ${DEV_EMAIL_ENABLED:-false}
       PUSH_ENABLED: ${DEV_PUSH_ENABLED:-false}
       FINANCE_UPLOAD_DIR: /app/private/finance
       WORK_UPLOAD_DIR: /app/private/work
@@ -38,6 +39,8 @@ services:
       - .env
     environment:
       NODE_ENV: development
+      EMAIL_ENABLED: ${DEV_EMAIL_ENABLED:-false}
+      EMAIL_APP_URL: http://dashboard:3000
       PUSH_ENABLED: ${DEV_PUSH_ENABLED:-false}
     command: ["node", "scripts/notification-worker.mjs"]
     stop_grace_period: 30s

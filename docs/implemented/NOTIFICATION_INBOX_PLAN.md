@@ -5,7 +5,7 @@ for the final structure, rollout, retention rules, verification results, and
 remaining deployment/device checks. The sections below retain the original plan.
 
 Prepared November 23, 2026, from proposal 4 in
-[Dashboard improvement ideas](DASHBOARD_IMPROVEMENT_IDEAS.md) and the actual
+[Dashboard improvement ideas](../planned/DASHBOARD_IMPROVEMENT_IDEAS.md) and the actual
 notification worker, schema, APIs, service worker, authentication, and tests.
 
 ## 1. Purpose

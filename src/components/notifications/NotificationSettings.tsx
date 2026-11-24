@@ -17,6 +17,7 @@ type Preferences = {
   deadlines: boolean;
   followUps: boolean;
   milestones: boolean;
+  weeklyReports: boolean;
   showDetails: boolean;
   leadMinutes: number;
   dateOnlyTime: string;
@@ -299,6 +300,7 @@ export default function NotificationSettings() {
                   ["deadlines", "Task deadlines"],
                   ["followUps", "Task follow-ups"],
                   ["milestones", "Project milestones"],
+                  ["weeklyReports", "Weekly report ready"],
                   ["showDetails", "Show titles on the lock screen"],
                 ] as const
               ).map(([key, text]) => (

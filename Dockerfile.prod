@@ -21,6 +21,7 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/src/generated/prisma ./src/generated/prisma
 COPY --from=builder /app/src/lib/notifications ./src/lib/notifications
+COPY --from=builder /app/src/lib/email ./src/lib/email
 COPY --from=builder /app/src/lib/recurrence ./src/lib/recurrence
 COPY --from=builder /app/src/lib/japanese/conjugation.ts ./src/lib/japanese/conjugation.ts
 COPY --from=builder /app/scripts ./scripts

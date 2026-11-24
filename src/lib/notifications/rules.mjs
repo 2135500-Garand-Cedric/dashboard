@@ -8,6 +8,7 @@ export const DEFAULTS = {
   deadlines: true,
   followUps: true,
   milestones: false,
+  weeklyReports: true,
   showDetails: true,
   leadMinutes: 15,
   dateOnlyTime: "09:00",

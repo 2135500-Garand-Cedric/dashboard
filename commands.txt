@@ -31,7 +31,7 @@ NAS PRODUCTION: deploy code and apply a new migration
 
 	sudo docker network inspect web-network
 
-5. See docs/deployment.md for GHCR login and DASHBOARD_IMAGE setup.
+5. See docs/implemented/deployment.md for GHCR login and DASHBOARD_IMAGE setup.
    Pull the published image, back up the database and review migration status:
 
 	sudo docker compose -f docker-compose.prod.yml config --quiet
@@ -60,7 +60,7 @@ To install the repository on the NAS for the first time:
 	git clone <github-repository-url> dashboard
 	cd dashboard
 	sudo docker network inspect web-network
-	Follow docs/deployment.md to configure .env, GHCR access and the existing volumes.
+	Follow docs/implemented/deployment.md to configure .env, GHCR access and the existing volumes.
 	sudo docker compose -f docker-compose.prod.yml pull dashboard notification-worker
 	sudo docker compose -f docker-compose.prod.yml up -d --no-build dashboard notification-worker
 
@@ -69,7 +69,7 @@ IMPORTANT:
 - Do not run `docker compose down -v` in production. It can delete the PostgreSQL volume and database data.
 - Do not run `prisma migrate dev` against production. Use `prisma migrate deploy`.
 - Do not run the demo seed in production. The production Compose file intentionally runs migrations only.
-- If a migration fails, stop and review the schema, logs and migration state on an isolated backup restore before applying a recovery. Do not edit migration history or automatically mark it applied. See docs/deployment.md for the known ActivityVocab.lastPracticed guard.
+- If a migration fails, stop and review the schema, logs and migration state on an isolated backup restore before applying a recovery. Do not edit migration history or automatically mark it applied. See docs/implemented/deployment.md for the known ActivityVocab.lastPracticed guard.
 
 
 NAS: BACK UP THE WHOLE DATABASE (Japanese, finance, calendar, todos, users, everything)
@@ -80,4 +80,4 @@ sudo sh scripts/backup-database.sh /volume1/backups/dashboard
 
 Creates a new dated .dump file each run. The app stays running.
 Uploaded documents are separate files; use the combined backup procedure in
-README.md / docs/FINANCE_MAINTENANCE.md to include them as well.
+README.md / docs/implemented/FINANCE_MAINTENANCE.md to include them as well.

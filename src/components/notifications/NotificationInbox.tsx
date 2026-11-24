@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   BellIcon,
+  ChartBarIcon,
   CalendarDaysIcon,
   ClockIcon,
   FlagIcon,
@@ -43,11 +44,13 @@ const views = ["active", "unread", "snoozed", "history"] as const;
 
 function ReminderIcon({ category }: { category: string }) {
   const Icon =
-    category === "deadlines" || category === "milestones"
-      ? FlagIcon
-      : category === "followUps"
-        ? ClockIcon
-        : CalendarDaysIcon;
+    category === "weeklyReports"
+      ? ChartBarIcon
+      : category === "deadlines" || category === "milestones"
+        ? FlagIcon
+        : category === "followUps"
+          ? ClockIcon
+          : CalendarDaysIcon;
   return <Icon className="h-5 w-5 shrink-0" />;
 }
 export function NotificationBell({ mobile = false }: { mobile?: boolean }) {

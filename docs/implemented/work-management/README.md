@@ -40,10 +40,10 @@ prerequisite behavior or silently expanding a phase is not.
 Replace the phase path below with one file from the table:
 
 ```text
-Read docs/work-management/CONTEXT.md completely.
-Read applicable repository instructions, docs/work-management/PROGRESS.md,
-docs/work-management/ACCEPTANCE.md, and
-docs/work-management/phases/01-preservation-and-mutation-safety.md.
+Read docs/implemented/work-management/CONTEXT.md completely.
+Read applicable repository instructions, docs/implemented/work-management/PROGRESS.md,
+docs/implemented/work-management/ACCEPTANCE.md, and
+docs/implemented/work-management/phases/01-preservation-and-mutation-safety.md.
 Inspect the actual current implementation and prerequisite evidence.
 
 Implement only that phase in development. Explain the plan before editing.
@@ -91,7 +91,7 @@ retroactive reward payouts are acceptable shortcuts.
 
 ## Current cleanup and verification
 
-The phase files and progress entries above are historical implementation records. Later UI changes replace contexts with calendar activity types and remove task rewards, tags, company/course, waiting contacts and task key-date editing. See the current [repository README](../../README.md#workcalendar-cleanup) for the retirement migrations and backup-preservation check. Applied migration files remain deployment history and must not be deleted.
+The phase files and progress entries above are historical implementation records. Later UI changes replace contexts with calendar activity types and remove task rewards, tags, company/course, waiting contacts and task key-date editing. See the current [repository README](../../../README.md#workcalendar-cleanup) for the retirement migrations and backup-preservation check. Applied migration files remain deployment history and must not be deleted.
 
 Use `tests/work-all.browser.mjs` for current task creation/details/view switching/contacts; `tests/project-classification.browser.mjs` for project dates/classification and task defaults; `tests/calendar-project-controls.browser.mjs` for the current calendar/project dialogs; and the `task-*.browser.mjs` tests for task dialogs/loading/details. The obsolete inline-capture/context/reward/key-date browser fixture files listed in historical operations entries have been removed. Their command-level ownership, graph, date, retry and audit coverage remains in the integration suites.
 

@@ -33,6 +33,7 @@ async function fixture(run) {
               userId,
               enabled: false,
               milestones: true,
+              weeklyReports: false,
               inboxStartedAt: new Date(now.getTime() - 30 * DAY_MS),
               enabledAt: new Date(now.getTime() - DAY_MS),
             },
@@ -141,13 +142,16 @@ test(
       [item] = await items();
       await command(item, "undo");
       assert.equal((await inboxCount(db, userId, now)).unread, 1);
-      await event("Arrived later", { date: new Date(now.getTime() + 16 * 60000) });
-      const later = new Date(now.getTime() + 2 * 60000);
+      // Capture after earlier commands; Prisma updatedAt uses the actual clock,
+      // which may be later than this fixture's fixed 14:00 reference time.
+      const cutoff = new Date(Math.max(Date.now(), now.getTime()));
+      await event("Arrived later", { date: new Date(cutoff.getTime() + 16 * 60000) });
+      const later = new Date(cutoff.getTime() + 2 * 60000);
       await pass({ now: later });
       await inboxCommand(
         db,
         userId,
-        { key: randomUUID(), action: "read-all", body: { cutoff: now.toISOString() } },
+        { key: randomUUID(), action: "read-all", body: { cutoff: cutoff.toISOString() } },
         later,
       );
       assert.equal(
