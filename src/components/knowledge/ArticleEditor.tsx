@@ -1,4 +1,5 @@
 "use client";
+import { dashboardReturn } from "@/lib/dashboard-quick-add";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -64,6 +65,7 @@ function Editor({ existing }: { existing?: EditableArticle }) {
   const params = useSearchParams(),
     router = useRouter(),
     { showMessage } = useSnackbar();
+  const returnTo = !existing ? dashboardReturn(params.get("returnTo")) : undefined;
   const taskId =
     !existing && /^\d+$/.test(params.get("taskId") || "")
       ? Number(params.get("taskId"))
@@ -74,7 +76,7 @@ function Editor({ existing }: { existing?: EditableArticle }) {
       : undefined;
   const key = existing
     ? `article:${existing.id}`
-    : `new:${taskId || ""}:${projectId || ""}:${params.get("folder") || ""}`;
+    : `new:${taskId || ""}:${projectId || ""}:${params.get("folder") || ""}${returnTo ? ":dashboard" : ""}`;
   const initial: ArticleDraft = existing
     ? {
         relatedWork: [],
@@ -208,7 +210,7 @@ function Editor({ existing }: { existing?: EditableArticle }) {
       baseline.current = JSON.stringify(draft);
       drafts.delete(key);
       showMessage("Article saved.");
-      router.push(`/knowledge/${result.id}`);
+      router.push(returnTo ?? `/knowledge/${result.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save article.");
     } finally {
@@ -219,7 +221,10 @@ function Editor({ existing }: { existing?: EditableArticle }) {
     <div className="space-y-5 pt-10 md:pt-0">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          <Link href={existing ? `/knowledge/${existing.id}` : "/knowledge"} className={button}>
+          <Link
+            href={existing ? `/knowledge/${existing.id}` : (returnTo ?? "/knowledge")}
+            className={button}
+          >
             ← Back
           </Link>
           <h1 className="text-2xl font-bold">{existing ? "Edit article" : "New article"}</h1>

@@ -1,9 +1,12 @@
 "use client";
 
+import { dashboardReturn } from "@/lib/dashboard-quick-add";
+import { useWorkDraftGuard } from "@/components/work/useWorkDraftGuard";
+import { useRouter, useSearchParams } from "next/navigation";
 import VocabularyReadingsInput from "@/components/VocabularyReadingsInput";
 import { VERB_TYPES } from "@/lib/japanese/conjugation";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeftIcon } from "@heroicons/react/24/solid";
 import { useSnackbar } from "@/context/SnackbarContext";
@@ -16,6 +19,20 @@ interface Category {
 }
 
 export default function AddVocabularyPage() {
+  return (
+    <Suspense fallback={<p role="status">Loading vocabulary editor…</p>}>
+      <AddVocabularyForm />
+    </Suspense>
+  );
+}
+
+function AddVocabularyForm() {
+  const params = useSearchParams();
+  const router = useRouter();
+  const returnTo = dashboardReturn(params.get("returnTo"));
+  const clean = useRef(false);
+  const saving = useRef(false);
+  const [busy, setBusy] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [english, setEnglish] = useState("");
   const [japanese, setJapanese] = useState("");
@@ -24,6 +41,20 @@ export default function AddVocabularyPage() {
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [starred, setStarred] = useState(false);
   const { showMessage } = useSnackbar();
+  useWorkDraftGuard(
+    () =>
+      !!returnTo &&
+      !clean.current &&
+      (!!english ||
+        !!japanese ||
+        readings.some((value) => !!value) ||
+        !!selectedVerbType ||
+        starred ||
+        (categoryId !== null && categoryId !== categories[0]?.id)),
+    () => {
+      clean.current = true;
+    },
+  );
   const isKanji =
     categories
       .find((cat) => cat.id === categoryId)
@@ -62,11 +93,14 @@ export default function AddVocabularyPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving.current) return;
     if (!categoryId) {
       showMessage("Please select a category before adding vocabulary.");
       return;
     }
 
+    saving.current = true;
+    setBusy(true);
     try {
       const res = await fetch("/api/japanese-practice/vocabulary/add", {
         method: "POST",
@@ -96,6 +130,11 @@ export default function AddVocabularyPage() {
       }
 
       showMessage("Vocabulary added successfully!");
+      if (returnTo) {
+        clean.current = true;
+        router.push(returnTo);
+        return;
+      }
       setEnglish("");
       setJapanese("");
       setReadings([""]);
@@ -106,6 +145,9 @@ export default function AddVocabularyPage() {
       showMessage(
         "Unable to add vocabulary. Could not reach the server. Check your connection and try again.",
       );
+    } finally {
+      saving.current = false;
+      setBusy(false);
     }
   };
 
@@ -124,7 +166,7 @@ export default function AddVocabularyPage() {
         {/* Back button */}
         <div className="flex justify-start">
           <Link
-            href="/japanese/vocabulary"
+            href={returnTo ?? "/japanese/vocabulary"}
             className="flex items-center gap-1 text-gray-500 hover:text-gray-700 cursor-pointer mr-4"
           >
             <ArrowLeftIcon className="w-5 h-5" /> Back
@@ -145,101 +187,106 @@ export default function AddVocabularyPage() {
           </button>
         </div>
 
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          <div>
-            <label className="block mb-1">English:</label>
-            <input
-              type="text"
-              value={english}
-              onChange={(e) => setEnglish(e.target.value)}
-              required
-              autoFocus
-              autoComplete="off"
-              className="w-full border rounded px-3 py-2 focus:outline-none"
-              style={{
-                borderColor: "var(--color-card-border)",
-                backgroundColor: "var(--color-card-bg)",
-                color: "var(--color-foreground)",
-              }}
-            />
-          </div>
-
-          <div>
-            <label className="block mb-1">Japanese:</label>
-            <input
-              type="text"
-              value={japanese}
-              onChange={(e) => setJapanese(e.target.value)}
-              required
-              autoComplete="off"
-              className="w-full border rounded px-3 py-2 focus:outline-none"
-              style={{
-                borderColor: "var(--color-card-border)",
-                backgroundColor: "var(--color-card-bg)",
-                color: "var(--color-foreground)",
-              }}
-            />
-          </div>
-
-          <VocabularyReadingsInput values={readings} onChange={setReadings} multiple={isKanji} />
-
-          <div>
-            <label className="block mb-1">Category:</label>
-            <select
-              value={categoryId ?? ""}
-              onChange={(e) => {
-                setCategoryId(Number(e.target.value));
-                setSelectedVerbType(null);
-              }}
-              required
-              className="w-full border rounded px-3 py-2 focus:outline-none"
-              style={{
-                borderColor: "var(--color-card-border)",
-                backgroundColor: "var(--color-card-bg)",
-                color: "var(--color-foreground)",
-              }}
-            >
-              {categories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {categories
-            .find((cat) => cat.id === categoryId)
-            ?.name.trim()
-            .toLowerCase() === "verb" && (
-            <div className="mt-4">
-              <label className="block mb-2">Verb Ending Type:</label>
-              <div className="flex flex-wrap gap-4">
-                {VERB_TYPES.map((verbType) => (
-                  <label key={verbType.value} className="flex items-center space-x-2">
-                    <input
-                      type="radio"
-                      name="verbType"
-                      value={verbType.value}
-                      checked={selectedVerbType === verbType.value}
-                      onChange={(e) => setSelectedVerbType(e.target.value)}
-                      className="accent-blue-500"
-                    />
-                    <span>{verbType.label}</span>
-                  </label>
-                ))}
-              </div>
+        <form className="space-y-4" aria-busy={busy} onSubmit={handleSubmit}>
+          <fieldset disabled={busy} className="min-w-0 space-y-4">
+            <div>
+              <label className="block mb-1">English:</label>
+              <input
+                aria-label="English"
+                type="text"
+                value={english}
+                onChange={(e) => setEnglish(e.target.value)}
+                required
+                autoFocus
+                autoComplete="off"
+                className="w-full border rounded px-3 py-2 focus:outline-none"
+                style={{
+                  borderColor: "var(--color-card-border)",
+                  backgroundColor: "var(--color-card-bg)",
+                  color: "var(--color-foreground)",
+                }}
+              />
             </div>
-          )}
 
-          {/* Submit button */}
-          <div className="flex justify-center mt-4">
-            <button
-              type="submit"
-              className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
-            >
-              Add Vocabulary
-            </button>
-          </div>
+            <div>
+              <label className="block mb-1">Japanese:</label>
+              <input
+                aria-label="Japanese"
+                type="text"
+                value={japanese}
+                onChange={(e) => setJapanese(e.target.value)}
+                required
+                autoComplete="off"
+                className="w-full border rounded px-3 py-2 focus:outline-none"
+                style={{
+                  borderColor: "var(--color-card-border)",
+                  backgroundColor: "var(--color-card-bg)",
+                  color: "var(--color-foreground)",
+                }}
+              />
+            </div>
+
+            <VocabularyReadingsInput values={readings} onChange={setReadings} multiple={isKanji} />
+
+            <div>
+              <label className="block mb-1">Category:</label>
+              <select
+                aria-label="Vocabulary category"
+                value={categoryId ?? ""}
+                onChange={(e) => {
+                  setCategoryId(Number(e.target.value));
+                  setSelectedVerbType(null);
+                }}
+                required
+                className="w-full border rounded px-3 py-2 focus:outline-none"
+                style={{
+                  borderColor: "var(--color-card-border)",
+                  backgroundColor: "var(--color-card-bg)",
+                  color: "var(--color-foreground)",
+                }}
+              >
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {categories
+              .find((cat) => cat.id === categoryId)
+              ?.name.trim()
+              .toLowerCase() === "verb" && (
+              <div className="mt-4">
+                <label className="block mb-2">Verb Ending Type:</label>
+                <div className="flex flex-wrap gap-4">
+                  {VERB_TYPES.map((verbType) => (
+                    <label key={verbType.value} className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        name="verbType"
+                        value={verbType.value}
+                        checked={selectedVerbType === verbType.value}
+                        onChange={(e) => setSelectedVerbType(e.target.value)}
+                        className="accent-blue-500"
+                      />
+                      <span>{verbType.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Submit button */}
+            <div className="flex justify-center mt-4">
+              <button
+                type="submit"
+                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 cursor-pointer"
+              >
+                {busy ? "Adding…" : "Add Vocabulary"}
+              </button>
+            </div>
+          </fieldset>
         </form>
       </div>
     </div>

@@ -1,4 +1,5 @@
 "use client";
+import { taskReturn } from "@/lib/dashboard-quick-add";
 import RepeatFields from "@/components/recurrence/RepeatFields";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -45,12 +46,7 @@ function TaskForm() {
   const leave = useWorkDraftGuard(
     () => !clean.current && JSON.stringify(draft) !== JSON.stringify(initial),
   );
-  const rawReturn = params.get("returnTo") || "/todos";
-  const returnTo =
-    /^\/(todos|my-work|projects|events|knowledge)(?:[/?]|$)/.test(rawReturn) &&
-    !rawReturn.includes("\\")
-      ? rawReturn
-      : "/todos";
+  const returnTo = taskReturn(params.get("returnTo"));
   async function loadActivityTypes() {
     setCatalogError("");
     try {

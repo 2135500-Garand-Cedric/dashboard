@@ -1,3 +1,4 @@
+import { dashboardReturn } from "@/lib/dashboard-quick-add";
 import { statementPrefill } from "@/lib/finance/statement-prefill";
 import NewActivity from "@/components/finance/NewActivity";
 import { CURRENCIES } from "@/lib/finance/validation";
@@ -6,11 +7,13 @@ export default async function NewActivityPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const params = await searchParams;
   return (
     <NewActivity
       kind="expenses"
       currencies={CURRENCIES}
-      prefill={statementPrefill(await searchParams)}
+      prefill={statementPrefill(params)}
+      returnTo={dashboardReturn(params.returnTo)}
     />
   );
 }

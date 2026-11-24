@@ -311,3 +311,15 @@ API/model structure, activation/catch-up rules, retention, tests, backup restore
 verification, known older regression failures, and coordinated app/worker rollout.
 Stop the old worker before the generation-aware migration; do not run an older
 worker against the new queue constraint.
+
+
+### Dashboard Quick add
+
+The Quick add button beside **My Dashboard** starts a task, event, expense,
+Knowledge article, or vocabulary entry. It appears only on the main dashboard.
+Page-based Quick add flows return there after saving or approved cancellation;
+module creation buttons keep their normal behavior. Event creation uses the
+existing editor in a centered modal and refreshes the calendar tile.
+
+See [Dashboard Quick add plan and implementation notes](docs/GLOBAL_QUICK_ADD_PLAN.md)
+for the action list, guarded exits, validated return marker, and verification.

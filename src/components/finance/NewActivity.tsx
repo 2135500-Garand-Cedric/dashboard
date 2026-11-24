@@ -8,15 +8,22 @@ export default function NewActivity({
   kind,
   currencies,
   prefill,
+  returnTo,
 }: {
   kind: "expenses" | "transfers" | "refunds";
   currencies: string[];
   prefill?: StatementPrefill;
+  returnTo?: "/";
 }) {
   const { timeZone } = useSettings();
   const date = localToday(new Date(), timeZone);
   return kind === "expenses" ? (
-    <ExpenseEditor initialDate={date} currencies={currencies} prefill={prefill} />
+    <ExpenseEditor
+      initialDate={date}
+      currencies={currencies}
+      prefill={prefill}
+      returnTo={returnTo}
+    />
   ) : (
     <TransactionEntry
       initialDate={date}

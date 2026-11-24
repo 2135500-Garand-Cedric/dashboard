@@ -1,5 +1,6 @@
 "use client";
 
+import DashboardQuickAdd from "@/components/DashboardQuickAdd";
 import TodoTile from "@/components/TodoTile";
 import MusicTile from "@/components/MusicTile";
 import EventTile from "@/components/EventTile";
@@ -13,6 +14,7 @@ export default function Home() {
   const [userXp, setUserXp] = useState(0);
   const [userCoins, setUserCoins] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [calendarRevision, setCalendarRevision] = useState(0);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -33,16 +35,22 @@ export default function Home() {
       style={{ background: "var(--background)", color: "var(--foreground)" }}
     >
       {/* Header with title + progress */}
-      <div className="dashboard-header flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-3">
-        <h1 className="text-3xl font-bold" style={{ color: "var(--color-foreground)" }}>
-          My Dashboard
-        </h1>
+      <div className="dashboard-header flex flex-wrap items-center justify-between mb-4 gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <h1
+            className="text-2xl lg:text-3xl font-bold"
+            style={{ color: "var(--color-foreground)" }}
+          >
+            My Dashboard
+          </h1>
+          <DashboardQuickAdd onEventSaved={() => setCalendarRevision((value) => value + 1)} />
+        </div>
         <LevelBar xp={userXp} coins={userCoins} />
       </div>
 
       {/* Main grid */}
       <div className="dashboard-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        <EventTile />
+        <EventTile refreshToken={calendarRevision} />
         <TodoTile />
         <MusicTile />
         <QuestTile setUserXp={setUserXp} setUserCoins={setUserCoins} />

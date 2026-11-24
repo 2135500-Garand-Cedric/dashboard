@@ -1,4 +1,5 @@
 "use client";
+import { useWorkDraftGuard } from "@/components/work/useWorkDraftGuard";
 import Link from "next/link";
 import FinancialRecordLink from "./FinancialRecordLink";
 import type { ReactNode } from "react";
@@ -35,9 +36,11 @@ export default function ExpenseEditor({
   notesTransaction,
   initialTransaction,
   prefill,
+  returnTo,
 }: {
   initialTransaction?: FinanceTransaction;
   prefill?: StatementPrefill;
+  returnTo?: "/";
   onSaved?: () => void;
   readOnly?: boolean;
   headerMeta?: ReactNode;
@@ -67,6 +70,7 @@ export default function ExpenseEditor({
       currencies={currencies}
       initialTransaction={initialTransaction}
       prefill={prefill}
+      returnTo={returnTo}
       refresh={onSaved}
     />
   );
@@ -121,9 +125,11 @@ function ReceiptForm({
   notesTransaction,
   initialTransaction,
   prefill,
+  returnTo,
 }: {
   initialTransaction?: FinanceTransaction;
   prefill?: StatementPrefill;
+  returnTo?: "/";
   existing?: FinanceReceipt;
   initialDate: string;
   currencies: string[];
@@ -172,6 +178,8 @@ function ReceiptForm({
     transactionAction: existing?.transaction || initialTransaction ? "LINK" : "CREATE",
     transactionId: String(existing?.transaction?.id ?? initialTransaction?.id ?? ""),
   }));
+  const baseline = useRef(JSON.stringify(draft));
+  const clean = useRef(false);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<FinanceRequestError | null>(null);
@@ -182,6 +190,13 @@ function ReceiptForm({
     saving = useRef(false);
   const router = useRouter(),
     { showMessage } = useSnackbar();
+  useWorkDraftGuard(
+    () =>
+      !!returnTo && !clean.current && (JSON.stringify(draft) !== baseline.current || file !== null),
+    () => {
+      clean.current = true;
+    },
+  );
   const patch = (key: keyof typeof draft, value: string) => {
     setDraft((previous) => {
       const next = { ...previous, [key]: value };
@@ -251,9 +266,10 @@ function ReceiptForm({
       });
       showMessage("Expense saved successfully.");
       refresh?.();
-      if (result.receipt.transaction)
-        router.push(`/finance/expenses/${result.receipt.transaction.id}`);
-      else if (existing) refresh?.();
+      if (result.receipt.transaction) {
+        clean.current = true;
+        router.push(returnTo ?? `/finance/expenses/${result.receipt.transaction.id}`);
+      } else if (existing) refresh?.();
       else throw new Error("The saved expense has no associated money movement.");
     } catch (error) {
       const failure =
@@ -293,6 +309,11 @@ function ReceiptForm({
   }
   return (
     <div className="min-w-0 space-y-5">
+      {returnTo && (
+        <Link href={returnTo} className={secondaryButton}>
+          ← Back
+        </Link>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <h2 className="text-2xl font-semibold">
@@ -302,7 +323,7 @@ function ReceiptForm({
         </div>
         <div className="flex flex-wrap gap-2">
           {headerActions}
-          <Link href="/finance/expenses" className={secondaryButton}>
+          <Link href={returnTo ?? "/finance/expenses"} className={secondaryButton}>
             ← Expenses
           </Link>
         </div>
@@ -571,7 +592,7 @@ function ReceiptForm({
                 <button className={primaryButton} type="submit" hidden={readOnly}>
                   {busy ? "Saving…" : "Save expense"}
                 </button>
-                <Link href="/finance/expenses" className={secondaryButton}>
+                <Link href={returnTo ?? "/finance/expenses"} className={secondaryButton}>
                   Cancel
                 </Link>
               </div>
