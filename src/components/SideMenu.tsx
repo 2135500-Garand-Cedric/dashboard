@@ -1,4 +1,5 @@
 "use client";
+import { NotificationBell } from "@/components/notifications/NotificationInbox";
 
 import Link from "next/link";
 import { useState } from "react";
@@ -12,6 +13,7 @@ import {
   XMarkIcon,
   Bars3Icon,
   BanknotesIcon,
+  BellIcon,
 } from "@heroicons/react/24/solid";
 
 export default function SideMenu() {
@@ -27,6 +29,7 @@ export default function SideMenu() {
     { name: "Finance", href: "/finance", icon: BanknotesIcon },
     { name: "Japanese Statistics", href: "/japanese/statistics", icon: ChartPieIcon },
     { name: "Japanese Practice", href: "/japanese/practice", icon: DocumentTextIcon },
+    { name: "Notifications", href: "/notifications", icon: BellIcon },
     { name: "Settings", href: "/settings", icon: Cog6ToothIcon },
   ];
 
@@ -62,6 +65,7 @@ export default function SideMenu() {
             <h1 className="text-lg font-bold" style={{ color: "var(--color-foreground)" }}>
               Dashboard Menu
             </h1>
+            <NotificationBell />
             <button
               aria-label="Close navigation"
               className="md:hidden"
@@ -94,6 +98,7 @@ export default function SideMenu() {
         </div>
       </div>
 
+      <NotificationBell mobile />
       {/* Mobile hamburger button */}
       {!isOpen && (
         <button

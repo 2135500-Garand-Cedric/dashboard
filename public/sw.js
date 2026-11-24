@@ -7,7 +7,9 @@ function notificationUrl(value) {
     const url = new URL(value || "/settings", self.location.origin);
     if (
       url.origin === self.location.origin &&
-      /^\/(settings|events\/\d+|todos\/\d+|projects\/\d+)$/.test(url.pathname)
+      /^\/(settings|events\/\d+|todos\/\d+|projects\/\d+|notifications(?:\/[a-f0-9-]{36})?)$/.test(
+        url.pathname,
+      )
     )
       return url.href;
   } catch {

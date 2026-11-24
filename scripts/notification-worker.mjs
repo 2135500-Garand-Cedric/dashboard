@@ -19,7 +19,7 @@ const config = pushConfiguration();
 console.log(
   config
     ? "[notifications] Reminder worker started."
-    : "[notifications] Push disabled. Configure PUSH_ENABLED and VAPID settings to enable delivery.",
+    : "[notifications] Inbox worker started; push delivery is disabled.",
 );
 try {
   while (!stopping) {

@@ -216,6 +216,7 @@ test("notification click redirect preserves a safe target through login and reje
       },
     },
     "@/lib/auth": { authOptions: {} },
+    "@/components/notifications/NotificationSourceOpen": { default: () => null },
     "@/lib/owner-policy": policy,
   }).default;
   const destination = async (target) => {
@@ -226,10 +227,13 @@ test("notification click redirect preserves a safe target through login and reje
     }
     assert.fail("Expected redirect");
   };
-  assert.equal(await destination("/events/42"), "/api/auth/signin?callbackUrl=%2Fevents%2F42");
+  assert.equal(
+    await destination("/events/42"),
+    "/api/auth/signin?callbackUrl=%2Fnotifications%2Fopen%3Ftarget%3D%252Fevents%252F42",
+  );
   assert.equal(
     await destination("https://evil.example"),
-    "/api/auth/signin?callbackUrl=%2Fsettings",
+    "/api/auth/signin?callbackUrl=%2Fnotifications%2Fopen%3Ftarget%3D%252Fsettings",
   );
   session = { githubId: "123", ownerAccess: true };
   assert.equal(await destination("/todos/1"), "/access-denied");

@@ -1,112 +1,8 @@
+import { reminderSources, resolveReminder } from "./sources.mjs";
+export { reminderSources } from "./sources.mjs";
+import { materializeInbox, reconcileInbox, cleanupInbox, activeInboxWhere } from "./inbox.mjs";
 import * as webpush from "web-push";
 import { DEFAULTS, GRACE_MS, reminderCandidate, reminderPayload } from "./rules.mjs";
-
-/** @param {import('../../generated/prisma/index.js').PrismaClient} db */
-export async function reminderSources(db, userId, now = new Date()) {
-  const start = new Date(now.getTime() - GRACE_MS);
-  const end = new Date(now.getTime() + 9 * 86400000);
-  // Extra calendar days cover the extreme UTC offsets and DST transitions.
-  const dates = {
-    gte: new Date(start.getTime() - 2 * 86400000).toISOString().slice(0, 10),
-    lte: end.toISOString().slice(0, 10),
-  };
-  const activeTask = { userId, archivedAt: null, status: { notIn: ["DONE", "CANCELLED"] } };
-  const [events, tasks, followUps, milestones] = await Promise.all([
-    db.event.findMany({
-      where: {
-        userId,
-        completed: false,
-        conversions: { none: { active: true, mode: "PLACEHOLDER" } },
-        OR: [{ date: { gte: start, lte: end } }, { allDayStart: dates }],
-      },
-      include: {
-        taskLinks: {
-          include: { todo: { select: { status: true, archivedAt: true, userId: true } } },
-        },
-      },
-    }),
-    db.todo.findMany({
-      where: {
-        ...activeTask,
-        OR: [{ deadlineAt: { gte: start, lte: end } }, { deadlineDate: dates }],
-      },
-      select: { id: true, title: true, deadlineAt: true, deadlineDate: true },
-    }),
-    db.workFollowUp.findMany({
-      where: {
-        status: "ACTIVE",
-        todo: activeTask,
-        OR: [{ at: { gte: start, lte: end } }, { date: dates }],
-      },
-      include: { todo: { select: { title: true } } },
-    }),
-    db.workKeyDate.findMany({
-      where: {
-        todoId: null,
-        removedAt: null,
-        completedAt: null,
-        project: { userId, archivedAt: null, status: "ACTIVE" },
-        OR: [{ at: { gte: start, lte: end } }, { date: dates }],
-      },
-      select: { id: true, label: true, at: true, date: true, projectId: true },
-    }),
-  ]);
-  return [
-    ...events
-      .filter(
-        (event) =>
-          event.kind !== "WORK_SESSION" ||
-          event.taskLinks.some(
-            (link) =>
-              link.role === "SESSION_TARGET" &&
-              link.todo.userId === userId &&
-              !link.todo.archivedAt &&
-              !["DONE", "CANCELLED"].includes(link.todo.status),
-          ),
-      )
-      .map((event) => ({
-        kind: "EVENT",
-        id: event.id,
-        title: event.title,
-        label: event.kind === "WORK_SESSION" ? "Work session" : "Event",
-        option: event.kind === "WORK_SESSION" ? "sessions" : "events",
-        at: event.date,
-        date: event.allDayStart,
-        minutes: event.reminderMinutes,
-        url: `/events/${event.id}`,
-      })),
-    ...tasks.map((task) => ({
-      kind: "DEADLINE",
-      id: task.id,
-      title: task.title,
-      label: "Task deadline",
-      option: "deadlines",
-      at: task.deadlineAt,
-      date: task.deadlineDate,
-      url: `/todos/${task.id}`,
-    })),
-    ...followUps.map((followUp) => ({
-      kind: "FOLLOW_UP",
-      id: followUp.id,
-      title: followUp.todo.title,
-      label: "Follow-up",
-      option: "followUps",
-      at: followUp.at,
-      date: followUp.date,
-      url: `/todos/${followUp.todoId}`,
-    })),
-    ...milestones.map((milestone) => ({
-      kind: "MILESTONE",
-      id: milestone.id,
-      title: milestone.label,
-      label: "Project milestone",
-      option: "milestones",
-      at: milestone.at,
-      date: milestone.date,
-      url: `/projects/${milestone.projectId}`,
-    })),
-  ];
-}
 
 export async function sendPush({ subscription, payload, config, ttl = 3600 }) {
   return webpush.sendNotification(
@@ -153,6 +49,17 @@ export async function runReminderPass(
     update: { workerSeenAt: now, workerError: config ? null : "NOT_CONFIGURED" },
   });
   const state = await reminderState(db, userId);
+  await materializeInbox(db, userId, state, now);
+  await reconcileInbox(db, userId, state, now);
+  await cleanupInbox(db, userId, now);
+  await db.pushDelivery.updateMany({
+    where: {
+      subscription: { userId },
+      status: "PENDING",
+      sendAt: { lt: new Date(now.getTime() - GRACE_MS) },
+    },
+    data: { status: "SKIPPED", errorCode: "EXPIRED", leaseUntil: null },
+  });
   if (!config || !state?.settings.enabled) return { sent: 0 };
   const { settings, zone } = state;
   const devices = await db.pushSubscription.findMany({
@@ -163,7 +70,9 @@ export async function runReminderPass(
     where: { subscription: { userId, active: true }, status: "PENDING" },
   });
   const pendingByKey = new Map(
-    pending.map((job) => [`${job.subscriptionId}:${job.occurrenceKey}`, job]),
+    pending
+      .filter((job) => job.generation === 0)
+      .map((job) => [`${job.subscriptionId}:${job.occurrenceKey}`, job]),
   );
   const sources = await reminderSources(db, userId, now);
   for (const source of sources) {
@@ -194,22 +103,29 @@ export async function runReminderPass(
     if (
       !candidate ||
       candidate.sendAt > now ||
-      candidate.sendAt.getTime() < now.getTime() - GRACE_MS
+      candidate.sendAt.getTime() < now.getTime() - GRACE_MS ||
+      candidate.sendAt < new Date(settings.categoryStartedAt?.[source.option] || 0)
+    )
+      continue;
+    const notification = await db.userNotification.findUnique({
+      where: { userId_occurrenceKey: { userId, occurrenceKey: candidate.occurrenceKey } },
+    });
+    if (
+      notification &&
+      (notification.lifecycle !== "ACTIVE" ||
+        notification.dismissedAt ||
+        notification.snoozedUntil ||
+        notification.generation > 0)
     )
       continue;
     for (const device of devices) {
       // Newly registered devices never get a backlog of old reminders.
       if (candidate.sendAt < device.createdAt || candidate.sendAt < settings.enabledAt) continue;
-      await db.pushDelivery.upsert({
-        where: {
-          subscriptionId_occurrenceKey: {
-            subscriptionId: device.id,
-            occurrenceKey: candidate.occurrenceKey,
-          },
-        },
-        update: {},
-        create: {
+      await db.pushDelivery.createMany({
+        skipDuplicates: true,
+        data: {
           subscriptionId: device.id,
+          notificationId: notification?.id ?? null,
           occurrenceKey: candidate.occurrenceKey,
           sourceKind: source.kind,
           sourceId: source.id,
@@ -220,14 +136,32 @@ export async function runReminderPass(
       });
     }
   }
-  await db.pushDelivery.updateMany({
+  const cycles = await db.userNotification.findMany({
     where: {
-      subscription: { userId },
-      status: "PENDING",
-      sendAt: { lt: new Date(now.getTime() - GRACE_MS) },
+      ...activeInboxWhere(userId, now),
+      generation: { gt: 0 },
+      dueAt: { gte: new Date(now.getTime() - GRACE_MS), lte: now },
     },
-    data: { status: "SKIPPED", errorCode: "EXPIRED", leaseUntil: null },
   });
+  for (const item of cycles) {
+    for (const device of devices) {
+      if (item.dueAt < device.createdAt || item.dueAt < settings.enabledAt) continue;
+      await db.pushDelivery.createMany({
+        skipDuplicates: true,
+        data: {
+          subscriptionId: device.id,
+          notificationId: item.id,
+          occurrenceKey: item.occurrenceKey,
+          generation: item.generation,
+          sourceKind: item.sourceKind,
+          sourceId: item.sourceId,
+          targetAt: item.targetAt,
+          sendAt: item.dueAt,
+          nextAttemptAt: now,
+        },
+      });
+    }
+  }
   const queue = await db.pushDelivery.findMany({
     where: {
       subscription: { userId, active: true },
@@ -254,15 +188,34 @@ export async function runReminderPass(
     const device = await db.pushSubscription.findFirst({
       where: { id: job.subscriptionId, userId, active: true, vapidPublicKey: config.publicKey },
     });
-    const latestSources =
-      current?.settings.enabled && device ? await reminderSources(db, userId, now) : [];
-    const source = latestSources.find(
-      (item) => item.id === job.sourceId && item.kind === job.sourceKind,
-    );
-    const candidate =
-      source && current.settings[source.option]
+    const resolved =
+      current?.settings.enabled && device
+        ? await resolveReminder(db, userId, job.sourceKind, job.sourceId)
+        : null;
+    const source = resolved?.source;
+    let candidate =
+      source && !resolved.reason && current.settings[source.option]
         ? reminderCandidate(source, current.settings, current.zone)
         : null;
+    const notification = await db.userNotification.findFirst({
+      where: { userId, occurrenceKey: job.occurrenceKey },
+    });
+    if (notification) {
+      if (
+        notification.lifecycle !== "ACTIVE" ||
+        notification.dismissedAt ||
+        notification.snoozedUntil ||
+        notification.generation !== job.generation
+      )
+        candidate = null;
+      else if (candidate && job.generation > 0) candidate.sendAt = notification.dueAt;
+      // Drain compatible legacy null-FK jobs without inventing historical inbox rows.
+      if (!job.notificationId)
+        await db.pushDelivery.update({
+          where: { id: job.id },
+          data: { notificationId: notification.id },
+        });
+    }
     if (
       candidate &&
       device &&
@@ -286,6 +239,7 @@ export async function runReminderPass(
       candidate.occurrenceKey !== job.occurrenceKey ||
       candidate.sendAt > now ||
       candidate.sendAt.getTime() < now.getTime() - GRACE_MS ||
+      candidate.sendAt < new Date(current.settings.categoryStartedAt?.[source.option] || 0) ||
       candidate.sendAt < current.settings.enabledAt ||
       candidate.sendAt < device.createdAt
     ) {
@@ -298,13 +252,26 @@ export async function runReminderPass(
     try {
       await send({
         subscription: device,
-        payload: reminderPayload(candidate, current.settings, current.zone),
+        payload: {
+          ...reminderPayload(candidate, current.settings, current.zone),
+          ...(notification
+            ? {
+                url: `/notifications/${notification.id}`,
+                tag: `dashboard-${candidate.occurrenceKey}-${job.generation}`,
+              }
+            : {}),
+        },
         config,
         ttl: Math.max(
           1,
           Math.min(
             3600,
-            Math.ceil((candidate.targetAt.getTime() + GRACE_MS - now.getTime()) / 1000),
+            Math.ceil(
+              ((job.generation > 0 ? candidate.sendAt : candidate.targetAt).getTime() +
+                GRACE_MS -
+                now.getTime()) /
+                1000,
+            ),
           ),
         ),
       });
@@ -323,7 +290,7 @@ export async function runReminderPass(
       sent++;
     } catch (error) {
       const status = Number(error?.statusCode) || 0;
-      const permanent = [400, 401, 403, 404, 410, 413].includes(status) || job.attempts >= 4;
+      const permanent = [400, 401, 403, 404, 410, 413].includes(status) || job.attempts + 1 >= 4;
       if ([404, 410].includes(status))
         await db.pushSubscription.update({ where: { id: device.id }, data: { active: false } });
       await db.pushDelivery.update({

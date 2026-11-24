@@ -20,16 +20,18 @@ export default function AppShell({
       <SettingsProvider initialTimeZone={timeZone}>
         <ViewStateProvider>
           <SnackbarProvider>
+            <InboxProvider>
             <MusicPlayerProvider>
               <MemoryProvider>
                 <div
                   className={`app-shell flex ${process.env.NODE_ENV === "development" ? "development-shell" : ""}`}
                 >
                   <SideMenu />
-                  <main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
+                    <main className="min-w-0 flex-1 px-4 pb-4 pt-20 md:p-6">{children}</main>
                 </div>
               </MemoryProvider>
             </MusicPlayerProvider>
+            </InboxProvider>
           </SnackbarProvider>
         </ViewStateProvider>
       </SettingsProvider>

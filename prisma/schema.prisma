@@ -51,6 +51,7 @@ model User {
   // Relations
   notificationSettings NotificationSettings?
   pushSubscriptions PushSubscription[]
+  notifications UserNotification[]
   workFocus WorkFocus[]
   workProjects WorkProject[]
   workNotes WorkNote[]
@@ -1113,6 +1114,8 @@ model NotificationSettings {
   leadMinutes Int @default(15)
   dateOnlyTime String @default("09:00") @db.VarChar(5)
   enabledAt DateTime @default(now()) @db.Timestamptz(3)
+  inboxStartedAt DateTime @default(now()) @db.Timestamptz(3)
+  categoryStartedAt Json @default("{}")
   workerSeenAt DateTime? @db.Timestamptz(3)
   workerError String? @db.VarChar(30)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
@@ -1141,6 +1144,9 @@ model PushDelivery {
   id String @id @default(uuid()) @db.Uuid
   subscriptionId String @db.Uuid
   subscription PushSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  notificationId String? @db.Uuid
+  notification UserNotification? @relation(fields: [notificationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  generation Int @default(0)
   occurrenceKey String @db.VarChar(64)
   sourceKind String @db.VarChar(20)
   sourceId Int
@@ -1154,7 +1160,8 @@ model PushDelivery {
   sentAt DateTime? @db.Timestamptz(3)
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
-  @@unique([subscriptionId, occurrenceKey])
+  @@unique([subscriptionId, occurrenceKey, generation])
+  @@index([notificationId])
   @@index([status, nextAttemptAt, leaseUntil])
 }
 
@@ -1385,4 +1392,34 @@ model KnowledgeDraft {
   attachments WorkAttachment[]
   @@unique([id, userId])
   @@index([userId, updatedAt])
+}
+
+// Logical reminders are independent of device delivery and source completion.
+model UserNotification {
+  id String @id @default(uuid()) @db.Uuid
+  userId Int
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  occurrenceKey String @db.VarChar(64)
+  sourceKind String @db.VarChar(20)
+  sourceId Int
+  category String @db.VarChar(20)
+  titleSnapshot String @db.VarChar(150)
+  labelSnapshot String @db.VarChar(40)
+  sourceDate String? @db.VarChar(10)
+  targetAt DateTime @db.Timestamptz(3)
+  dueAt DateTime @db.Timestamptz(3)
+  lifecycle String @default("ACTIVE") @db.VarChar(20)
+  retiredReason String? @db.VarChar(40)
+  retiredAt DateTime? @db.Timestamptz(3)
+  readAt DateTime? @db.Timestamptz(3)
+  dismissedAt DateTime? @db.Timestamptz(3)
+  snoozedUntil DateTime? @db.Timestamptz(3)
+  generation Int @default(0)
+  revision Int @default(1)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  deliveries PushDelivery[]
+  @@unique([userId, occurrenceKey])
+  @@index([userId, lifecycle, dueAt, id])
+  @@index([userId, readAt, dismissedAt, snoozedUntil])
 }

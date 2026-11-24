@@ -8,6 +8,7 @@ import {
   settingsInput,
   subscriptionInput,
 } from "./rules.mjs";
+import { CATEGORIES } from "./inbox.mjs";
 import { reminderState, sendPush } from "./engine.mjs";
 
 export const notificationHeaders = { "Cache-Control": "private, no-store" };
@@ -83,14 +84,25 @@ export async function saveNotificationSettings(value: unknown) {
   } catch (error) {
     throw new NotificationError(error instanceof Error ? error.message : "Invalid settings.");
   }
-  const previous = await prisma.notificationSettings.findUnique({ where: { userId } });
-  await prisma.notificationSettings.upsert({
-    where: { userId },
-    create: { userId, ...data },
-    update: {
-      ...data,
-      ...(data.enabled === true && previous?.enabled === false ? { enabledAt: new Date() } : {}),
-    },
+  await prisma.$transaction(async (db) => {
+    await db.$executeRaw`SELECT pg_advisory_xact_lock(94722, ${userId}::integer)`;
+    const previous = await db.notificationSettings.findUnique({ where: { userId } });
+    const now = new Date();
+    const cutoffs = { ...((previous?.categoryStartedAt || {}) as Record<string, string>) };
+    for (const key of CATEGORIES as (
+      "events" | "sessions" | "deadlines" | "followUps" | "milestones"
+    )[]) {
+      if (data[key] === true && previous?.[key] === false) cutoffs[key] = now.toISOString();
+    }
+    await db.notificationSettings.upsert({
+      where: { userId },
+      create: { userId, ...data },
+      update: {
+        ...data,
+        categoryStartedAt: cutoffs,
+        ...(data.enabled === true && previous?.enabled === false ? { enabledAt: now } : {}),
+      },
+    });
   });
   return notificationOverview();
 }

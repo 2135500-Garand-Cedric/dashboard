@@ -98,6 +98,7 @@ test(
         await context.route("**/api/notifications**", async (route) => {
           const request = route.request(),
             url = new URL(request.url());
+          if (url.pathname.endsWith("/inbox/count")) return route.fulfill({ json: { unread: 0 } });
           if (url.pathname.endsWith("/subscriptions")) {
             if (request.method() === "POST") {
               registerCalls++;
@@ -200,7 +201,11 @@ test(
         { maxRedirects: 0 },
       );
       assert.equal(redirect.status(), 307);
-      assert.ok(redirect.headers().location.includes("callbackUrl=%2Fsettings"));
+      assert.ok(
+        redirect
+          .headers()
+          .location.includes("callbackUrl=%2Fnotifications%2Fopen%3Ftarget%3D%252Fsettings"),
+      );
       await anonymous.close();
     } finally {
       await browser.close();

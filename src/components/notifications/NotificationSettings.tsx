@@ -203,19 +203,24 @@ export default function NotificationSettings() {
         <>
           {!data.configured && (
             <p role="status" className="rounded-lg border border-amber-400/30 p-3">
-              Server setup is required: configure the Web Push keys and start the notification
-              worker. See the notification deployment instructions in the README.
+              Phone/browser push is not configured. The inbox still works while the notification
+              worker is running. See the README to configure Web Push.
             </p>
           )}
-          {data.configured &&
-            (!data.worker.lastSeenAt ||
-              Date.now() - Date.parse(data.worker.lastSeenAt) > 300000) && (
-              <p role="alert" className="rounded-lg border border-amber-400/30 p-3">
-                The reminder worker has not checked in recently. Scheduled reminders need the
-                notification-worker container running.
-              </p>
-            )}
-          {data.configured && data.worker.errorCode && (
+          {(!data.worker.lastSeenAt ||
+            Date.now() - Date.parse(data.worker.lastSeenAt) > 300000) && (
+            <p role="alert" className="rounded-lg border border-amber-400/30 p-3">
+              The reminder worker has not checked in recently. Inbox and push reminders need the
+              notification-worker container running.
+            </p>
+          )}
+          {data.worker.errorCode === "WORKER_ERROR" && (
+            <p role="alert" className="text-amber-500">
+              The reminder worker could not finish its last pass. Inbox and push reminders may be
+              delayed. Check database availability and migrations.
+            </p>
+          )}
+          {data.configured && data.worker.errorCode && data.worker.errorCode !== "WORKER_ERROR" && (
             <p role="alert" className="text-amber-500">
               The worker cannot send notifications. Check that its push configuration matches the
               dashboard.
@@ -280,8 +285,12 @@ export default function NotificationSettings() {
                 disabled={busy}
                 onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })}
               />
-              Send calendar reminders
+              Phone/browser push notifications
             </label>
+            <p className="text-sm text-muted">
+              Reminder types and timing apply to both the inbox and push. Lock-screen titles apply
+              only to push.
+            </p>
             <div className="grid gap-3 sm:grid-cols-2">
               {(
                 [

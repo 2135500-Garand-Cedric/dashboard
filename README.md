@@ -277,16 +277,16 @@ Use iOS 16.4 or newer. In Safari, open the deployed dashboard and choose **Share
 ### Reminder behavior and operation
 
 - Timed events/work sessions/deadlines/follow-ups default to 15 minutes before; date-only items default to 09:00 in the saved dashboard timezone. Project milestones are opt-in. Configure these in Settings. For all-day events, the settings time is the reminder reference time; an explicit event offset is subtracted from that reference.
-- Event creation/editing offers **Reminder**: inherit settings, disable, at the scheduled time, or a chosen offset. The master switch and source-type preferences still apply. Task deadlines/follow-ups remain task data; reminders do not create extra calendar events.
+- Event creation/editing offers **Reminder**: inherit settings, disable, at the scheduled time, or a chosen offset. Source-type preferences apply to the inbox and push; the master switch controls push only. Task deadlines/follow-ups remain task data; reminders do not create extra calendar events.
 - The worker derives schedules from current records. Completed/deleted events, resolved follow-ups, closed/archived tasks, completed milestones and superseded deadline placeholders are excluded. Work sessions targeting closed/archived tasks are excluded. Recheck happens just before sending; edits invalidate queued old occurrences.
-- Each device/source occurrence has one durable delivery record. Transient failures retry with backoff; expired subscriptions are disabled. Multiple workers claim jobs with leases. After downtime, only reminders up to 15 minutes late are eligible; newly enabled devices do not get an old backlog. Delivery attempts are retained for 90 days.
+- Each device/source occurrence and reminder generation has one durable delivery record. Transient failures retry with backoff; expired subscriptions are disabled. Multiple workers claim jobs with leases. After downtime, push only sends reminders up to 15 minutes late; the in-app inbox catches up up to seven days after its activation boundary; newly enabled devices do not get an old backlog. Delivery attempts are retained for 90 days.
 - A push service acceptance is not proof the phone displayed the notification. Network outages, Focus/notification settings and device behavior can delay or suppress alerts. If a process stops after provider acceptance but before recording success, a retry can occur; the stable notification tag coalesces that occurrence on the device. This is not an exact-time alarm service.
-- Settings shows worker heartbeat/configuration status, allows pausing reminders, hiding titles on the lock screen, disabling devices and sending a rate-limited test. Test sends do not require the worker; scheduled reminders do. Inspect its logs with `docker compose -f docker-compose.prod.yml logs --tail=50 notification-worker`. Logs omit endpoints, keys, titles and payloads.
+- Settings shows worker heartbeat/configuration status, allows pausing phone/browser push while the inbox remains active, hiding titles on the lock screen, disabling devices and sending a rate-limited test. Test sends do not require the worker; scheduled reminders do. Inspect its logs with `docker compose -f docker-compose.prod.yml logs --tail=50 notification-worker`. Logs omit endpoints, keys, titles and payloads.
 - The existing whole-database backup includes notification state. Keep `.env`/VAPID keys separately. No new persistent volume is needed.
 
 Verification: `node --test tests/*.test.mjs`; disposable worker/registration checks with `RUN_NOTIFICATION_DB_TEST=1 WORK_MANAGEMENT_DISPOSABLE=1 node --test tests/notifications.integration.mjs` on the isolated `work-db`; desktop/phone layout and permission-flow checks with `RUN_NOTIFICATION_BROWSER_TEST=1 node tests/notifications.browser.mjs` against the disposable port-3002 app. The browser test mocks push permission and delivery; actual iPhone delivery must be checked on an installed HTTPS PWA. Reference: [Apple/WebKit Web Push requirements](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/).
 
-PWA implementation verification: production build and strict TypeScript passed; all 40 unit-test files passed; three rollback-only notification worker/API/rescheduling checks passed; 27 calendar/project regression checks passed; mocked phone/desktop notification setup, iPhone installation gating and safe sign-in redirects passed. Live authorization checks covered 152 protected API handlers. Both Compose files validate, Prisma reports no schema drift, and the worker starts/shuts down cleanly with push disabled. The runtime dependency audit reported zero known vulnerabilities at verification time. Real iPhone/APNs delivery remains a deployment/device acceptance step; no production deployment or real push send was performed during implementation.
+Original PWA implementation verification (before the inbox extension; see the maintenance notes below for current results and schema differences): production build and strict TypeScript passed; all 40 unit-test files passed; three rollback-only notification worker/API/rescheduling checks passed; 27 calendar/project regression checks passed; mocked phone/desktop notification setup, iPhone installation gating and safe sign-in redirects passed. Live authorization checks covered 152 protected API handlers. Both Compose files validate, Prisma reports no schema drift, and the worker starts/shuts down cleanly with push disabled. The runtime dependency audit reported zero known vulnerabilities at verification time. Real iPhone/APNs delivery remains a deployment/device acceptance step; no production deployment or real push send was performed during implementation.
 
 ## Knowledge
 
@@ -296,3 +296,18 @@ and links to existing tasks and projects. Creation also supports custom template
 work selections, and inline image uploads before the first save. See [Knowledge maintenance](docs/KNOWLEDGE_MAINTENANCE.md)
 for usage, backup requirements, limits, and tests. The original
 [architecture plan](docs/KNOWLEDGE_BASE_PLAN.md) records the design.
+
+
+### Persistent notification inbox
+
+The navigation bell and [Notifications](/notifications) keep event, work-session,
+deadline, follow-up, and opt-in milestone reminders even without phone push.
+Read/unread, dismissal with Undo, and timezone-aware snoozing sync through the
+database. Snoozing does not change source dates. The existing notification worker
+runs both inbox scheduling and optional push; no extra container or volume is needed.
+
+See [Notification inbox maintenance](docs/NOTIFICATION_INBOX_MAINTENANCE.md) for
+API/model structure, activation/catch-up rules, retention, tests, backup restore
+verification, known older regression failures, and coordinated app/worker rollout.
+Stop the old worker before the generation-aware migration; do not run an older
+worker against the new queue constraint.

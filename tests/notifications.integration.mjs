@@ -263,6 +263,7 @@ test(
               "@/lib/prisma": { prisma: db },
               "@/lib/owner-policy": { OWNER_DATABASE_USER_ID: 1 },
               "./rules.mjs": rules,
+              "./inbox.mjs": await import("../src/lib/notifications/inbox.mjs"),
               "./engine.mjs": {
                 ...engine,
                 sendPush: async () => {
