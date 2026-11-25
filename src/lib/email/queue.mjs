@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { EmailError, sendEmail } from "./resend.mjs";
 import { Prisma } from "../../generated/prisma/index.js";
+import { withEmailPermission } from "./preferences.mjs";
 
 const RETRY_WINDOW = 20 * 3600000; // Stay below Resend's 24-hour idempotency lifetime.
 
@@ -20,7 +21,15 @@ export async function enqueueEmail(db, userId, { kind, key, payload }, now = new
 // template registry; it must return an immutable Resend message without secrets.
 export async function deliverEmails(
   db,
-  { userId, config, prepare, now = new Date(), send = sendEmail, allowed = (job) => !!job },
+  {
+    userId,
+    config,
+    prepare,
+    now = new Date(),
+    send = sendEmail,
+    allowed = (job) => !!job,
+    env = process.env,
+  },
 ) {
   const jobs = await db.emailDelivery.findMany({
     where: {
@@ -91,18 +100,31 @@ export async function deliverEmails(
       });
       if (!ready.count) continue;
       attempted = true;
-      const accepted = await send(message, { config, key: `dashboard/${job.id}` });
-      await db.emailDelivery.updateMany({
-        where: owned,
-        data: {
-          status: "SENT",
-          providerId: accepted.id,
-          sentAt: now,
-          errorCode: null,
-          leaseUntil: null,
-          claimToken: null,
+      await withEmailPermission(
+        db,
+        userId,
+        message,
+        async (tx, currentConfig) => {
+          const stillOwned = await tx.emailDelivery.count({ where: owned });
+          if (!stillOwned) throw new EmailError("EMAIL_PERMISSION_CHANGED");
+          const accepted = await send(message, {
+            config: currentConfig,
+            key: `dashboard/${job.id}`,
+          });
+          await tx.emailDelivery.updateMany({
+            where: owned,
+            data: {
+              status: "SENT",
+              providerId: accepted.id,
+              sentAt: now,
+              errorCode: null,
+              leaseUntil: null,
+              claimToken: null,
+            },
+          });
         },
-      });
+        env,
+      );
       sent++;
     } catch (error) {
       const retryable = !(error instanceof EmailError) || error.retryable;

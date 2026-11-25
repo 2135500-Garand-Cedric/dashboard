@@ -226,8 +226,8 @@ export default function AllWork({
         actions={
           <>
             {!projectId && (
-              <Link href="/todos/manage" className={buttonClass}>
-                Contacts
+              <Link href="/settings/people" className={buttonClass}>
+                People
               </Link>
             )}
             <button

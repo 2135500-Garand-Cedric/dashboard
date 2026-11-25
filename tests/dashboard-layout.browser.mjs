@@ -224,11 +224,10 @@ test(
           await page.getByRole("textbox", { name: "Search work", exact: true }).inputValue(),
           "Layout test",
         );
-        await page.getByRole("link", { name: "Contexts & contacts", exact: true }).click();
-        await page.waitForURL(`${base}/todos/manage`);
-        await page.getByRole("heading", { name: "Contexts & contacts", exact: true }).waitFor();
-        await page.getByRole("heading", { name: "Contexts", exact: true }).waitFor();
-        await page.getByRole("heading", { name: "Contacts", exact: true }).waitFor();
+        await page.getByRole("link", { name: "People", exact: true }).click();
+        await page.waitForURL(`${base}/settings/people`);
+        await page.getByRole("heading", { name: "People", exact: true }).waitFor();
+        await page.getByRole("heading", { name: "People", exact: true }).waitFor();
         assert.equal(await page.locator("#contexts summary, #contacts summary").count(), 0);
         await nav("Calendar");
         await showFilters();

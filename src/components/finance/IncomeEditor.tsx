@@ -17,8 +17,12 @@ import {
   type FinanceIncome,
 } from "@/lib/finance/income";
 import { MAX_RECEIPT_BYTES } from "@/lib/finance/receipts";
-import { currencyOptionLabel, type FinanceAccount } from "@/lib/finance/validation";
-import { displayAmount, type FinanceTransaction } from "@/lib/finance/transactions";
+import { type FinanceAccount } from "@/lib/finance/validation";
+import {
+  displayAmount,
+  twoDecimalAmount,
+  type FinanceTransaction,
+} from "@/lib/finance/transactions";
 import FinanceDocumentPanel from "./FinanceDocumentPanel";
 import {
   fieldClass,
@@ -29,6 +33,9 @@ import {
   secondaryButton,
   useFinanceData,
 } from "./shared";
+function incomeInputAmount(value?: string | null) {
+  return value ? twoDecimalAmount(value) : "";
+}
 // Keep the server-provided currency list identical during hydration.
 export function NewIncomeEditor({
   currencies,
@@ -135,7 +142,6 @@ function ExistingIncome({
 function IncomeForm({
   existing,
   initialDate,
-  currencies,
   refresh,
   readOnly,
   headerMeta,
@@ -175,16 +181,20 @@ function IncomeForm({
       existing?.account?.id ?? initialTransaction?.account.id ?? prefill?.accountId ?? "",
     ),
     currency: existing?.currency ?? initialTransaction?.currency ?? prefill?.currency ?? "CAD",
-    grossAmount: existing?.grossAmount ?? "",
-    netAmount: existing?.netAmount ?? initialTransaction?.amount ?? prefill?.amount ?? "",
+    grossAmount: incomeInputAmount(existing?.grossAmount),
+    netAmount: incomeInputAmount(
+      existing?.netAmount ?? initialTransaction?.amount ?? prefill?.amount,
+    ),
     notes: existing?.notes ?? initialTransaction?.notes ?? "",
     transactionAction: existing?.transaction || initialTransaction ? "LINK" : "CREATE",
     transactionId: String(existing?.transaction?.id ?? initialTransaction?.id ?? ""),
   }));
   const [deductions, setDeductions] = useState(
     () =>
-      existing?.deductions.map((line) => ({ typeId: String(line.typeId), amount: line.amount })) ??
-      [],
+      existing?.deductions.map((line) => ({
+        typeId: String(line.typeId),
+        amount: twoDecimalAmount(line.amount),
+      })) ?? [],
   );
   const [file, setFile] = useState<File | null>(null),
     [busy, setBusy] = useState(false),
@@ -199,11 +209,23 @@ function IncomeForm({
     setDraft((previous) => ({ ...previous, [key]: value }));
     setAcknowledge(false);
   };
+  const originalAmount = (value: string, original?: string | null) =>
+    original && value === twoDecimalAmount(original) ? original : value;
+  const grossAmount = originalAmount(draft.grossAmount, existing?.grossAmount);
+  const netAmount = originalAmount(
+    draft.netAmount,
+    existing?.netAmount ?? initialTransaction?.amount,
+  );
   const sourceOptions =
     sources.data?.sources.filter((item) => item.active || item.id === existing?.source?.id) ?? [];
   const accountOptions =
     accounts.data?.accounts.filter((item) => item.active || item.id === existing?.account?.id) ??
     [];
+  const currency =
+    accounts.data?.accounts.find((account) => account.id === Number(draft.accountId))?.currency ??
+    existing?.account?.currency ??
+    initialTransaction?.account.currency ??
+    draft.currency;
   const typeOptions =
     types.data?.types.filter(
       (item) => item.active || existing?.deductions.some((line) => line.typeId === item.id),
@@ -213,7 +235,10 @@ function IncomeForm({
   );
   const normalizedDeductions = deductions.map((line) => ({
     ...line,
-    amount: line.amount.trim() || "0",
+    amount: originalAmount(
+      line.amount.trim() || "0",
+      existing?.deductions.find((saved) => saved.typeId === Number(line.typeId))?.amount,
+    ),
   }));
   function addDeductions(all: boolean) {
     const additions = all ? availableTypes : availableTypes.slice(0, 1);
@@ -231,7 +256,7 @@ function IncomeForm({
   }
   let amounts: ReturnType<typeof incomeAmounts> | null = null;
   try {
-    amounts = incomeAmounts(draft.grossAmount || null, normalizedDeductions, draft.netAmount);
+    amounts = incomeAmounts(grossAmount || null, normalizedDeductions, netAmount);
   } catch {
     /* Wait for valid decimal fields. */
   }
@@ -258,11 +283,13 @@ function IncomeForm({
       requestKey.current ??= crypto.randomUUID();
       const details = {
         ...draft,
+        currency,
         sourceId: Number(draft.sourceId),
         accountId: Number(draft.accountId),
         periodStart: draft.periodStart || null,
         periodEnd: draft.periodEnd || null,
-        grossAmount: draft.grossAmount || null,
+        grossAmount: grossAmount || null,
+        netAmount,
         deductions: normalizedDeductions.map((line) => ({
           typeId: Number(line.typeId),
           amount: line.amount,
@@ -467,16 +494,27 @@ function IncomeForm({
                   />
                 </label>
                 <label className="block space-y-1">
-                  Currency
+                  Deposit account
                   <select
-                    aria-label="Income currency"
+                    aria-label="Deposit account"
+                    required
                     className={fieldClass}
-                    value={draft.currency}
-                    onChange={(event) => patch("currency", event.target.value)}
+                    value={draft.accountId}
+                    onChange={(event) => {
+                      setDraft((previous) => ({
+                        ...previous,
+                        accountId: event.target.value,
+                        ...(!existing?.transaction
+                          ? { transactionAction: "CREATE", transactionId: "" }
+                          : {}),
+                      }));
+                    }}
                   >
-                    {currencies.map((currency) => (
-                      <option key={currency} value={currency}>
-                        {currencyOptionLabel(currency)}
+                    <option value="">Choose a deposit account</option>
+                    {accountOptions.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.name} · {account.currency}
+                        {account.active ? "" : " (inactive)"}
                       </option>
                     ))}
                   </select>
@@ -513,7 +551,13 @@ function IncomeForm({
                     autoComplete="off"
                     value={draft.grossAmount}
                     className={fieldClass}
-                    onChange={(event) => patch("grossAmount", event.target.value)}
+                    onChange={(event) => {
+                      if (/^\d*(?:\.\d{0,2})?$/.test(event.target.value))
+                        patch("grossAmount", event.target.value);
+                    }}
+                    onBlur={() =>
+                      patch("grossAmount", incomeInputAmount(draft.grossAmount.replace(/\.$/, "")))
+                    }
                   />
                 </label>
                 <label className="block space-y-1">
@@ -526,7 +570,13 @@ function IncomeForm({
                     autoComplete="off"
                     value={draft.netAmount}
                     className={fieldClass}
-                    onChange={(event) => patch("netAmount", event.target.value)}
+                    onChange={(event) => {
+                      if (/^\d*(?:\.\d{0,2})?$/.test(event.target.value))
+                        patch("netAmount", event.target.value);
+                    }}
+                    onBlur={() =>
+                      patch("netAmount", incomeInputAmount(draft.netAmount.replace(/\.$/, "")))
+                    }
                   />
                 </label>
               </div>
@@ -598,6 +648,7 @@ function IncomeForm({
                         className={fieldClass}
                         value={line.amount}
                         onChange={(event) => {
+                          if (!/^\d*(?:\.\d{0,2})?$/.test(event.target.value)) return;
                           setDeductions(
                             deductions.map((item, i) =>
                               i === index ? { ...item, amount: event.target.value } : item,
@@ -605,6 +656,18 @@ function IncomeForm({
                           );
                           setAcknowledge(false);
                         }}
+                        onBlur={() =>
+                          setDeductions((previous) =>
+                            previous.map((item, i) =>
+                              i === index
+                                ? {
+                                    ...item,
+                                    amount: incomeInputAmount(item.amount.replace(/\.$/, "")),
+                                  }
+                                : item,
+                            ),
+                          )
+                        }
                       />
                     </label>
                     <button
@@ -626,7 +689,7 @@ function IncomeForm({
                 {amounts && (
                   <p className="text-sm">
                     Total deductions:{" "}
-                    {displayAmount(amounts.deductionsTotal, draft.currency).replace(/^\+/, "")}
+                    {displayAmount(amounts.deductionsTotal, currency).replace(/^\+/, "")}
                   </p>
                 )}
                 {mismatch && (
@@ -635,8 +698,8 @@ function IncomeForm({
                     className="space-y-2 rounded-lg bg-amber-500/10 p-3 text-sm text-amber-500"
                   >
                     <p>
-                      Gross minus deductions does not equal net. Difference: {amounts?.difference}{" "}
-                      {draft.currency}.
+                      Gross minus deductions does not equal net. Difference:{" "}
+                      {twoDecimalAmount(amounts!.difference!)} {currency}.
                     </p>
                     <label className="flex items-start gap-2">
                       <input
@@ -667,32 +730,6 @@ function IncomeForm({
               </label>
             )}
             <fieldset disabled={readOnly} className="min-w-0 space-y-4">
-              <label className="block space-y-1">
-                Deposit account
-                <select
-                  aria-label="Deposit account"
-                  required
-                  className={fieldClass}
-                  value={draft.accountId}
-                  onChange={(event) => {
-                    setDraft((previous) => ({
-                      ...previous,
-                      accountId: event.target.value,
-                      ...(!existing?.transaction
-                        ? { transactionAction: "CREATE", transactionId: "" }
-                        : {}),
-                    }));
-                  }}
-                >
-                  <option value="">Choose a deposit account</option>
-                  {accountOptions.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.name} · {account.currency}
-                      {account.active ? "" : " (inactive)"}
-                    </option>
-                  ))}
-                </select>
-              </label>
               {!accounts.loading && !accountOptions.length && (
                 <Link href="/finance/settings/accounts" className={secondaryButton}>
                   Add a deposit account

@@ -12,7 +12,6 @@ Add these to the NAS `.env`, shared by `dashboard` and `notification-worker`:
 EMAIL_ENABLED=true
 RESEND_API_KEY=re_replace_with_your_resend_api_key
 EMAIL_FROM="Dashboard <reports@your-domain.com>"
-EMAIL_TO=your-email@example.com
 EMAIL_WORKER_SECRET=replace_with_a_random_secret
 WEEKLY_REPORT_EMAIL_ENABLED=true
 ```
@@ -26,8 +25,11 @@ openssl rand -hex 32
 Paste its output as `EMAIL_WORKER_SECRET`. Use the same value in both services;
 never prefix these variables with `NEXT_PUBLIC_`. The API key must be permitted
 to send from your chosen Resend domain. Verify that domain by adding Resend's
-requested DNS records first. The From address must belong to it; the To address
-is your receiving inbox. Keep the existing `NEXTAUTH_URL` set to the public HTTPS
+requested DNS records first. The From address must belong to it. In **Settings →
+Email**, enter your receiving inbox and enable **Allow emails**. The address and
+permission are stored in the database; `EMAIL_TO` is ignored and can be removed
+from the environment. Email starts disabled after this update. Keep the existing
+`NEXTAUTH_URL` set to the public HTTPS
 dashboard URL so email links open the right application.
 
 Official setup references: [verified domains](https://resend.com/docs/dashboard/domains/introduction),
@@ -54,6 +56,11 @@ healthy, and the worker waits for it. Migration
 it does not rewrite existing records. Use the normal backup/deployment procedure.
 No production deployment or real provider send was performed during implementation.
 
+Migration `20261124160000_email_preferences` adds owner-scoped email preferences
+and cancels previously pending jobs. Previously attempted jobs become `UNKNOWN`
+because the provider may already have accepted them; unattempted jobs become
+`FAILED`. Existing sent history remains intact.
+
 Development Compose forces email off unless `DEV_EMAIL_ENABLED=true` is explicitly
 set. Leave it false for normal development, even when copying production variables.
 For an intentional development send, both services need that separate opt-in,
@@ -70,7 +77,13 @@ week, it catches up only the most recent completed week, not every past week.
 
 `WEEKLY_REPORT_EMAIL_ENABLED` independently controls report email. The inbox's
 Weekly report ready checkbox controls inbox/push reminders, not this email flag.
-Setting `EMAIL_ENABLED=false` prevents all outgoing email; turning the weekly
+The saved **Allow emails** switch prevents all outgoing email, including scheduled
+jobs and retries. Disabling it cancels pending jobs. Changing the recipient also
+cancels pending jobs addressed to the previous inbox; canceled jobs are not replayed
+when re-enabled. An email already accepted by Resend cannot be recalled. Disabling
+waits for any in-flight send to settle before confirming, so no new send starts
+after the setting is confirmed off. `EMAIL_ENABLED=false` remains an additional
+server-side kill switch; turning the weekly
 flag off prevents new report jobs and retires pending report sends when processed.
 
 The attachment is one A4 page with the same headline statistics as the report:
@@ -91,6 +104,7 @@ later can reflect subsequent corrections.
 | `GET /api/email` | GitHub owner | Last 30 delivery status rows, without recipient/body/PDF/payload |
 | `POST /api/email` | GitHub owner, existing origin checks | Queue an approved template with validated data |
 | `POST /api/email/process` | Separate worker bearer secret | Schedule due features and process the shared queue |
+| `GET/PATCH /api/settings/email` | GitHub owner, origin checks on writes | Read/update consent and recipient; revision conflicts prevent stale overwrites |
 | `GET /api/weekly-report/pdf?week=YYYY-MM-DD` | GitHub owner | Download a current one-page PDF without enabling or sending email |
 
 The public email API is template based. For example, from the signed-in
@@ -116,7 +130,8 @@ To add another email feature:
 2. Queue it through `enqueueEmail(db, ownerId, { kind, key, payload })` from a trusted
    domain command or a new scheduler. Use a stable key representing one intended
    email. Enqueue in the domain transaction when atomicity is needed.
-3. Reuse the existing processor and `sendEmail` transport. Add validation, owner
+3. Reuse the existing processor and its permission gate; do not call the transport
+   directly from a feature. Add validation, owner
    scoping, opt-out behavior and tests for that feature.
 
 The Resend transport itself does not know about reports. It takes a prepared
@@ -131,9 +146,12 @@ Do not turn the owner API into a general send-anything endpoint.
   Resend. Retries reuse those bytes and the same provider idempotency key, including
   after a restart; they do not rebuild a changed PDF. API keys and worker secrets
   are never stored in the outbox.
-- A changed recipient/sender affects newly prepared jobs. A message already
-  prepared keeps its saved destination for safe idempotency. Stop processing and
-  inspect outstanding jobs before changing recipients if that matters.
+- Before every provider request, the queue rechecks current database consent and
+  recipient under a per-owner transaction advisory lock shared with settings
+  updates. Network requests have a 15-second timeout; the bounded transaction
+  records provider acceptance before releasing the lock. Prepared retries retain
+  identical bytes for idempotency, but a changed recipient cancels them rather
+  than sending to the old address. A sender change affects newly prepared jobs.
 - Resend keeps idempotency keys for [24 hours](https://resend.com/docs/dashboard/emails/idempotency-keys).
   Automatic retries stop conservatively after 20 hours from the first attempt,
   or after eight unsuccessful attempts. Potentially accepted but unresolved jobs
@@ -162,13 +180,27 @@ Implementation checks are recorded in the weekly-report maintenance guide.
 Test commands:
 
 ```sh
-node --test tests/email.test.mjs
-RUN_EMAIL_DB_TEST=1 node --test tests/email.integration.mjs tests/email-server.integration.mjs
+node --test tests/email.test.mjs tests/email-settings.test.mjs
+RUN_EMAIL_DB_TEST=1 node --test tests/email.integration.mjs tests/email-server.integration.mjs tests/email-settings.integration.mjs
 RUN_EMAIL_HTTP_TEST=1 node --test tests/email.http.mjs
 ```
 
 Database tests require the isolated `work-db` host and
-`WORK_MANAGEMENT_DISPOSABLE=1`, use rollback-only fixtures and fake senders. The
+`WORK_MANAGEMENT_DISPOSABLE=1`, use rollback or self-cleaning fixtures and fake senders. The
 HTTP test requires the development application and performs read-only PDF/status
 requests. Real Resend account credentials, DNS verification and mailbox delivery
 cannot be verified until the owner configures them.
+
+Email settings update verification (2026-11-24): 10 email/income unit tests,
+four isolated email database integration tests, and the mocked desktop/phone
+browser regression passed. TypeScript, targeted ESLint, and the production Docker
+image build passed. The browser check verifies settings error states, disabling
+with an invalid unsaved recipient, two-decimal income fields, and preserving
+untouched stored precision. No real email was sent.
+
+```sh
+RUN_DASHBOARD_SETTINGS_BROWSER_TEST=1 node --test tests/dashboard-email-settings.browser.mjs
+```
+
+This browser test needs Playwright and the development app on port 3000; it mocks
+email preference and finance APIs rather than changing saved settings or records.

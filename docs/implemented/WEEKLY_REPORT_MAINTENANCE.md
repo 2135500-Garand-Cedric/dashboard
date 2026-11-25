@@ -252,8 +252,10 @@ The later optional PDF/Resend implementation is documented below.
 ## One-page PDF and shared email
 
 See [Email maintenance](EMAIL_MAINTENANCE.md) for production `.env` setup, sender
-verification, shared API contracts, scheduling and failure recovery. The dedicated
-`pdf.mjs` renderer consumes the same report summary with CAD/all data. It refuses
+verification, shared API contracts, scheduling and failure recovery. The
+**Settings → Email** page controls the master permission and recipient address;
+email starts disabled, and the server configuration remains an additional gate.
+The dedicated `pdf.mjs` renderer consumes the same report summary with CAD/all data. It refuses
 an unavailable Work, Knowledge, Japanese or Finance section instead of emailing
 misleading zeros. The protected `/api/weekly-report/pdf` endpoint also works without
 enabling email; it always returns a private attachment, not a public file URL.

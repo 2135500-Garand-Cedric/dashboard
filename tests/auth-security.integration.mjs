@@ -230,6 +230,7 @@ test(
       "/todos/manage",
       "/projects/new",
       "/settings",
+      "/settings/people",
       "/my-work",
       "/projects",
       "/projects/1",

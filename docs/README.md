@@ -31,5 +31,8 @@ before using historical instructions.
 | [Dashboard improvement ideas](planned/DASHBOARD_IMPROVEMENT_IDEAS.md) | Global search and recoverable drafts remain proposals; ideas 3–5 have implementation references |
 | [Activity log / audit history](planned/AUDIT_LOG_PLAN.md) | A unified, owner-only history of meaningful actions across the application |
 | [Stock market overview](planned/STOCK_MARKET_PLAN.md) | Major indexes, notable stock movers and one or two market news items; free and paid data options |
+| [Integrated AI assistant](planned/AI_ASSISTANT_PLAN.md) | Chat/voice capture, validated task/calendar/Knowledge actions, hosting options and worked usage-cost examples |
+| [Outlook calendar synchronization](planned/OUTLOOK_CALENDAR_SYNC_PLAN.md) | Automatic one-way imports, read-only event details, task links, sync reliability and expected costs |
+| [Daily journal](planned/DAILY_JOURNAL_PLAN.md) | Voice-first daily memories, speech-to-text transcription, editable entries and positive-moment prompts |
 
 These are planning documents, not features enabled by reorganizing this folder.

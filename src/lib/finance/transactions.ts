@@ -1,4 +1,5 @@
 import type { IncomeSource } from "./income";
+import type { ReimbursementSummary } from "./reimbursements";
 import {
   CURRENCIES,
   FinanceValidationError,
@@ -34,6 +35,8 @@ export interface TransactionInput {
 }
 
 export interface FinanceTransaction {
+  reimbursement?: ReimbursementSummary | null;
+  reimbursementAllocated?: string;
   id: number;
   date: string;
   description: string;

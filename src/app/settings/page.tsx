@@ -6,8 +6,16 @@ import {
   BanknotesIcon,
   CakeIcon,
   ArrowRightIcon,
+  EnvelopeIcon,
+  UsersIcon,
 } from "@heroicons/react/24/outline";
 const sections = [
+  {
+    href: "/settings/people",
+    title: "People",
+    icon: UsersIcon,
+    tone: "text-violet-400 bg-violet-500/10",
+  },
   {
     href: "/settings/timezone",
     title: "Display timezone",
@@ -31,6 +39,12 @@ const sections = [
     title: "Notifications",
     icon: BellIcon,
     tone: "text-amber-400 bg-amber-500/10",
+  },
+  {
+    href: "/settings/email",
+    title: "Email",
+    icon: EnvelopeIcon,
+    tone: "text-sky-400 bg-sky-500/10",
   },
   {
     href: "/finance/settings",

@@ -345,4 +345,6 @@ for coverage limits, source calculations, pagination, and verification.
 Weekly reports can also be emailed as a one-page PDF through the shared Resend
 outbox. See [email configuration and maintenance](docs/implemented/EMAIL_MAINTENANCE.md)
 for `.env` variables, sender-domain verification, retries and future email templates.
-Email is disabled by default and requires no extra container.
+Email is disabled by default and requires no extra container. Set the receiving
+address and allow or disable sending in **Settings → Email**. The master switch
+also stops retries; the recipient is no longer read from `.env`.

@@ -74,7 +74,7 @@ export default function TransactionHistory({
           />
           {view === "expenses" && (
             <Link href="/finance/expenses/refunds/new" className={secondaryButton}>
-              Record refund
+              Refund / reimbursement
             </Link>
           )}
           <Link

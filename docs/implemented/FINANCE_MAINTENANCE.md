@@ -16,6 +16,140 @@ Finance configuration is grouped under **Finance → Settings** (`/finance/setti
 
 ## Income, expenses and transfers
 
+### Shared people
+
+**Settings → People** (`/settings/people`) is the shared directory for task
+requesters/affected people and expense reimbursements. Each person has a required
+name and optional organization, email, phone and notes, plus active/inactive
+status. People are owner-managed records, not application login accounts; saving
+an email does not send mail or grant access. Management uses card tiles and
+centered create/edit/deactivation dialogs. Deactivation preserves existing links
+and prevents new assignments. Work and Finance Settings link to this same page.
+
+The existing `WorkContact` model and `/api/work-contacts` handlers remain the shared
+implementation, preserving task IDs and the task-details loading bundle. There
+is no second finance contact table or duplicate CRUD service. Mutations retain
+owner checks, revision conflicts and idempotency keys. The old `/todos/manage`
+URL redirects to the canonical Settings page for saved bookmarks; its duplicate
+contact manager was removed.
+
+Migration `20261125120000_shared_people` adds the contact fields and links each
+reimbursement plan to a contact ID. Unambiguous matching task contacts are reused
+within the same owner; missing or ambiguous names get a separate directory entry
+instead of guessing an identity. Original plan names remain snapshots even if a
+directory name changes later. Amounts, expense/payment IDs, allocations and task
+links remain intact. No automatic notifications are sent to people.
+
+Shared-directory verification on 2026-11-25 passed: 10 finance unit tests,
+14 database assertions/subtests across finance and task contacts, populated
+migration rehearsal, and desktop/phone browser flows for People CRUD,
+deactivation, directory selection, persistent headers, equal-height refund cards
+and progress graphics. TypeScript, targeted ESLint and production Docker build
+passed. Read-only development checks confirmed anonymous directory calls return
+401 and the owner can read People and linked finance records. No production
+release or real financial record edits were performed.
+
+### Expense reimbursements
+
+On desktop, open a saved expense's **Reimbursements** tab and choose **Track
+reimbursement**. Phones show the section below the expense. Select a directory person and the
+expected amount, which can cover all or part of the expense. Use **Add person**
+for additional contributors. Their combined expected amounts cannot exceed the
+expense. Each person's received/outstanding amounts are tracked independently.
+Changing desktop tabs keeps unsaved expense fields mounted. The shared Expense
+details header, record status, buttons and desktop tabs remain above both views;
+the duplicate description heading and reload action are removed. Create incoming
+repayments with **Refund / reimbursement** in Expenses. On the saved refund,
+allocate amounts to expenses expecting repayment. One payment can cover multiple
+expenses, and several payments can cover one expense. The accounts can differ,
+but the currencies must match; no currency conversion is inferred. Unassigned
+payment amounts are allowed, including payments received before expenses exist.
+
+The expense detail and history cards distinguish awaiting, partial, and fully
+reimbursed expenses. Details show expected, received, still owed, and your cost
+so far (original expense less actual reimbursements). An expected repayment is
+not money received. Editing or unlinking allocations updates this tracking only.
+Allocation editing lives on the refund; unlinking is available on either record.
+Reimbursement tracking remains editable after statement matching because it does
+not change the bank facts. Linked amounts/currencies/types cannot be changed and
+linked records cannot be deleted until reimbursement links/tracking are removed.
+Notes continue to use the normal notes editor. Refund details and reimbursement
+allocations use equal-height columns under one top bar on desktop and stack on
+phones. Reimbursement progress uses an SVG ring with a received/expected ratio,
+received amount, outstanding amount and current personal cost. Decimal money
+stays exact; only a bounded percentage is converted for drawing. Reimbursement
+errors appear only in the snackbar. The card has no manual reload/search or
+record-payment shortcut. Deletion and unlink confirmations use centered native
+dialogs with Escape/outside-click dismissal while idle.
+
+`FinancialReimbursementPlan` stores one person/expected amount per row, with
+multiple rows per expense and a unique expense/contact-ID pair. The person name
+is retained as a historical snapshot; new plans require an active owned contact.
+`FinancialReimbursement` links a refund payment to an expense with a positive
+decimal amount, an explicit plan ID, and a unique plan/payment pair. Owner-scoped services in
+`src/lib/finance/reimbursement-server.ts` validate both endpoints, enforce payment
+and expense limits, and use a per-owner advisory lock plus retryable serializable
+transactions. Stale edits/unlinks return 409. Restrictive foreign keys preserve
+the links against accidental ledger deletion. The additive migration
+`20261124170000_expense_reimbursements` creates only empty tracking tables; it does
+not rewrite existing finance records. Migration
+`20261125100000_multiple_reimbursement_people` assigns IDs to existing plans and
+backfills every existing allocation's plan ID before requiring it. Existing
+amounts, people and ledger IDs remain intact. Whole-database backups include both tables.
+
+The authenticated `/api/finance/activities/[id]/reimbursements` endpoint provides
+GET (details/search), PUT (expected repayment), POST (create/update allocation),
+and DELETE (unlink, with If-Match). The dropdown lists outstanding expense/person
+pairs in the payment's currency; it does not silently hide older unpaid items
+behind a search limit. The UI has no expense search field.
+
+Expense/income currencies are derived from the selected payment/deposit account,
+including prefilled forms. Their currency selectors have been removed. Income's
+deposit-account selector sits beside its pay date. Refund currency also follows
+its account, without a separate currency field. Server-side account/currency
+validation continues to enforce consistency.
+
+Statement matching still uses the complete signed bank payment and its original
+date/account/currency. Allocations create no financial transactions or duplicate
+exclusions. Reports retain their cash-date behavior: expenses on payment dates,
+refunds on receipt dates. Refunds reduce expenses rather than increasing income.
+The refund's selected category still controls its report category; allocations
+do not redistribute category/merchant/account charts or rewrite earlier months.
+For rent repayments select Rent on the refund. Reimbursements already entered as
+income are not converted automatically and continue to count as income.
+
+Verification for this workflow:
+
+```sh
+node --test tests/finance-reimbursements.test.mjs tests/finance-transactions.test.mjs tests/finance-reporting.test.mjs
+RUN_REIMBURSEMENTS_DB_TEST=1 RUN_FINANCE_ACTIVITY_DB_TEST=1 RUN_WORK_MANAGEMENT_DB_TEST=1 node --test --test-concurrency=1 tests/finance-reimbursements.integration.mjs tests/finance-activities.integration.mjs tests/work-all.integration.mjs
+RUN_REIMBURSEMENTS_BROWSER_TEST=1 node --test tests/finance-reimbursements.browser.mjs
+```
+
+Database tests require the disposable `work-db` database and
+`WORK_MANAGEMENT_DISPOSABLE=1`. The allocation race test creates and cleans up its
+own committed fixtures; run it sequentially with rollback-based serializable
+tests to avoid shared-owner predicate conflicts. Browser tests use the development
+app on port 3000 and mocked finance APIs, without saving real financial records.
+
+Executed on 2026-11-24: all 10 selected unit tests, three sequential database tests
+(including the concurrent-allocation case), and the desktop/phone browser workflow
+passed. Read-only development HTTP checks verified all four methods reject
+anonymous callers and owner history/detail reads succeed. TypeScript, targeted
+ESLint, migration deployment to development/disposable databases, and the final
+production Docker build passed. No production deployment or financial-data rewrite
+was performed.
+
+Refinement checks on 2026-11-25 passed: 10 unit tests, five sequential database
+tests (including multiple people, concurrency, and migration of pre-existing
+links), desktop/phone browser checks, TypeScript, targeted ESLint, and the
+production Docker build. Browser checks cover unsaved edits surviving tab changes,
+account-derived currencies, snackbar-only reimbursement errors, centered deletion
+and unlink dialogs, and equal desktop refund columns. Authenticated development
+history and reimbursement reads also passed without modifying financial records.
+
+### Activity records
+
 The primary pages are `/finance/income`, `/finance/expenses`, and `/finance/transfers`. The internal `FinancialTransaction` ledger remains the source of monetary totals. An income or expense form saves its supporting metadata and account movement together; receipt/pay-stub files are optional. A basic expense has one amount, with an optional subtotal/tax/tip breakdown. A same-account/date/amount conflict offers either reuse of the existing expense or explicit confirmation of a separate real purchase; the latter never bypasses private-document duplicate checks. Income uses a source, positive net amount and deposit account; gross earnings and deductions remain separate payroll details. Refunds are positive movements in Expenses that reduce spending. Transfers create two linked account movements and contribute neither income nor expenses.
 
 History queries include imported movements even before supporting metadata is supplied. Fully excluded manual duplicates are hidden; partially excluded remainders remain visible. Activity histories/exports have a 5,000-movement filtered limit with an explicit error, so narrow account/date filters for larger datasets. Existing ledger IDs, document IDs, statement identifiers and audit events are retained. Old supporting-record list/detail redirect pages have been removed. Current income/expense details resolve their supporting records through ledger associations, including confirmed split allocations. Conflict buttons resolve supporting IDs to a current activity before navigating; they never treat a receipt ID as a ledger ID.

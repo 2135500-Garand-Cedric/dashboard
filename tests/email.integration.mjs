@@ -18,8 +18,12 @@ test(
     try {
       await assert.rejects(
         prisma.$transaction(
-          async (db) => {
+          async (tx) => {
+            const db = { ...tx, $transaction: (fn) => fn(tx) };
             const user = await db.user.create({ data: { email: `${randomUUID()}@invalid.test` } });
+            await db.emailSettings.create({
+              data: { userId: user.id, enabled: true, recipient: "owner@example.com" },
+            });
             const userId = user.id,
               now = new Date();
             const input = {
@@ -51,17 +55,33 @@ test(
               return { id: "provider-1" };
             };
             const config = { apiKey: "fake" };
-            assert.equal((await deliverEmails(db, { userId, config, prepare, send, now })).sent, 0);
+            const env = {
+              EMAIL_ENABLED: "true",
+              RESEND_API_KEY: "re_test_not_real",
+              EMAIL_FROM: "reports@example.com",
+            };
+            assert.equal(
+              (await deliverEmails(db, { userId, config, env, prepare, send, now })).sent,
+              0,
+            );
             let job = await db.emailDelivery.findUniqueOrThrow({ where: { id: a.id } });
             assert.equal(job.status, "PENDING");
             assert.deepEqual(job.message, message);
             assert.equal(
-              (await deliverEmails(db, { userId, config, prepare, send, now: job.nextAttemptAt }))
-                .sent,
+              (
+                await deliverEmails(db, {
+                  userId,
+                  config,
+                  env,
+                  prepare,
+                  send,
+                  now: job.nextAttemptAt,
+                })
+              ).sent,
               1,
             );
             assert.equal(prepared, 1, "retry never regenerates the PDF/body");
-            await deliverEmails(db, { userId, config, prepare, send, now: job.nextAttemptAt });
+            await deliverEmails(db, { userId, config, env, prepare, send, now: job.nextAttemptAt });
             assert.equal(calls, 2);
             const other = await db.user.create({ data: { email: `${randomUUID()}@invalid.test` } });
             await enqueueEmail(db, other.id, input, now);
@@ -83,6 +103,7 @@ test(
             await deliverEmails(db, {
               userId,
               config,
+              env,
               prepare,
               send: () => assert.fail("Expired ambiguity must not resend"),
               now,
@@ -100,6 +121,7 @@ test(
             await deliverEmails(db, {
               userId,
               config,
+              env,
               prepare,
               send: async () => {
                 throw new EmailError("RESEND_HTTP_401");
@@ -119,6 +141,7 @@ test(
             await deliverEmails(db, {
               userId,
               config,
+              env,
               prepare,
               allowed: () => false,
               send: () => assert.fail("Disabled email must not send"),
@@ -132,7 +155,7 @@ test(
               where: { id: a.id },
               data: { updatedAt: new Date(now.getTime() - 31 * 86400000) },
             });
-            await deliverEmails(db, { userId, config, prepare, send, now });
+            await deliverEmails(db, { userId, config, env, prepare, send, now });
             assert.equal(
               (await db.emailDelivery.findUniqueOrThrow({ where: { id: a.id } })).message,
               null,

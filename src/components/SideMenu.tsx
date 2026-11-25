@@ -15,6 +15,7 @@ import {
   BanknotesIcon,
   BellIcon,
   CalendarDaysIcon,
+  LanguageIcon,
 } from "@heroicons/react/24/solid";
 
 export default function SideMenu() {
@@ -30,7 +31,7 @@ export default function SideMenu() {
     { name: "Calendar", href: "/events", icon: FolderIcon },
     { name: "Finance", href: "/finance", icon: BanknotesIcon },
     { name: "Japanese Statistics", href: "/japanese/statistics", icon: ChartPieIcon },
-    { name: "Japanese Practice", href: "/japanese/practice", icon: DocumentTextIcon },
+    { name: "Japanese Practice", href: "/japanese/practice", icon: LanguageIcon },
     { name: "Notifications", href: "/notifications", icon: BellIcon },
     { name: "Settings", href: "/settings", icon: Cog6ToothIcon },
   ];

@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import ts from "typescript";
-import { loadTaskFoundation } from "./helpers/task-foundation.mjs";
+import { supportModules } from "./helpers/work-support.mjs";
 const require = createRequire(import.meta.url);
 function load(file, deps = {}) {
   const exports = {},
@@ -29,18 +29,8 @@ test(
     assert.equal(url.pathname, "/work_test");
     const { PrismaClient } = require("../src/generated/prisma"),
       db = new PrismaClient();
-    const validation = load("../src/lib/work-management/validation.ts", {
-      "next/server": { NextResponse: { json: (data, options) => Response.json(data, options) } },
-    });
-    const deps = {
-      ...loadTaskFoundation(validation),
-      "./validation": validation,
-      "@/lib/prisma": { prisma: db },
-      "@/lib/owner-policy": { OWNER_DATABASE_USER_ID: 1, OWNER_GITHUB_ID: "89470930" },
-      "@/lib/event-dates": load("../src/lib/event-dates.ts"),
-    };
-    const api = load("../src/lib/work-management/server.ts", deps),
-      prefix = `__allwork_${randomUUID()}`;
+    const { validation, server: api, supportingDeps: deps } = supportModules(db);
+    const prefix = `__allwork_${randomUUID()}`;
     const taskIds = [],
       contactIds = [],
       keys = [];
@@ -74,19 +64,41 @@ test(
           const users = await db.user.count(),
             key = command();
           requester = await api.createWorkContact(
-            { name: `${prefix} requester`, company: "Synthetic company" },
+            {
+              name: `${prefix} requester`,
+              company: "Synthetic company",
+              email: "person@example.invalid",
+              phone: "555-1234",
+              notes: "Shared work and finance person",
+            },
             key,
           );
           contactIds.push(requester.id);
           assert.deepEqual(
             await api.createWorkContact(
-              { name: `${prefix} requester`, company: "Synthetic company" },
+              {
+                name: `${prefix} requester`,
+                company: "Synthetic company",
+                email: "person@example.invalid",
+                phone: "555-1234",
+                notes: "Shared work and finance person",
+              },
               key,
             ),
             requester,
           );
           assert.equal(await db.user.count(), users);
           assert.equal(requester.active, true);
+          assert.equal(requester.email, "person@example.invalid");
+          assert.equal(requester.phone, "555-1234");
+          assert.equal(requester.notes, "Shared work and finance person");
+          for (const body of [
+            { email: "invalid" },
+            { email: "a@example.com,b@example.com" },
+            { phone: "x".repeat(41) },
+            { notes: "x".repeat(2001) },
+          ])
+            await reject(api.patchWorkContact(requester.id, body, command(requester)), 400);
           requester = await api.patchWorkContact(
             requester.id,
             { name: `${prefix} renamed requester` },

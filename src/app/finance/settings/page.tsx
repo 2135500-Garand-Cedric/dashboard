@@ -5,9 +5,16 @@ import {
   BuildingOfficeIcon,
   ReceiptPercentIcon,
   ArrowRightIcon,
+  UsersIcon,
 } from "@heroicons/react/24/outline";
 
 const sections = [
+  {
+    href: "/settings/people",
+    title: "People",
+    icon: UsersIcon,
+    tone: "bg-violet-500/10 text-violet-400",
+  },
   {
     href: "/finance/settings/accounts",
     title: "Financial accounts",

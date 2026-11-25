@@ -26,7 +26,6 @@ test(
       EMAIL_ENABLED: "true",
       RESEND_API_KEY: "re_test_not_a_real_key",
       EMAIL_FROM: "reports@example.com",
-      EMAIL_TO: "owner@example.com",
       WEEKLY_REPORT_EMAIL_ENABLED: "true",
       NEXTAUTH_URL: "https://dashboard.example.com",
     };
@@ -35,7 +34,8 @@ test(
     try {
       await assert.rejects(
         prisma.$transaction(
-          async (db) => {
+          async (tx) => {
+            const db = { ...tx, $transaction: (fn) => fn(tx) };
             const owner = await db.user.upsert({
               where: { id: 1 },
               create: { id: 1, email: `${randomUUID()}@invalid.test` },
@@ -43,11 +43,15 @@ test(
             });
             // Use an isolated owner ID in this injected server; production is fixed to 1.
             const user = await db.user.create({ data: { email: `${randomUUID()}@invalid.test` } });
+            await db.emailSettings.create({
+              data: { userId: user.id, enabled: true, recipient: "owner@example.com" },
+            });
             await db.notificationSettings.create({
               data: { userId: user.id, dateOnlyTime: "09:00" },
             });
             const delivered = [];
             const report = weeklyPdfFixture();
+            const preferences = await import("../src/lib/email/preferences.mjs");
             const server = loadWorkModule("src/lib/email/server.ts", {
               "@/lib/prisma": { prisma: db },
               "@/lib/owner-policy": { OWNER_DATABASE_USER_ID: user.id },
@@ -65,6 +69,7 @@ test(
               "@/lib/notifications/weekly-report.mjs": sources,
               "@/lib/notifications/rules.mjs": rules,
               "./resend.mjs": transport,
+              "./preferences.mjs": preferences,
               "./queue.mjs": {
                 ...queue,
                 deliverEmails: (client, options) =>
@@ -83,7 +88,7 @@ test(
             await server.processEmailQueue(new Date("2026-11-23T09:00:10Z"));
             await server.processEmailQueue(new Date("2026-11-23T09:01:10Z"));
             assert.equal(delivered.length, 1);
-            assert.equal(delivered[0].to, values.EMAIL_TO);
+            assert.equal(delivered[0].to, "owner@example.com");
             const pdf = await PDFDocument.load(
               Buffer.from(delivered[0].attachments[0].content, "base64"),
             );

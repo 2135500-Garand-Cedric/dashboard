@@ -10,6 +10,7 @@ import { latestWeeklyReportSource } from "@/lib/notifications/weekly-report.mjs"
 import { dateOnlyInstant } from "@/lib/notifications/rules.mjs";
 import { EmailError, emailConfiguration } from "./resend.mjs";
 import { enqueueEmail, deliverEmails } from "./queue.mjs";
+import { readEmailPreferences } from "./preferences.mjs";
 
 const headers = { "Cache-Control": "private, no-store" };
 type Payload = { week: string; timeZone: string };
@@ -81,7 +82,8 @@ export function emailResponseError(error: unknown) {
 }
 
 export async function queueRequestedEmail(value: unknown) {
-  if (!emailConfiguration()) throw new EmailError("EMAIL_DISABLED");
+  if (!emailConfiguration(process.env, await readEmailPreferences(prisma, userId)))
+    throw new EmailError("EMAIL_DISABLED");
   if (
     !value ||
     typeof value !== "object" ||
@@ -118,7 +120,7 @@ export async function emailDeliveryStatus() {
 }
 
 export async function processEmailQueue(now = new Date()) {
-  const config = emailConfiguration();
+  const config = emailConfiguration(process.env, await readEmailPreferences(prisma, userId));
   if (!config) return NextResponse.json({ sent: 0, disabled: true }, { headers });
   if (process.env.WEEKLY_REPORT_EMAIL_ENABLED === "true") {
     const { timeZone } = await readUserSettings();

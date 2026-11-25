@@ -92,9 +92,9 @@ test(
         const oldLabel = await toggle.textContent();
         await toggle.click();
         await assertEventually(async () => (await toggle.textContent()) !== oldLabel);
-        await page.getByRole("link", { name: "Contacts", exact: true }).click();
-        await page.waitForURL((url) => url.pathname === "/todos/manage");
-        await page.getByRole("heading", { name: "Contacts", exact: true, level: 1 }).waitFor();
+        await page.getByRole("link", { name: "People", exact: true }).click();
+        await page.waitForURL((url) => url.pathname === "/settings/people");
+        await page.getByRole("heading", { name: "People", exact: true, level: 1 }).waitFor();
         assert.equal(await page.getByRole("heading", { name: "Contexts", exact: true }).count(), 0);
         assert.equal(
           await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth),

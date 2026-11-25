@@ -12,20 +12,29 @@ const env = {
   EMAIL_ENABLED: "true",
   RESEND_API_KEY: "re_unit_test_only",
   EMAIL_FROM: "Dashboard <reports@example.com>",
-  EMAIL_TO: "owner@example.com",
   EMAIL_WORKER_SECRET: "a".repeat(64),
   EMAIL_APP_URL: "http://dashboard:3000",
 };
+const preferences = { enabled: true, recipient: "owner@example.com" };
+
 test("email is explicitly enabled, validates configuration and never sends without it", async () => {
   assert.equal(emailConfiguration({}), null);
-  assert.equal(emailConfiguration(env).to, "owner@example.com");
+  assert.equal(emailConfiguration(env), null);
+  assert.equal(emailConfiguration(env, { ...preferences, enabled: false }), null);
+  assert.equal(
+    emailConfiguration({ ...env, EMAIL_TO: "ignored@example.com" }, preferences).to,
+    "owner@example.com",
+  );
+  assert.throws(
+    () => emailConfiguration(env, { ...preferences, recipient: "a@b.com,c@d.com" }),
+    EmailError,
+  );
   for (const values of [
     { EMAIL_FROM: "bad" },
     { EMAIL_FROM: "Dashboard\r\nBcc: thief@example.com" },
-    { EMAIL_TO: "a@b.com,c@d.com" },
     { RESEND_API_KEY: "bad" },
   ])
-    assert.throws(() => emailConfiguration({ ...env, ...values }), EmailError);
+    assert.throws(() => emailConfiguration({ ...env, ...values }, preferences), EmailError);
   let called = false;
   assert.deepEqual(
     await runEmailWorkerPass({
@@ -39,7 +48,7 @@ test("email is explicitly enabled, validates configuration and never sends witho
   assert.equal(called, false);
 });
 test("shared Resend sender sends attachments with idempotency and sanitizes provider errors", async () => {
-  const config = emailConfiguration(env);
+  const config = emailConfiguration(env, preferences);
   const message = {
     from: config.from,
     to: config.to,

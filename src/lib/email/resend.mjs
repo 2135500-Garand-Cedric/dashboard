@@ -8,14 +8,19 @@ export class EmailError extends Error {
 }
 
 const mailbox = /^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/;
-export function emailConfiguration(env = process.env) {
-  if (env.EMAIL_ENABLED !== "true") return null;
+export function validEmailRecipient(value) {
+  return typeof value === "string" && value.length <= 254 && mailbox.test(value);
+}
+/** @param {NodeJS.ProcessEnv} env
+ * @param {{enabled: boolean, recipient: string} | null} preferences */
+export function emailConfiguration(env = process.env, preferences = null) {
+  if (env.EMAIL_ENABLED !== "true" || !preferences?.enabled) return null;
   const from = env.EMAIL_FROM?.trim() || "";
   const address = from.match(/<([^<>]+)>$/)?.[1] || from;
-  const to = env.EMAIL_TO?.trim() || "";
+  const to = preferences.recipient;
   if (
     !mailbox.test(address) ||
-    !mailbox.test(to) ||
+    !validEmailRecipient(to) ||
     /[\r\n]/.test(from) ||
     from.length > 250 ||
     !/^re_[\w-]{8,}$/.test(env.RESEND_API_KEY || "")

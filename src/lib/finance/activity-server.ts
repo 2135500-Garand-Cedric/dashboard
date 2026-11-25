@@ -13,12 +13,24 @@ export async function deleteActivity(id: number, version: string | null) {
       const row = await db.financialTransaction.findFirst({
         where: { id, userId: FINANCE_USER_ID, account: { userId: FINANCE_USER_ID } },
         include: {
+          reimbursementPlans: true,
+          reimbursementsReceived: true,
+          reimbursementsPaid: true,
           receipts: { where: { userId: FINANCE_USER_ID } },
           incomeRecords: { where: { userId: FINANCE_USER_ID } },
           importEntries: true,
         },
       });
       if (!row) throw new FinanceValidationError("Financial activity not found.", 404);
+      if (
+        row.reimbursementPlans.length ||
+        row.reimbursementsReceived.length ||
+        row.reimbursementsPaid.length
+      )
+        throw new FinanceValidationError(
+          "Unlink reimbursements and remove tracking before deleting this record.",
+          409,
+        );
       if (!version || Date.parse(version) !== row.updatedAt.getTime())
         throw new FinanceValidationError("This record changed. Reload before deleting.", 409);
       if (row.source !== "MANUAL" || row.importEntries.length)

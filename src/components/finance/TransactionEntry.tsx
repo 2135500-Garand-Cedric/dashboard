@@ -31,11 +31,13 @@ export default function TransactionEntry({
   refundOnly = false,
   headerMeta,
   headerActions,
+  hideHeader = false,
 }: {
   transferOnly?: boolean;
   refundOnly?: boolean;
   headerMeta?: ReactNode;
   headerActions?: ReactNode;
+  hideHeader?: boolean;
   id?: string;
   initialDate?: string;
 }) {
@@ -46,6 +48,7 @@ export default function TransactionEntry({
       refundOnly={refundOnly}
       headerMeta={headerMeta}
       headerActions={headerActions}
+      hideHeader={hideHeader}
     />
   ) : (
     <EntryForm
@@ -54,6 +57,7 @@ export default function TransactionEntry({
       refundOnly={refundOnly}
       headerMeta={headerMeta}
       headerActions={headerActions}
+      hideHeader={hideHeader}
     />
   );
 }
@@ -64,12 +68,14 @@ function ExistingEntry({
   refundOnly,
   headerMeta,
   headerActions,
+  hideHeader = false,
 }: {
   id: string;
   transferOnly: boolean;
   refundOnly: boolean;
   headerMeta?: ReactNode;
   headerActions?: ReactNode;
+  hideHeader?: boolean;
 }) {
   const { data, loading, error, retry } = useFinanceData<{ transaction: FinanceTransaction }>(
     `/api/finance/transactions/${encodeURIComponent(id)}`,
@@ -91,6 +97,7 @@ function ExistingEntry({
       refundOnly={refundOnly}
       headerMeta={headerMeta}
       headerActions={headerActions}
+      hideHeader={hideHeader}
     />
   );
 }
@@ -103,11 +110,13 @@ function EntryForm({
   refundOnly,
   headerMeta,
   headerActions,
+  hideHeader = false,
 }: {
   transferOnly: boolean;
   refundOnly: boolean;
   headerMeta?: ReactNode;
   headerActions?: ReactNode;
+  hideHeader?: boolean;
   initialDate: string;
   onNotesSaved?: () => void;
   existing?: FinanceTransaction;
@@ -225,33 +234,35 @@ function EntryForm({
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-2xl font-semibold">
-            {refundOnly
-              ? existing
-                ? "Refund details"
-                : "New refund"
-              : transferOnly
+    <div className={hideHeader ? "flex h-full min-w-0 flex-col gap-5" : "space-y-5"}>
+      {!hideHeader && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-2xl font-semibold">
+              {refundOnly
                 ? existing
-                  ? "Transfer details"
-                  : "New transfer"
-                : existing
-                  ? readOnly
-                    ? "Transaction details"
-                    : "Edit transaction"
-                  : "New transaction"}
-          </h2>
-          {headerMeta}
+                  ? "Refund details"
+                  : "New refund / reimbursement"
+                : transferOnly
+                  ? existing
+                    ? "Transfer details"
+                    : "New transfer"
+                  : existing
+                    ? readOnly
+                      ? "Transaction details"
+                      : "Edit transaction"
+                    : "New transaction"}
+            </h2>
+            {headerMeta}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {headerActions}
+            <Link href={historyPath} className={secondaryButton}>
+              ← {refundOnly ? "Expenses" : transferOnly ? "Transfers" : "Finance overview"}
+            </Link>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {headerActions}
-          <Link href={historyPath} className={secondaryButton}>
-            ← {refundOnly ? "Expenses" : transferOnly ? "Transfers" : "Finance overview"}
-          </Link>
-        </div>
-      </div>
+      )}
       {existing && existing.excludedAmount && existing.excludedAmount !== "0.0000" && (
         <section className="card space-y-3">
           {existing.excludedAmount && existing.excludedAmount !== "0.0000" && (
@@ -316,7 +327,7 @@ function EntryForm({
           )}
         </div>
       )}
-      {readOnly && (
+      {readOnly && !refundOnly && (
         <p role="alert" className="card">
           Imported entries and transactions linked to statements cannot be edited through manual
           transaction management.
@@ -333,7 +344,11 @@ function EntryForm({
       {(accounts.loading || categories.loading) && (
         <p role="status">Loading accounts and categories…</p>
       )}
-      <form aria-busy={busy} onSubmit={submit} className="card max-w-5xl">
+      <form
+        aria-busy={busy}
+        onSubmit={submit}
+        className={hideHeader ? "card min-w-0 flex-1" : "card max-w-5xl"}
+      >
         <fieldset
           disabled={
             !readOnly &&
@@ -429,16 +444,18 @@ function EntryForm({
                   ))}
                 </select>
               </label>
-              <label className="block space-y-2">
-                <span className="text-sm font-medium">Currency</span>
-                <input
-                  aria-label="Currency"
-                  className={fieldClass}
-                  readOnly
-                  value={account?.currency ?? existing?.currency ?? ""}
-                  placeholder="Choose an account"
-                />
-              </label>
+              {!refundOnly && (
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium">Currency</span>
+                  <input
+                    aria-label="Currency"
+                    className={fieldClass}
+                    readOnly
+                    value={account?.currency ?? existing?.currency ?? ""}
+                    placeholder="Choose an account"
+                  />
+                </label>
+              )}
               <label className="block space-y-2">
                 <span className="text-sm font-medium">
                   {draft.type === "TRANSFER" ? "Amount sent" : "Amount"}

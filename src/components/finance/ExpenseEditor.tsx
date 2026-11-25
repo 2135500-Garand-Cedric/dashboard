@@ -10,11 +10,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
 import { useSnackbar } from "@/context/SnackbarContext";
 import { receiptDifference, receiptTotal, type FinanceReceipt } from "@/lib/finance/receipts";
-import {
-  currencyOptionLabel,
-  type FinanceAccount,
-  type FinanceCategory,
-} from "@/lib/finance/validation";
+import { type FinanceAccount, type FinanceCategory } from "@/lib/finance/validation";
 import { twoDecimalAmount, type FinanceTransaction } from "@/lib/finance/transactions";
 import {
   fieldClass,
@@ -33,6 +29,7 @@ export default function ExpenseEditor({
   readOnly,
   headerMeta,
   headerActions,
+  hideHeader = false,
   notesTransaction,
   initialTransaction,
   prefill,
@@ -45,6 +42,7 @@ export default function ExpenseEditor({
   readOnly?: boolean;
   headerMeta?: ReactNode;
   headerActions?: ReactNode;
+  hideHeader?: boolean;
   notesTransaction?: FinanceTransaction;
   id?: string;
   initialDate?: string;
@@ -58,6 +56,7 @@ export default function ExpenseEditor({
       readOnly={readOnly}
       headerMeta={headerMeta}
       headerActions={headerActions}
+      hideHeader={hideHeader}
       notesTransaction={notesTransaction}
     />
   ) : (
@@ -65,6 +64,7 @@ export default function ExpenseEditor({
       readOnly={readOnly}
       headerMeta={headerMeta}
       headerActions={headerActions}
+      hideHeader={hideHeader}
       notesTransaction={notesTransaction}
       initialDate={initialDate!}
       currencies={currencies}
@@ -82,12 +82,14 @@ function ExistingReceipt({
   readOnly,
   headerMeta,
   headerActions,
+  hideHeader = false,
   notesTransaction,
 }: {
   onSaved?: () => void;
   readOnly?: boolean;
   headerMeta?: ReactNode;
   headerActions?: ReactNode;
+  hideHeader?: boolean;
   notesTransaction?: FinanceTransaction;
   id: string;
   currencies: string[];
@@ -103,6 +105,7 @@ function ExistingReceipt({
       readOnly={readOnly}
       headerMeta={headerMeta}
       headerActions={headerActions}
+      hideHeader={hideHeader}
       notesTransaction={notesTransaction}
       existing={result.data.receipt}
       initialDate={result.data.receipt.date}
@@ -117,11 +120,11 @@ function ExistingReceipt({
 function ReceiptForm({
   existing,
   initialDate,
-  currencies,
   refresh,
   readOnly,
   headerMeta,
   headerActions,
+  hideHeader = false,
   notesTransaction,
   initialTransaction,
   prefill,
@@ -137,6 +140,7 @@ function ReceiptForm({
   readOnly?: boolean;
   headerMeta?: ReactNode;
   headerActions?: ReactNode;
+  hideHeader?: boolean;
   notesTransaction?: FinanceTransaction;
 }) {
   const accounts = useFinanceData<{
@@ -223,6 +227,11 @@ function ReceiptForm({
     accounts.data?.accounts.filter(
       (account) => account.active || account.id === existing?.account?.id,
     ) ?? [];
+  const currency =
+    accounts.data?.accounts.find((account) => account.id === Number(draft.accountId))?.currency ??
+    existing?.account?.currency ??
+    initialTransaction?.account.currency ??
+    draft.currency;
   const categoryOptions =
     categories.data?.categories.filter(
       (category) =>
@@ -238,6 +247,7 @@ function ReceiptForm({
       requestKey.current ??= crypto.randomUUID();
       const details = {
         ...draft,
+        currency,
         accountId: Number(draft.accountId),
         categoryId: Number(draft.categoryId),
         tax: draft.tax || "0",
@@ -314,20 +324,22 @@ function ReceiptForm({
           ← Back
         </Link>
       )}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-3">
-          <h2 className="text-2xl font-semibold">
-            {existing || initialTransaction ? "Expense details" : "New expense"}
-          </h2>
-          {headerMeta}
+      {!hideHeader && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
+            <h2 className="text-2xl font-semibold">
+              {existing || initialTransaction ? "Expense details" : "New expense"}
+            </h2>
+            {headerMeta}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {headerActions}
+            <Link href={returnTo ?? "/finance/expenses"} className={secondaryButton}>
+              ← Expenses
+            </Link>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {headerActions}
-          <Link href={returnTo ?? "/finance/expenses"} className={secondaryButton}>
-            ← Expenses
-          </Link>
-        </div>
-      </div>
+      )}
       {failure && (
         <div className="card space-y-3" role="alert">
           <p className="text-rose-500">{failure.message}</p>
@@ -473,21 +485,6 @@ function ReceiptForm({
                   </select>
                 </label>
                 <label className="block space-y-1">
-                  Currency
-                  <select
-                    aria-label="Receipt currency"
-                    className={fieldClass}
-                    value={draft.currency}
-                    onChange={(event) => patch("currency", event.target.value)}
-                  >
-                    {currencies.map((currency) => (
-                      <option key={currency} value={currency}>
-                        {currencyOptionLabel(currency)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block space-y-1">
                   Expense category
                   <select
                     aria-label="Expense category"
@@ -558,7 +555,7 @@ function ReceiptForm({
                 >
                   <p>
                     Subtotal + tax + tip does not equal total. Difference:{" "}
-                    {twoDecimalAmount(difference!)} {draft.currency}.
+                    {twoDecimalAmount(difference!)} {currency}.
                   </p>
                   <label className="flex items-start gap-2">
                     <input

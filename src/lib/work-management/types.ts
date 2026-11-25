@@ -60,6 +60,9 @@ export interface WorkContact {
   id: number;
   name: string;
   company: string | null;
+  email?: string | null;
+  phone?: string | null;
+  notes?: string | null;
   active: boolean;
   revision: number;
 }

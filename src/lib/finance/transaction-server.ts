@@ -27,6 +27,9 @@ const statementEntries = {
   },
 };
 const include = {
+  reimbursementPlans: true,
+  reimbursementsReceived: { where: { userId: FINANCE_USER_ID }, select: { amount: true } },
+  reimbursementsPaid: { where: { userId: FINANCE_USER_ID }, select: { amount: true } },
   importEntries: statementEntries,
   account: { select: accountSelect },
   category: { select: categorySelect },
@@ -132,7 +135,35 @@ function peer(row: Row) {
 
 export function serializeTransaction(row: Row): FinanceTransaction {
   const incoming = peer(row);
+  const received = row.reimbursementsReceived.reduce(
+    (sum, link) => sum.plus(link.amount),
+    new Prisma.Decimal(0),
+  );
+  const allocated = row.reimbursementsPaid.reduce(
+    (sum, link) => sum.plus(link.amount),
+    new Prisma.Decimal(0),
+  );
+  const plans = row.reimbursementPlans;
+  const expected = plans.reduce(
+    (total, plan) => total.plus(plan.expectedAmount),
+    new Prisma.Decimal(0),
+  );
   return {
+    reimbursement: plans.length
+      ? {
+          person: plans.map((plan) => plan.person).join(", "),
+          expected: expected.toFixed(4),
+          received: received.toFixed(4),
+          remaining: expected.minus(received).toFixed(4),
+          personalCost: row.amount.abs().minus(received).toFixed(4),
+          status: received.isZero()
+            ? "AWAITING"
+            : received.greaterThanOrEqualTo(expected)
+              ? "COMPLETE"
+              : "PARTIAL",
+        }
+      : null,
+    reimbursementAllocated: allocated.toFixed(4),
     id: row.id,
     date: row.occurredOn.toISOString().slice(0, 10),
     description: row.description,
@@ -367,6 +398,18 @@ export async function saveTransactionInDb(db: DB, input: TransactionInput, id?: 
   const current = id === undefined ? undefined : await rowById(db, id);
   if (current) {
     assertEditable(current);
+    if (
+      (current.reimbursementPlans.length ||
+        current.reimbursementsReceived.length ||
+        current.reimbursementsPaid.length) &&
+      (input.type !== current.type ||
+        input.currency !== current.currency ||
+        !current.amount.abs().equals(input.amount))
+    )
+      throw new FinanceValidationError(
+        "Remove reimbursement links and tracking before changing the amount, currency or type.",
+        409,
+      );
     if (current.updatedAt.getTime() !== Date.parse(input.expectedUpdatedAt!))
       throw new FinanceValidationError(
         "This transaction changed since you opened it. Reload before saving your edits.",
@@ -494,6 +537,15 @@ export async function deleteTransaction(id: number) {
     async (db) => {
       const row = await rowById(db, id);
       assertEditable(row);
+      if (
+        row.reimbursementPlans.length ||
+        row.reimbursementsReceived.length ||
+        row.reimbursementsPaid.length
+      )
+        throw new FinanceValidationError(
+          "Unlink reimbursements and remove tracking before deleting this record.",
+          409,
+        );
       if (row.incomeRecords.length)
         throw new FinanceValidationError(
           "This deposit belongs to an income record. Delete the income record before deleting its deposit.",

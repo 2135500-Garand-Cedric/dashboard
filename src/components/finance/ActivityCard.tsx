@@ -15,6 +15,7 @@ import { displayAmount, TRANSACTION_TYPES } from "@/lib/finance/transactions";
 import { INCOME_KINDS } from "@/lib/finance/income";
 import { activityHref } from "@/lib/finance/activity-links";
 import StatementBadge from "./StatementBadge";
+import { ReimbursementBadge } from "./Reimbursements";
 import { secondaryButton } from "./shared";
 
 const calendarDate = new Intl.DateTimeFormat("en-CA", {
@@ -137,6 +138,30 @@ export default function ActivityCard({ transaction }: { transaction: FinanceTran
             )}
           </div>
         )}
+        {transaction.reimbursement && (
+          <div className="space-y-2 rounded-lg border border-sky-500/20 p-3">
+            <ReimbursementBadge status={transaction.reimbursement.status} />
+            <p className="break-words text-sm">
+              {transaction.reimbursement.person} ·{" "}
+              {displayAmount(transaction.reimbursement.remaining, transaction.currency).replace(
+                /^\+/,
+                "",
+              )}{" "}
+              still owed
+            </p>
+          </div>
+        )}
+        {transaction.type === "REFUND" &&
+          transaction.reimbursementAllocated &&
+          transaction.reimbursementAllocated !== "0.0000" && (
+            <p className="text-sm text-sky-400">
+              {displayAmount(transaction.reimbursementAllocated, transaction.currency).replace(
+                /^\+/,
+                "",
+              )}{" "}
+              allocated to expenses
+            </p>
+          )}
         {transaction.notes && (
           <section aria-label="Notes" className="space-y-2 border-t border-card-border pt-4">
             <p className="flex items-center gap-2 text-xs font-medium text-gray-400">

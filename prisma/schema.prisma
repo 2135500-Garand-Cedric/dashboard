@@ -53,6 +53,9 @@ model User {
   pushSubscriptions PushSubscription[]
   notifications UserNotification[]
   emailDeliveries EmailDelivery[]
+  emailSettings EmailSettings?
+  reimbursementPlans FinancialReimbursementPlan[]
+  reimbursements FinancialReimbursement[]
   workFocus WorkFocus[]
   workProjects WorkProject[]
   workNotes WorkNote[]
@@ -525,6 +528,9 @@ model FinancialTransaction {
   excludedAmount Decimal @default(0) @db.Decimal(19, 4)
   matchSources FinancialMatch[] @relation("MatchSource")
   matchTargets FinancialMatch[] @relation("MatchTarget")
+  reimbursementPlans FinancialReimbursementPlan[]
+  reimbursementsReceived FinancialReimbursement[] @relation("ReimbursedExpense")
+  reimbursementsPaid FinancialReimbursement[] @relation("ReimbursementPayment")
 
   @@index([userId, occurredOn])
   @@index([accountId, occurredOn])
@@ -532,6 +538,44 @@ model FinancialTransaction {
   @@unique([userId, requestKey])
   @@unique([transferId, accountId])
   @@index([userId, contentFingerprint])
+}
+
+// Tracking only: these links never create or exclude ledger movements.
+model FinancialReimbursementPlan {
+  id Int @id @default(autoincrement())
+  expenseId Int
+  userId Int
+  person String @db.VarChar(120)
+  contactId Int
+  contact WorkContact @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  expectedAmount Decimal @db.Decimal(19, 4)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  expense FinancialTransaction @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  allocations FinancialReimbursement[]
+
+  @@unique([expenseId, contactId])
+  @@index([contactId])
+  @@index([userId])
+}
+
+model FinancialReimbursement {
+  id Int @id @default(autoincrement())
+  userId Int
+  expenseId Int
+  paymentId Int
+  planId Int
+  amount Decimal @db.Decimal(19, 4)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  expense FinancialTransaction @relation("ReimbursedExpense", fields: [expenseId], references: [id], onDelete: Restrict)
+  payment FinancialTransaction @relation("ReimbursementPayment", fields: [paymentId], references: [id], onDelete: Restrict)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  plan FinancialReimbursementPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@unique([planId, paymentId])
+  @@index([expenseId])
+  @@index([userId, paymentId])
 }
 
 // One economic transfer, with one outgoing and one incoming ledger entry.
@@ -832,12 +876,15 @@ model FinancialExampleDataset {
 }
 
 
-// Organizational people, never application users or assignees.
+// Shared personal/work directory. People are not application login accounts.
 model WorkContact {
   id Int @id @default(autoincrement())
   userId Int
   name String @db.VarChar(120)
   company String? @db.VarChar(120)
+  email String? @db.VarChar(254)
+  phone String? @db.VarChar(40)
+  notes String? @db.VarChar(2000)
   active Boolean @default(true)
   revision Int @default(1)
   createdAt DateTime @default(now())
@@ -845,6 +892,7 @@ model WorkContact {
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
   requestedTasks Todo[] @relation("TaskRequester")
   affectedTasks TodoAffectedContact[]
+  reimbursementPlans FinancialReimbursementPlan[]
 
   @@index([userId, active, name])
 }
@@ -1449,4 +1497,14 @@ model EmailDelivery {
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
   @@unique([userId, dedupeKey])
   @@index([userId, status, nextAttemptAt, leaseUntil])
+}
+
+// Owner consent and recipient are managed in the dashboard, never inferred from OAuth email.
+model EmailSettings {
+  userId Int @id
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  enabled Boolean @default(false)
+  recipient String? @db.VarChar(254)
+  revision Int @default(1)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 }

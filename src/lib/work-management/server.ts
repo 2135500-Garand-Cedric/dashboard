@@ -811,12 +811,28 @@ async function replaceAffected(db: DB, todoId: number, body: Record<string, unkn
     });
 }
 function contactData(value: unknown) {
-  const body = workBody(value, ["name", "company", "active"]);
-  const data: { name?: string; company?: string | null; active?: boolean } = {};
+  const body = workBody(value, ["name", "company", "email", "phone", "notes", "active"]);
+  const data: {
+    name?: string;
+    company?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    notes?: string | null;
+    active?: boolean;
+  } = {};
   if (body.name !== undefined)
     data.name = workText(body.name, "contact name", 120)!.normalize("NFC");
   if (body.company !== undefined)
     data.company = workText(body.company, "contact company", 120, true)?.trim() || null;
+  if (body.email !== undefined) {
+    data.email = workText(body.email, "email address", 254, true)?.trim() || null;
+    if (data.email && !/^[^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+$/.test(data.email))
+      throw new WorkValidationError("Enter a valid email address.");
+  }
+  if (body.phone !== undefined)
+    data.phone = workText(body.phone, "phone number", 40, true)?.trim() || null;
+  if (body.notes !== undefined)
+    data.notes = workText(body.notes, "person notes", 2000, true)?.trim() || null;
   if (body.active !== undefined) {
     if (typeof body.active !== "boolean")
       throw new WorkValidationError("Active must be true or false.");
@@ -835,6 +851,7 @@ export async function listWorkContacts(params: URLSearchParams) {
           OR: [
             { name: { contains: q, mode: "insensitive" as const } },
             { company: { contains: q, mode: "insensitive" as const } },
+            { email: { contains: q, mode: "insensitive" as const } },
           ],
         }
       : {}),
