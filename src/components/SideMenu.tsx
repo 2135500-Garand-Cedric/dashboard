@@ -1,5 +1,7 @@
 "use client";
 import { NotificationBell } from "@/components/notifications/NotificationInbox";
+import SearchTrigger from "@/components/search/SearchTrigger";
+import MobileQuickActions from "@/components/MobileQuickActions";
 
 import Link from "next/link";
 import { useState } from "react";
@@ -79,6 +81,9 @@ export default function SideMenu() {
             </button>
           </div>
 
+          <div className="hidden px-4 pt-4 md:block">
+            <SearchTrigger onOpen={() => setIsOpen(false)} />
+          </div>
           <nav className="p-4 space-y-2">
             {menuItems.map((item) => {
               const Icon = item.icon;
@@ -101,12 +106,12 @@ export default function SideMenu() {
         </div>
       </div>
 
-      <NotificationBell mobile />
+      <MobileQuickActions navigationOpen={isOpen} closeNavigation={() => setIsOpen(false)} />
       {/* Mobile hamburger button */}
       {!isOpen && (
         <button
           aria-label="Open navigation"
-          className="fixed top-[calc(var(--shell-top,0px)+1rem)] left-4 z-40 p-2 rounded shadow md:hidden"
+          className="fixed top-[calc(var(--shell-top,0px)+1rem+env(safe-area-inset-top,0px))] left-4 z-40 min-h-11 min-w-11 p-2 rounded shadow md:hidden"
           style={{
             backgroundColor: "var(--color-card-bg)",
             color: "var(--color-foreground)",

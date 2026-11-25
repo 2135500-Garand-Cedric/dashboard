@@ -6,6 +6,7 @@ import SideMenu from "@/components/SideMenu";
 import { SnackbarProvider } from "@/context/SnackbarContext";
 import { MusicPlayerProvider } from "@/context/MusicPlayerContext";
 import { MemoryProvider } from "@/context/MemoryContext";
+import SearchProvider from "@/components/search/SearchProvider";
 
 // Mounted in the root layout so navigation preserves the player and its iframe.
 export default function AppShell({
@@ -24,12 +25,14 @@ export default function AppShell({
             <InboxProvider>
             <MusicPlayerProvider>
               <MemoryProvider>
+                  <SearchProvider>
                 <div
                   className={`app-shell flex ${process.env.NODE_ENV === "development" ? "development-shell" : ""}`}
                 >
                   <SideMenu />
                     <main className="min-w-0 flex-1 px-4 pb-4 pt-20 md:p-6">{children}</main>
                 </div>
+                  </SearchProvider>
               </MemoryProvider>
             </MusicPlayerProvider>
             </InboxProvider>

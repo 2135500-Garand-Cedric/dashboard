@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
   PlusIcon,
@@ -25,7 +26,10 @@ import {
 const blank = { name: "", company: "", email: "", phone: "", notes: "" };
 type Directory = { items: WorkContact[]; total: number; page: number; pageSize: number };
 
-export default function PeopleManager() {
+export default function PeopleManager({ focusId }: { focusId?: string }) {
+  const [focused, setFocused] = useState<WorkContact | null>(null);
+  const [focusError, setFocusError] = useState("");
+  const scrolled = useRef("");
   const [data, setData] = useState<Directory | null>(null);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -40,6 +44,43 @@ export default function PeopleManager() {
   const lock = useRef(false);
   const writer = useRef(createWorkWriter());
   const { showMessage } = useSnackbar();
+  useEffect(() => {
+    scrolled.current = "";
+  }, [focusId]);
+  useEffect(() => {
+    let active = true;
+    setFocused(null);
+    setFocusError("");
+    if (!focusId) return;
+    if (!/^[1-9]\d*$/.test(focusId) || Number(focusId) > 2147483647) {
+      setFocusError("Person not found.");
+      return;
+    }
+    void workRead<WorkContact>(`/api/work-contacts/${focusId}`)
+      .then((person) => {
+        if (active) setFocused(person);
+      })
+      .catch(() => {
+        if (active) setFocusError("This person is no longer available.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [focusId, refresh]);
+  useEffect(() => {
+    if (!focused || !data || scrolled.current === focusId) return;
+    const element = document.getElementById(`person-${focused.id}`);
+    if (element) {
+      scrolled.current = focusId ?? "";
+      element.focus({ preventScroll: true });
+      element.scrollIntoView({ block: "center" });
+    }
+  }, [focused, data, focusId]);
+  const visiblePeople = data
+    ? focused && !data.items.some((person) => person.id === focused.id)
+      ? [focused, ...data.items]
+      : data.items
+    : [];
   useEffect(() => {
     let active = true;
     setData(null);
@@ -147,10 +188,25 @@ export default function PeopleManager() {
           </button>
         </div>
       )}
+      {focusError && (
+        <p role="alert" className="card text-rose-400">
+          {focusError}
+        </p>
+      )}
+      {focused && (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+          <p>
+            Selected person: <strong>{focused.name}</strong>
+          </p>
+          <Link href="/settings/people" className="text-blue-400 hover:underline">
+            Clear selection
+          </Link>
+        </div>
+      )}
       {!data && !error && <p role="status">Loading people…</p>}
       {data && (
         <>
-          {!data.total && (
+          {!data.total && !focused && (
             <p className="card text-muted">
               {query
                 ? "No people match your search."
@@ -158,8 +214,14 @@ export default function PeopleManager() {
             </p>
           )}
           <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            {data.items.map((person) => (
-              <li key={person.id} className="card flex min-w-0 flex-col gap-4">
+            {visiblePeople.map((person) => (
+              <li
+                key={person.id}
+                id={`person-${person.id}`}
+                tabIndex={-1}
+                data-focused={person.id === focused?.id ? "true" : undefined}
+                className={`card flex min-w-0 flex-col gap-4 ${person.id === focused?.id ? "ring-2 ring-sky-500" : ""}`}
+              >
                 <div className="flex items-start gap-3">
                   <span className="rounded-xl bg-sky-500/10 p-3">
                     <UserIcon className="h-6 w-6 text-sky-400" />

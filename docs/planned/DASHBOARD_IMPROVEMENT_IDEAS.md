@@ -4,13 +4,13 @@ Written November 23, 2026, after reviewing the current navigation, dashboard,
 Knowledge module, My Work, finance overview, notification settings, and draft
 storage behavior.
 
-Implementation status, reviewed November 24, 2026:
+Implementation status, reviewed November 25, 2026:
 
 | Idea | Status |
 | --- | --- |
-| 1. Global search | Not yet implemented |
+| 1. Global search | [Implemented](../implemented/GLOBAL_SEARCH_MAINTENANCE.md); [design plan](../implemented/GLOBAL_SEARCH_PLAN.md) |
 | 2. Recoverable drafts | Not yet implemented as a general durable-draft feature |
-| 3. Quick add | [Implemented on the main dashboard only](../implemented/GLOBAL_QUICK_ADD_PLAN.md), following the revised scope |
+| 3. Quick add | [Implemented: desktop dashboard and phone quick-actions menu](../implemented/GLOBAL_QUICK_ADD_PLAN.md), following the revised scope |
 | 4. Notification inbox | [Implemented](../implemented/NOTIFICATION_INBOX_MAINTENANCE.md) |
 | 5. Weekly report | [Implemented](../implemented/WEEKLY_REPORT_MAINTENANCE.md) |
 
@@ -19,6 +19,10 @@ describe current behavior where the final scope differs. See the
 [documentation index](../README.md) for all implemented and planned work.
 
 ## 1. Search the whole dashboard from one place
+
+The [global search plan](../implemented/GLOBAL_SEARCH_PLAN.md) develops this proposal against the
+current application, including placement, People and Japanese coverage, financial
+deduplication, privacy, navigation, implementation order and verification.
 
 **What it is:** A global search button, available from every page, with a keyboard
 shortcut on desktop and a search icon on phones. Results would be grouped into

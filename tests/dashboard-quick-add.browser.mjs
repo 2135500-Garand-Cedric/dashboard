@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { encode } from "next-auth/jwt";
 
 test(
-  "dashboard-only Quick add safely opens, saves and returns from all five existing editors on desktop and phone",
+  "Quick add safely opens, saves and returns from all five existing editors using desktop or phone actions",
   {
     skip: process.env.RUN_QUICK_ADD_BROWSER_TEST !== "1",
     timeout: 240000,
@@ -13,8 +13,12 @@ test(
   async () => {
     const require = createRequire(import.meta.url);
     require("@next/env").loadEnvConfig(fileURLToPath(new URL("../", import.meta.url)), true, {
-      info() {},
-      error() {},
+      info() {
+
+      },
+      error() {
+
+      },
     });
     const { chromium } = require("playwright");
     const browser = await chromium.launch({ headless: true });
@@ -122,12 +126,23 @@ test(
         page.setDefaultTimeout(30000);
         const errors = [];
         page.on("pageerror", (error) => errors.push(error.message));
+        async function openActions() {
+          if (viewport.width < 768) {
+            const actions = page.getByRole("button", { name: "Quick actions", exact: true });
+            if ((await actions.getAttribute("aria-expanded")) !== "true") await actions.click();
+          }
+        }
+        async function clickQuickAdd() {
+          await openActions();
+          await page.getByRole("button", { name: "Quick add", exact: true }).click();
+        }
         async function home() {
           await page.waitForURL(base + "/");
+          await openActions();
           await page.getByRole("button", { name: "Quick add", exact: true }).waitFor();
         }
         async function choose(label) {
-          await page.getByRole("button", { name: "Quick add", exact: true }).click();
+          await clickQuickAdd();
           const menu = page.getByRole("dialog", { name: "Quick add", exact: true });
           await menu.waitFor();
           await menu
@@ -151,10 +166,11 @@ test(
         const title = await page
           .getByRole("heading", { name: "My Dashboard", exact: true })
           .boundingBox();
-        assert.ok(
-          Math.abs(title.y + title.height / 2 - (bounds.y + bounds.height / 2)) < 12,
-          "button stays next to the title",
-        );
+        if (viewport.width >= 768)
+          assert.ok(
+            Math.abs(title.y + title.height / 2 - (bounds.y + bounds.height / 2)) < 12,
+            "button stays next to the title",
+          );
         assert.equal(
           await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
           false,
@@ -170,16 +186,17 @@ test(
             (node) => node.style.display === "none",
           );
         });
-        await trigger.click();
+        await clickQuickAdd();
         assert.equal(writes.length, 0);
         await page.keyboard.press("Escape");
         await page
           .getByRole("dialog", { name: "Quick add", exact: true })
           .waitFor({ state: "hidden" });
         await page.waitForFunction(
-          () => document.activeElement?.getAttribute("aria-label") === "Quick add",
+          (label) => document.activeElement?.getAttribute("aria-label") === label,
+          viewport.width < 768 ? "Quick actions" : "Quick add",
         );
-        await trigger.click();
+        await clickQuickAdd();
         await page.mouse.click(2, 2);
         await page
           .getByRole("dialog", { name: "Quick add", exact: true })
@@ -206,6 +223,7 @@ test(
           attempts[1].key,
           "uncertain retries keep their mutation identity",
         );
+        await openActions();
         assert.equal(await trigger.isEnabled(), true);
 
         await choose("New task");

@@ -27,6 +27,12 @@ export default function Home() {
     fetchUser();
   }, []);
 
+  useEffect(() => {
+    const refresh = () => setCalendarRevision((value) => value + 1);
+    window.addEventListener("dashboard:event-created", refresh);
+    return () => window.removeEventListener("dashboard:event-created", refresh);
+  }, []);
+
   if (loading) return <div>Loading...</div>;
 
   return (
@@ -43,7 +49,9 @@ export default function Home() {
           >
             My Dashboard
           </h1>
-          <DashboardQuickAdd onEventSaved={() => setCalendarRevision((value) => value + 1)} />
+          <div className="hidden md:block">
+            <DashboardQuickAdd />
+          </div>
         </div>
         <LevelBar xp={userXp} coins={userCoins} />
       </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -52,7 +53,15 @@ const actions = [
   },
 ];
 
-export default function DashboardQuickAdd({ onEventSaved }: { onEventSaved: () => void }) {
+export default function DashboardQuickAdd({
+  compact = false,
+  onOpen,
+  onClosed,
+}: {
+  compact?: boolean;
+  onOpen?: () => void;
+  onClosed?: () => void;
+}) {
   const [screen, setScreen] = useState<"menu" | "event" | null>(null);
   const [busy, setBusy] = useState(false);
   const [blocked, setBlocked] = useState(false);
@@ -77,7 +86,10 @@ export default function DashboardQuickAdd({ onEventSaved }: { onEventSaved: () =
   function close() {
     setBusy(false);
     setScreen(null);
-    requestAnimationFrame(() => trigger.current?.focus());
+    requestAnimationFrame(() => {
+      if (onClosed) onClosed();
+      else trigger.current?.focus();
+    });
   }
   function cancelEvent() {
     if (busy) return;
@@ -95,61 +107,70 @@ export default function DashboardQuickAdd({ onEventSaved }: { onEventSaved: () =
         aria-haspopup="dialog"
         aria-expanded={screen !== null}
         disabled={blocked || busy || screen !== null}
-        onClick={() => setScreen("menu")}
-        className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-blue-400/50 px-2.5 text-sm font-medium text-blue-300 hover:bg-blue-500/10 disabled:opacity-50 sm:px-3"
+        onClick={() => {
+          setScreen("menu");
+          onOpen?.();
+        }}
+        className={`inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 border text-sm font-medium disabled:opacity-50 ${compact ? "rounded-xl border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20" : "rounded-lg border-blue-400/50 px-2.5 text-blue-300 hover:bg-blue-500/10 sm:px-3"}`}
       >
         <PlusIcon className="h-5 w-5" />
-        <span className="hidden sm:inline">Quick add</span>
+        <span className={compact ? "sr-only" : "hidden sm:inline"}>Quick add</span>
       </button>
-      <TaskModal open={screen === "menu"} title="Quick add" onClose={close}>
-        <div className="grid gap-3">
-          {actions.map(({ label, href, icon: Icon, color }) => {
-            const content = (
-              <>
-                <Icon className="h-6 w-6 shrink-0" />
-                <span>{label}</span>
-              </>
-            );
-            const className = `flex min-h-12 items-center gap-3 rounded-xl border px-4 py-3 text-left font-medium hover:bg-white/5 ${color}`;
-            return href ? (
-              <Link key={label} href={href} className={className} onClick={close}>
-                {content}
-              </Link>
-            ) : (
-              <button
-                key={label}
-                type="button"
-                className={className}
-                onClick={() => setScreen("event")}
-              >
-                {content}
-              </button>
-            );
-          })}
-        </div>
-      </TaskModal>
-      <TaskModal
-        open={screen === "event"}
-        title="New event or work session"
-        busy={busy}
-        onClose={cancelEvent}
-      >
-        <div ref={editor}>
-          {screen === "event" && (
-            <EventForm
-              embedded
-              timeZone={timeZone}
-              onBusyChange={setBusy}
-              onCancel={close}
-              onSaved={() => {
-                showMessage("Event created successfully.");
-                onEventSaved();
-                close();
-              }}
-            />
-          )}
-        </div>
-      </TaskModal>
+      {screen !== null &&
+        createPortal(
+          <>
+            <TaskModal open={screen === "menu"} title="Quick add" onClose={close}>
+              <div className="grid gap-3">
+                {actions.map(({ label, href, icon: Icon, color }) => {
+                  const content = (
+                    <>
+                      <Icon className="h-6 w-6 shrink-0" />
+                      <span>{label}</span>
+                    </>
+                  );
+                  const className = `flex min-h-12 items-center gap-3 rounded-xl border px-4 py-3 text-left font-medium hover:bg-white/5 ${color}`;
+                  return href ? (
+                    <Link key={label} href={href} className={className} onClick={close}>
+                      {content}
+                    </Link>
+                  ) : (
+                    <button
+                      key={label}
+                      type="button"
+                      className={className}
+                      onClick={() => setScreen("event")}
+                    >
+                      {content}
+                    </button>
+                  );
+                })}
+              </div>
+            </TaskModal>
+            <TaskModal
+              open={screen === "event"}
+              title="New event or work session"
+              busy={busy}
+              onClose={cancelEvent}
+            >
+              <div ref={editor}>
+                {screen === "event" && (
+                  <EventForm
+                    embedded
+                    timeZone={timeZone}
+                    onBusyChange={setBusy}
+                    onCancel={close}
+                    onSaved={() => {
+                      showMessage("Event created successfully.");
+                      window.dispatchEvent(new Event("dashboard:event-created"));
+                      close();
+                    }}
+                  />
+                )}
+              </div>
+            </TaskModal>
+          </>,
+          document.body,
+        )}
     </>
   );
 }

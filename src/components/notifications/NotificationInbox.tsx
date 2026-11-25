@@ -53,7 +53,13 @@ function ReminderIcon({ category }: { category: string }) {
           : CalendarDaysIcon;
   return <Icon className="h-5 w-5 shrink-0" />;
 }
-export function NotificationBell({ mobile = false }: { mobile?: boolean }) {
+export function NotificationBell({
+  compact = false,
+  active = true,
+}: {
+  compact?: boolean;
+  active?: boolean;
+}) {
   const { unread, error, version } = useInbox();
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<Page | null>(null);
@@ -63,6 +69,14 @@ export function NotificationBell({ mobile = false }: { mobile?: boolean }) {
   const preview = useRef<HTMLElement>(null);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const date = useDateTime();
+  useEffect(() => {
+    if (!active) setOpen(false);
+  }, [active]);
+  useEffect(() => {
+    const close = () => setOpen(false);
+    window.addEventListener("dashboard:search-open", close);
+    return () => window.removeEventListener("dashboard:search-open", close);
+  }, []);
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -99,16 +113,9 @@ export function NotificationBell({ mobile = false }: { mobile?: boolean }) {
     };
   }, [open, version, retry]);
   return (
-    <div
-      ref={ref}
-      className={
-        mobile
-          ? "fixed right-4 top-[calc(var(--shell-top,0px)+1rem)] z-40 md:hidden"
-          : "relative hidden md:block"
-      }
-    >
+    <div ref={ref} className={compact ? "relative" : "relative hidden md:block"}>
       <button
-        className={`${button} relative bg-card-bg`}
+        className={`${button} relative min-h-11 min-w-11 ${compact ? "rounded-xl border-amber-400/30 bg-amber-500/10 px-0 text-amber-300 hover:bg-amber-500/20" : "bg-card-bg"}`}
         aria-label={`Notifications${unread === null ? "" : `, ${unread} unread`}`}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
@@ -129,7 +136,12 @@ export function NotificationBell({ mobile = false }: { mobile?: boolean }) {
         createPortal(
           <section
             ref={preview}
-            style={{ top: position.top, left: position.left }}
+            data-notification-preview="true"
+            style={{
+              top: position.top,
+              left: position.left,
+              maxHeight: `min(70dvh, calc(100dvh - ${position.top}px - 1rem))`,
+            }}
             aria-label="Recent notifications"
             className={`fixed z-50 max-h-[70dvh] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-card-border bg-card-bg p-4 shadow-2xl`}
           >

@@ -74,6 +74,11 @@ export default function EventsPage() {
     [moveError, setMoveError] = useState(""),
     [saving, setSaving] = useState(false);
   const [savedDate, setSavedDate] = useViewState("calendar:date", "");
+  useEffect(() => {
+    const refresh = () => setRefresh((value) => value + 1);
+    window.addEventListener("dashboard:event-created", refresh);
+    return () => window.removeEventListener("dashboard:event-created", refresh);
+  }, []);
   const feedZone = useRef(timeZone);
   if (data) feedZone.current = data.timeZone;
   useEffect(() => {

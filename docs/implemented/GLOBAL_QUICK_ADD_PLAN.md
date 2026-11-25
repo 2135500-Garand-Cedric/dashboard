@@ -4,11 +4,13 @@ Status: implemented. No database migration, new dependency, or additional contai
 
 The **Quick add** button beside **My Dashboard** lets you start recording a
 task, event, expense, Knowledge article, or vocabulary from the main dashboard
-without first opening its module. It appears only on the main dashboard page
-(`/`), on both desktop and phone.
+without first opening its module. On desktop it appears beside the title on the
+main dashboard (`/`). On phones it is available throughout the signed-in app in
+the top-right **Quick actions** menu, alongside notifications and global search.
+This mobile placement supersedes the original dashboard-only proposal.
 
 This develops proposal 3 in [Dashboard improvement ideas](../planned/DASHBOARD_IMPROVEMENT_IDEAS.md),
-with the requested dashboard-only placement replacing the original global button.
+with dashboard-only desktop placement and the revised shared phone actions menu.
 Reuse the existing creation forms and return to the main dashboard afterward.
 
 ## User experience
@@ -43,12 +45,13 @@ with the existing level/XP/gold information alongside on wider screens.
 Keep the proposed **44-pixel minimum height and width** for the tap target. On
 desktop, display **+ Quick add** with enough width for the label. On phones, use a
 compact plus-only button of at least **44 × 44 pixels**, with the accessible name
-**Quick add**, directly beside the title. The progress information can wrap onto
-a separate line using the header's responsive layout.
+**Quick add**, inside the shared top-right actions menu. The dashboard title does
+not also show a second Quick add button on phones.
 
-Do not put a trigger in the sidebar, beside the notification bell, in the shared
-mobile toolbar, or on any other page. Do not add a floating button. The existing
-hamburger and notification bell keep their current positions.
+The phone toolbar has a single top-right actions button. Its animated action row
+contains notifications, Quick add and search. Opening Quick add closes that row;
+closing its dialog returns focus to the shared actions button. Desktop placement
+remains dashboard-only.
 
 The header must remain compact enough to preserve the desktop dashboard's bounded
 tile layout. Fit the title/button group at narrow widths without horizontal
@@ -75,8 +78,9 @@ add a global keyboard shortcut that would make Quick add accessible on other pag
   `deadline`, `knowledgeArticleId`, and a restricted `returnTo`. Reuse its form
   and extend its return-path allowlist to accept the main dashboard `/`.
 - `src/components/calendar/EventForm.tsx` is shared with the calendar modal.
-  Host the same editor on the dashboard with the saved timezone, normal loading/errors,
-  and a successful-save callback.
+  Host the same editor with the saved timezone and normal loading/errors. A
+  successful save dispatches `dashboard:event-created`, which refreshes the main
+  dashboard calendar tile and calendar page if mounted.
 - `src/app/finance/expenses/new/page.tsx` uses `NewActivity` and `ExpenseEditor`,
   with statement-specific prefill. Add independent return-path handling while
   retaining statement-import behavior.
@@ -190,7 +194,8 @@ app shell, sidebar, notification bell, and music player keep their current roles
 
 ## Authentication and privacy
 
-Render Quick add only on the owner-protected main dashboard. All destination pages,
+Render Quick add beside the title on the owner-protected desktop dashboard and
+in the shared phone actions menu inside the owner-only app shell. All destination pages,
 association lookups, and mutation APIs must independently enforce the existing
 GitHub-owner rules; the menu is not an authorization boundary.
 
