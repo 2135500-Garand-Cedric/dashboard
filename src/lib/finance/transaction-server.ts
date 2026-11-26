@@ -29,7 +29,13 @@ const statementEntries = {
 const include = {
   reimbursementPlans: true,
   reimbursementsReceived: { where: { userId: FINANCE_USER_ID }, select: { amount: true } },
-  reimbursementsPaid: { where: { userId: FINANCE_USER_ID }, select: { amount: true } },
+  reimbursementsPaid: {
+    where: { userId: FINANCE_USER_ID, expense: { userId: FINANCE_USER_ID } },
+    select: {
+      amount: true,
+      expense: { select: { id: true, description: true, category: { select: categorySelect } } },
+    },
+  },
   importEntries: statementEntries,
   account: { select: accountSelect },
   category: { select: categorySelect },
@@ -44,7 +50,14 @@ const include = {
       id: true,
       description: true,
       paidOn: true,
-      source: { select: { id: true, name: true, kind: true } },
+      source: {
+        select: {
+          id: true,
+          name: true,
+          kind: true,
+          type: { select: { id: true, name: true, active: true } },
+        },
+      },
     },
     orderBy: [{ paidOn: "desc" as const }, { id: "desc" as const }],
   },
@@ -59,7 +72,14 @@ const include = {
           id: true,
           description: true,
           paidOn: true,
-          source: { select: { id: true, name: true, kind: true } },
+          source: {
+            select: {
+              id: true,
+              name: true,
+              kind: true,
+              type: { select: { id: true, name: true, active: true } },
+            },
+          },
         },
       },
       sourceTransaction: {
@@ -74,7 +94,14 @@ const include = {
               id: true,
               description: true,
               paidOn: true,
-              source: { select: { id: true, name: true, kind: true } },
+              source: {
+                select: {
+                  id: true,
+                  name: true,
+                  kind: true,
+                  type: { select: { id: true, name: true, active: true } },
+                },
+              },
             },
           },
         },
@@ -164,6 +191,12 @@ export function serializeTransaction(row: Row): FinanceTransaction {
         }
       : null,
     reimbursementAllocated: allocated.toFixed(4),
+    reimbursementCategories: row.reimbursementsPaid.map((link) => ({
+      expenseId: link.expense.id,
+      description: link.expense.description,
+      category: link.expense.category?.name ?? "Uncategorized",
+      amount: link.amount.toFixed(4),
+    })),
     id: row.id,
     date: row.occurredOn.toISOString().slice(0, 10),
     description: row.description,
@@ -575,7 +608,21 @@ export async function listTransactions(params: URLSearchParams, exporting = fals
     if (!value) continue;
     if (!/^[1-9]\d*$/.test(value) || Number(value) > 2147483647)
       throw new FinanceValidationError(`Invalid ${key} filter.`);
-    if (key === "category") conditions.push({ categoryId: Number(value) });
+    if (key === "category")
+      conditions.push({
+        OR: [
+          { type: { not: "REFUND" }, categoryId: Number(value) },
+          {
+            type: "REFUND",
+            reimbursementsPaid: {
+              some: {
+                userId: FINANCE_USER_ID,
+                expense: { userId: FINANCE_USER_ID, categoryId: Number(value) },
+              },
+            },
+          },
+        ],
+      });
     else
       conditions.push({
         OR: [

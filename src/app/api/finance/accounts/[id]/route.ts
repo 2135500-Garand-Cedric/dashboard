@@ -34,7 +34,13 @@ export async function PATCH(request: Request, context: Context) {
           where: { id, userId: FINANCE_USER_ID },
           include: {
             _count: {
-              select: { transactions: true, receipts: true, incomeRecords: true, imports: true },
+              select: {
+                transactions: true,
+                receipts: true,
+                incomeRecords: true,
+                imports: true,
+                balances: true,
+              },
             },
           },
         });

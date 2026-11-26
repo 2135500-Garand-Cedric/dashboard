@@ -1,7 +1,13 @@
 import { buildOverview, type OverviewData } from "./overview";
 import { prisma } from "@/lib/prisma";
 import { FINANCE_USER_ID, accountSelect, categorySelect } from "./server";
-import { buildReport, moneyText, moneyUnits, type ReportFilters } from "./reporting";
+import {
+  buildReport,
+  moneyText,
+  moneyUnits,
+  type ReportFilters,
+  reportingToday,
+} from "./reporting";
 
 // One consistent snapshot for summaries, charts, pay details and reconciliation coverage.
 export async function financeReport(filters: ReportFilters, recentLimit = 8) {
@@ -17,7 +23,7 @@ export async function financeReport(filters: ReportFilters, recentLimit = 8) {
       });
       const sources = await db.financialIncomeSource.findMany({
         where: { userId: FINANCE_USER_ID },
-        select: { id: true, name: true, kind: true },
+        select: { id: true, name: true, kind: true, type: { select: { name: true } } },
       });
       const transactions = await db.financialTransaction.findMany({
         where: { userId: FINANCE_USER_ID, account: { userId: FINANCE_USER_ID } },
@@ -61,7 +67,32 @@ export async function financeReport(filters: ReportFilters, recentLimit = 8) {
         where: { userId: FINANCE_USER_ID, account: { userId: FINANCE_USER_ID } },
         include: { entries: { select: { normalized: true, transactionId: true } } },
       });
+      const allocations = await db.financialReimbursement.findMany({
+        where: {
+          userId: FINANCE_USER_ID,
+          expense: { userId: FINANCE_USER_ID },
+          payment: { userId: FINANCE_USER_ID },
+        },
+        select: { expenseId: true, paymentId: true, amount: true },
+        orderBy: { id: "asc" },
+      });
+      const plans = await db.financialReimbursementPlan.findMany({
+        where: { userId: FINANCE_USER_ID, expense: { userId: FINANCE_USER_ID } },
+        select: {
+          expenseId: true,
+          person: true,
+          expectedAmount: true,
+          contact: { select: { name: true } },
+        },
+      });
       const data: OverviewData = {
+        today: reportingToday(),
+        reimbursements: allocations.map((row) => ({ ...row, amount: row.amount.toFixed(4) })),
+        reimbursementPlans: plans.map((row) => ({
+          expenseId: row.expenseId,
+          person: row.contact.name,
+          expected: row.expectedAmount.toFixed(4),
+        })),
         statements: statements.map((statement) => ({
           id: statement.id,
           accountId: statement.accountId,
@@ -79,7 +110,12 @@ export async function financeReport(filters: ReportFilters, recentLimit = 8) {
         })),
         accounts,
         categories,
-        sources,
+        sources: sources.map((row) => ({
+          id: row.id,
+          name: row.name,
+          kind: row.kind,
+          typeName: row.type?.name ?? null,
+        })),
         transactions: transactions.map((row) => ({
           id: row.id,
           transferId: row.transferId,

@@ -9,6 +9,11 @@ export async function listIncomeConfig(source: boolean) {
     orderBy = [{ active: "desc" as const }, { name: "asc" as const }];
   return source
     ? {
+        sourceTypes: await prisma.financialIncomeSourceType.findMany({
+          where,
+          orderBy,
+          select: { id: true, name: true, active: true, legacyKind: true },
+        }),
         sources: await prisma.financialIncomeSource.findMany({
           where,
           select: incomeSourceSelect,
@@ -39,18 +44,36 @@ export async function saveIncomeConfig(
   return prisma.$transaction(
     async (db) => {
       if (source) {
-        if (id !== undefined) {
-          const current = await db.financialIncomeSource.findFirst({
-            where: { id, userId: FINANCE_USER_ID },
-            include: { _count: { select: { records: true } } },
-          });
-          if (!current) throw new FinanceValidationError("Income source not found.", 404);
-          if (data.kind && data.kind !== current.kind && current._count.records > 0)
-            throw new FinanceValidationError(
-              "This source has income history. Create a new source to use a different income type.",
-              409,
-            );
-        }
+        const current =
+          id === undefined
+            ? null
+            : await db.financialIncomeSource.findFirst({ where: { id, userId: FINANCE_USER_ID } });
+        if (id !== undefined && !current)
+          throw new FinanceValidationError("Income source not found.", 404);
+        const selectedType =
+          data.typeId !== undefined || data.kind !== undefined
+            ? await db.financialIncomeSourceType.findFirst({
+                where: {
+                  userId: FINANCE_USER_ID,
+                  ...(data.typeId !== undefined ? { id: data.typeId } : { legacyKind: data.kind }),
+                },
+              })
+            : null;
+        if (
+          (data.typeId !== undefined || data.kind !== undefined || id === undefined) &&
+          !selectedType
+        )
+          throw new FinanceValidationError("Choose an income source type belonging to you.");
+        if (selectedType && !selectedType.active && current?.typeId !== selectedType.id)
+          throw new FinanceValidationError("Choose an active income source type.");
+        const sourceData = {
+          name: data.name,
+          normalizedName: data.normalizedName,
+          active: data.active,
+          ...(selectedType
+            ? { typeId: selectedType.id, kind: selectedType.legacyKind ?? ("OTHER" as const) }
+            : {}),
+        };
         const saved =
           id === undefined
             ? await db.financialIncomeSource.create({
@@ -58,14 +81,15 @@ export async function saveIncomeConfig(
                   userId: FINANCE_USER_ID,
                   name: data.name!,
                   normalizedName: data.normalizedName!,
-                  kind: data.kind!,
+                  kind: selectedType?.legacyKind ?? "OTHER",
+                  typeId: selectedType!.id,
                   active: data.active,
                 },
                 select: incomeSourceSelect,
               })
             : await db.financialIncomeSource.update({
                 where: { id, userId: FINANCE_USER_ID },
-                data,
+                data: sourceData,
                 select: incomeSourceSelect,
               });
         return { source: saved };

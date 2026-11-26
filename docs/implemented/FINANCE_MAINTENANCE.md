@@ -12,7 +12,7 @@
 
 Keep monetary values as decimal strings at API/CSV boundaries. Database amounts are `Decimal(19,4)`; calculations use Prisma Decimal or integer ten-thousandths. Reports use `sign(amount) × (abs(amount) − excludedAmount)`, never original amounts alone. Documents and payroll metadata add no money movements. Transfers/card payments contribute neither income nor expenses; refunds reduce spending, reimbursements entered as income remain income, and adjustments are separate. Currencies must never be summed together. A partial or uncertain match must remain explicit. Gross/net payroll details and deposit cash are different views of the same underlying earnings.
 
-Finance configuration is grouped under **Finance → Settings** (`/finance/settings`): financial accounts, expense categories, income sources, and deduction types. Management pages use `/finance/settings/accounts`, `/finance/settings/categories`, `/finance/settings/income-sources`, and `/finance/settings/deduction-types`. Old account/category/combined-income settings redirect aliases have been removed; use the settings URLs directly. Accounts, categories, income sources and deduction types use centered create/edit dialogs; dismissing a dialog discards its unsaved draft. Successful saves update the list in place. Income, expense and transfer history filters start collapsed; expanding/collapsing preserves drafts and applied URL filters. An active-filter count remains visible when collapsed.
+Finance configuration is grouped under **Finance → Settings** (`/finance/settings`): financial accounts, expense categories, income source types, income sources, and deduction types. Management pages use `/finance/settings/accounts`, `/finance/settings/categories`, `/finance/settings/income-source-types`, `/finance/settings/income-sources`, and `/finance/settings/deduction-types`. Old account/category/combined-income settings redirect aliases have been removed; use the settings URLs directly. Accounts, categories, income sources and deduction types use centered create/edit dialogs; dismissing a dialog discards its unsaved draft. Successful saves update the list in place. Income, expense and transfer history filters start collapsed; expanding/collapsing preserves drafts and applied URL filters. An active-filter count remains visible when collapsed.
 
 ## Income, expenses and transfers
 
@@ -54,7 +54,8 @@ release or real financial record edits were performed.
 On desktop, open a saved expense's **Reimbursements** tab and choose **Track
 reimbursement**. Phones show the section below the expense. Select a directory person and the
 expected amount, which can cover all or part of the expense. Use **Add person**
-for additional contributors. Their combined expected amounts cannot exceed the
+for additional contributors. Add/edit tracking opens a centered modal with outside-click
+dismissal; the person selector does not link away to People management. Their combined expected amounts cannot exceed the
 expense. Each person's received/outstanding amounts are tracked independently.
 Changing desktop tabs keeps unsaved expense fields mounted. The shared Expense
 details header, record status, buttons and desktop tabs remain above both views;
@@ -285,3 +286,126 @@ The final schema-diff check returned an empty migration after removing the unuse
 The combined follow-up regression run also passed 49 project/relationship/note/attachment/date/reliability checks, including concurrent edits and a 1,000-task synthetic workload. Temporary browser/fixture services were stopped after verification; their isolated volumes and the pre-cleanup backup were retained.
 
 Correction to the initial cleanup assessment: `ActivityVocab.lastPracticed` is required for Japanese per-activity review scheduling and has been restored by `20261118122000_restore_activity_review_timers`. Its former lack of callers was missing behavior, not an obsolete feature. Exact saved-session word history restores known timers; unknown dates stay due for review. The field is now written on practice save and used for 14-day review selection without changing ratings, borders or averages.
+
+
+## Finance refinements — account balances and expense-based reimbursements
+
+Implemented November 2026. Migration
+`20261126120000_finance_balances_and_source_types` is additive: it creates balance
+checkpoints, adds an account balance revision, creates configurable income source
+types, and links existing sources to the six corresponding default types. It does
+not create transfers, rewrite monetary transactions, change statement links or
+invent starting account balances. Apply it through the normal `prisma migrate
+deploy` deployment step. It has been applied locally in development and to the
+isolated test database; production deployment was not performed.
+
+### Reimbursement reporting
+
+Refund/reimbursement records remain one incoming bank movement. Their entry form
+no longer assigns a single expense category. Each allocation inherits the category
+of its covered expense. A single 2,000 CAD payment allocated 1,000 to School and
+1,000 to Rent reduces those category totals by 1,000 each, while cash flow and
+statement matching still see a single 2,000 payment. Unallocated payment amounts
+appear as **Unallocated refunds**. Old standalone refund category values do not
+determine the new category breakdown. Editing/unlinking an allocation recalculates
+the breakdown without changing the bank amount or creating more transactions.
+
+Reports attribute refunds on the payment date, even when the covered purchase was
+in an earlier month. Category filters use the allocated portion; unfiltered record
+counts continue to count the payment once. Expense-history category filters also
+find the single payment through its covered expenses and open its original record. Overall refunds, account/merchant
+breakdowns and cash flow retain the original ledger identity. Global search and
+refund cards use covered expense categories rather than the payment's old category.
+
+**Awaiting reimbursements** in the overview shows the current remaining expected
+repayments, expense count, people and links to the five largest outstanding
+expenses. This includes older expenses, rather than hiding debt from earlier
+months. The card is explicitly current, honors currency/account/dataset filters,
+and excludes future-dated payments/expenses. Expected repayments are not added to
+income or account balances. Direct expense tracking add/edit dialogs and payment
+allocation/unlink workflows keep their existing version/conflict checks.
+
+### Account balances and manual corrections
+
+The overview and Finance Settings → Financial accounts show current balances.
+`GET /api/finance/balances` reads an owner-scoped consistent snapshot. Amounts are
+calculated with integer ten-thousandths, including income, expenses, refunds,
+legacy adjustments and both account-transfer legs, less confirmed duplicate
+exclusions. Future-dated records are excluded until their date in the dashboard
+selected timezone. Accounts/currencies are kept separate. Negative credit-card
+balances mean money owed; a positive card balance is a credit.
+
+Without a manual correction, an account is marked **Balance not yet verified**:
+its recorded net activity is not assumed to be its actual bank balance.
+
+**Set balance** opens a centered modal. Enter the real signed balance and closing
+date, up to today, with at most two decimal places; zero is allowed. The service
+stores `FinancialAccountBalance.amount` and a snapshot `ledgerAmount` of counted
+activity through that date. The current balance is:
+
+```
+real balance at latest correction
++ current counted ledger activity through today
+- counted ledger snapshot stored with that correction
+```
+
+This also handles new same-day records and edits/backfilled older records: those
+changes affect the calculated balance, rather than being silently ignored. If
+backfilling history changes it, use Set balance again after finishing the backfill
+to reconcile with the real bank balance. Corrections do not change income,
+spending, transfer totals or statement matching. They are included in full-database
+backups automatically.
+
+`POST /api/finance/accounts/[id]/balance` validates ownership, money, the date and
+`expectedRevision`, increments `balanceRevision`, and upserts the dated checkpoint
+in a serializable transaction. Stale saves return 409 instead of overwriting a
+newer correction. A newer date retains earlier checkpoints; correcting the same
+date replaces that checkpoint. New corrections cannot predate the latest one.
+Account currencies cannot change once checkpoints or other financial history exist.
+
+The overview balances are current, separate from its selected cash-flow period.
+Financial account cards expose the same control in Settings for every currency.
+
+### Configurable income source types
+
+**Finance Settings → Income source types** provides create/edit/deactivate dialogs.
+Income sources select an active owned type. Renaming a type updates its display
+where the source is used, including income details, history, overview and CSV
+export. Existing source assignments remain visible after deactivation; deactivated
+types cannot be assigned to a different source. Types are deactivated, not deleted.
+
+`FinancialIncomeSourceType` holds the editable names/status. The migration backfills
+`FinancialIncomeSource.typeId` from existing classifications. The older `kind`
+classification remains for compatibility with existing tooling and source records
+without a type link; it is no longer the form's fixed list of type choices.
+Changing the type of a source with income history is allowed and changes its
+classification, never its existing deposit amounts or associations.
+
+### Verification
+
+- Exact-money unit and regression tests cover combined/partial/unallocated
+  reimbursements, category/total consistency, current outstanding debt, balance
+  snapshots, same-day/historical edits, future dates, duplicate exclusions,
+  configurable type validation, refund validation, and authorization before input
+  or database access.
+- Rollback-only PostgreSQL tests verify split payments still count once, account
+  transfers change both balances, a manual correction creates no ledger activity,
+  stale saves/foreign accounts and foreign/inactive type assignments are rejected,
+  used source types can be changed, and income deposits remain intact.
+- A read-only schema comparison found no differences for the new finance models.
+  Pre-existing Calendar/Birthday/Recurrence foreign-key update-action differences
+  remain outside this finance change.
+- TypeScript, targeted ESLint, 25 unit/regression tests, database suites and the
+  production Docker image build passed.
+- Browser tests cover large-monitor and phone list widths, balance dialogs,
+  configurable type create/edit/selection, account-derived transfer currency and
+  two-decimal input, the overview, plus the existing reimbursement workflows with
+  centered add/edit tracking and outside-click dismissal.
+
+New tests: `finance-refinements.test.mjs`, `finance-refinements.integration.mjs`
+(`RUN_FINANCE_REFINEMENTS_DB_TEST=1` in the existing disposable `work-db` setup),
+and `finance-refinements.browser.mjs`
+(`RUN_FINANCE_REFINEMENTS_BROWSER_TEST=1`, Playwright and the local dev app).
+Database fixtures roll back; browser mutations are mocked. No real income,
+expense, transfer or balance was created for verification. Physical iPhone testing
+and production NAS performance remain manual checks.

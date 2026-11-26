@@ -62,7 +62,8 @@ export interface ReportMatch {
 export interface ReportData {
   accounts: { id: number; name: string; type: string; currency: string; active: boolean }[];
   categories: { id: number; name: string; type: string; active: boolean }[];
-  sources: { id: number; name: string; kind: string }[];
+  sources: { id: number; name: string; kind: string; typeName?: string | null }[];
+  reimbursements?: { expenseId: number; paymentId: number; amount: string }[];
   transactions: ReportTransaction[];
   receipts: ReportReceipt[];
   income: ReportIncome[];
@@ -288,6 +289,38 @@ function spending(
       return left === right ? a.name.localeCompare(b.name) : left > right ? -1 : 1;
     });
 }
+// Category attribution follows expense allocations while preserving one bank payment.
+export function categoryMovements(data: ReportData): ReportTransaction[] {
+  const transactions = new Map(data.transactions.map((row) => [row.id, row]));
+  return data.transactions.flatMap((row) => {
+    if (row.type !== "REFUND") return [row];
+    const links = (data.reimbursements ?? []).filter((link) => link.paymentId === row.id);
+    if (!links.length) return [{ ...row, categoryId: null }];
+    let remaining = countedUnits(row);
+    const parts = new Map<number | null, bigint>();
+    for (const link of links) {
+      const expense = transactions.get(link.expenseId),
+        amount = moneyUnits(link.amount);
+      if (
+        !expense ||
+        expense.type !== "EXPENSE" ||
+        expense.currency !== row.currency ||
+        amount <= ZERO
+      )
+        continue;
+      if (amount > remaining) throw new Error("Reimbursement allocations exceed counted payment.");
+      parts.set(expense.categoryId, (parts.get(expense.categoryId) ?? ZERO) + amount);
+      remaining -= amount;
+    }
+    if (remaining > ZERO) parts.set(null, (parts.get(null) ?? ZERO) + remaining);
+    return [...parts].map(([categoryId, amount]) => ({
+      ...row,
+      categoryId,
+      amount: moneyText(amount),
+      excludedAmount: "0.0000",
+    }));
+  });
+}
 export function buildReport(data: ReportData, filters: ReportFilters, today = reportingToday()) {
   const exampleAccounts = new Set(data.examples.accountIds),
     exampleReceipts = new Set(data.examples.receiptIds),
@@ -306,7 +339,8 @@ export function buildReport(data: ReportData, filters: ReportFilters, today = re
     throw new FinanceValidationError("Choose report accounts and categories belonging to you.");
   if (filters.accountId && accountMap.get(filters.accountId)!.currency !== filters.currency)
     throw new FinanceValidationError("Choose the selected account's currency.");
-  const scoped = data.transactions.filter(
+  const attributed = categoryMovements(data);
+  const scoped = (filters.categoryId ? attributed : data.transactions).filter(
     (row) =>
       row.currency === filters.currency &&
       (!filters.accountId || row.accountId === filters.accountId) &&
@@ -522,10 +556,21 @@ export function buildReport(data: ReportData, filters: ReportFilters, today = re
         : "year";
   const monthlyFrom = monthStart(filters.to, -11),
     yearlyFrom = `${Number(filters.to.slice(0, 4)) - 4}-01-01`;
-  const spendingByCategory = spending(selected, (row) => [
-      String(row.categoryId ?? "none"),
-      categoryMap.get(row.categoryId ?? 0)?.name ?? "Uncategorized",
-    ]),
+  const spendingByCategory = spending(
+      attributed.filter(
+        (row) =>
+          row.currency === filters.currency &&
+          (!filters.accountId || row.accountId === filters.accountId) &&
+          (!filters.categoryId || row.categoryId === filters.categoryId) &&
+          includeDataset(exampleAccounts.has(row.accountId)) &&
+          inRange(row.date, filters.from, filters.to),
+      ),
+      (row) => [
+        String(row.categoryId ?? (row.type === "REFUND" ? "refund-unallocated" : "none")),
+        categoryMap.get(row.categoryId ?? 0)?.name ??
+          (row.type === "REFUND" ? "Unallocated refunds" : "Uncategorized"),
+      ],
+    ),
     spendingByMerchant = spending(selected, (row) => {
       const name = row.counterparty?.trim() || "Merchant not specified";
       return [name.normalize("NFKC").toLocaleLowerCase("en-CA"), name];

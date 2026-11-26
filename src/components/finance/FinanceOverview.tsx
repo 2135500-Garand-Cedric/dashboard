@@ -19,6 +19,7 @@ import { FinanceTimeline } from "./FinanceReportCharts";
 import OverviewBreakdown from "./OverviewBreakdown";
 import OverviewMatching from "./OverviewMatching";
 import OverviewRecent from "./OverviewRecent";
+import AccountBalances from "./AccountBalances";
 import { useHistoryFilters } from "./useHistoryFilters";
 import {
   fieldClass,
@@ -337,6 +338,7 @@ function ReportContent({ report }: { report: FinanceOverviewReport }) {
       name: row.name,
       value: row.amount,
       detail:
+        overview.sources.find((source) => String(source.id) === row.key)?.typeName ??
         INCOME_KINDS[
           overview.sources.find((source) => String(source.id) === row.key)?.kind as IncomeKind
         ],
@@ -483,6 +485,49 @@ function ReportContent({ report }: { report: FinanceOverviewReport }) {
         </div>
       </div>
 
+      {overview.awaitingReimbursements && (
+        <section
+          className="card grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]"
+          aria-label="Awaiting reimbursements"
+        >
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold">Awaiting reimbursements</h3>
+            <p className="text-3xl font-semibold tabular-nums text-amber-300">
+              {money(overview.awaitingReimbursements.total, currency)}
+            </p>
+            <p className="text-sm text-muted">
+              {overview.awaitingReimbursements.count} expenses · Current as of{" "}
+              {writtenDate(overview.awaitingReimbursements.asOf)}
+            </p>
+          </div>
+          <ul className="divide-y divide-card-border">
+            {overview.awaitingReimbursements.expenses.map((row) => (
+              <li key={row.id} className="flex justify-between gap-3 py-3">
+                <div className="min-w-0">
+                  <Link
+                    className="break-words text-blue-300 hover:underline"
+                    href={`/finance/expenses/${row.id}`}
+                  >
+                    {row.description}
+                  </Link>
+                  <p className="text-xs text-muted">{row.people}</p>
+                </div>
+                <span className="shrink-0 font-semibold tabular-nums text-amber-300">
+                  {money(row.remaining, currency)}
+                </span>
+              </li>
+            ))}
+            {!overview.awaitingReimbursements.count && (
+              <li className="py-3 text-sm text-muted">No reimbursements outstanding.</li>
+            )}
+          </ul>
+        </section>
+      )}
+      <AccountBalances
+        currency={currency}
+        accountId={filters.accountId}
+        accountIds={coverage.accounts.map((account) => account.id)}
+      />
       <OverviewRecent report={report} />
       <p className="flex items-center gap-2 text-xs text-gray-500">
         <ChartBarIcon className="h-4 w-4" aria-hidden="true" />

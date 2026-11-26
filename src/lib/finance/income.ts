@@ -25,6 +25,7 @@ export interface IncomeSource {
   id: number;
   name: string;
   kind: IncomeKind;
+  type?: { id: number; name: string; active: boolean } | null;
   active: boolean;
 }
 export interface DeductionType {
@@ -109,15 +110,24 @@ function object(value: unknown, fields: string[]) {
   return value as Record<string, unknown>;
 }
 export function incomeConfigInput(value: unknown, source: boolean, editing = false) {
-  const body = object(value, source ? ["name", "kind", "active"] : ["name", "active"]);
-  const data: { name?: string; normalizedName?: string; kind?: IncomeKind; active?: boolean } = {};
+  const body = object(value, source ? ["name", "kind", "typeId", "active"] : ["name", "active"]);
+  const data: {
+    name?: string;
+    normalizedName?: string;
+    kind?: IncomeKind;
+    typeId?: number;
+    active?: boolean;
+  } = {};
   if (!editing || Object.hasOwn(body, "name")) {
     data.name = text(body.name, "Name", 100, true)!.normalize("NFKC").replace(/\s+/g, " ");
     if (data.name.length > 100)
       throw new FinanceValidationError("Name must not exceed 100 characters.");
     data.normalizedName = data.name.toLocaleLowerCase("en-CA");
   }
-  if (source && (!editing || Object.hasOwn(body, "kind"))) {
+  if (source && Object.hasOwn(body, "typeId")) data.typeId = financeId(String(body.typeId));
+  if (source && !editing && body.typeId === undefined && body.kind === undefined)
+    throw new FinanceValidationError("Choose an income source type.");
+  if (source && Object.hasOwn(body, "kind")) {
     if (typeof body.kind !== "string" || !Object.hasOwn(INCOME_KINDS, body.kind))
       throw new FinanceValidationError("Choose a valid income source type.");
     data.kind = body.kind as IncomeKind;

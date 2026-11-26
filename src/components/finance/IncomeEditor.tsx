@@ -458,7 +458,7 @@ function IncomeForm({
                   <option value="">Choose a source</option>
                   {sourceOptions.map((source) => (
                     <option key={source.id} value={source.id}>
-                      {source.name} · {INCOME_KINDS[source.kind]}
+                      {source.name} · {source.type?.name ?? INCOME_KINDS[source.kind]}
                       {source.active ? "" : " (inactive)"}
                     </option>
                   ))}

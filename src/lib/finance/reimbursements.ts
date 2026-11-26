@@ -18,6 +18,7 @@ export type ReimbursementLink = {
   amount: string;
   updatedAt: string;
   description: string;
+  category?: string | null;
   date: string;
 };
 export type ReimbursementDetails = {
@@ -47,6 +48,7 @@ export type ReimbursementDetails = {
     person: string;
     remaining: string;
     account: string;
+    category?: string | null;
   }[];
 };
 

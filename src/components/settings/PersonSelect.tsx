@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { WorkContact } from "@/lib/work-management/types";
 import { workRead } from "@/lib/work-management/client";
@@ -72,9 +71,6 @@ export default function PersonSelect({
             ))}
         </select>
       </label>
-      <Link href="/settings/people" className="text-sm text-blue-400 hover:underline">
-        Manage people
-      </Link>
     </div>
   );
 }

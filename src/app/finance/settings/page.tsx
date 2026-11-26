@@ -10,6 +10,12 @@ import {
 
 const sections = [
   {
+    href: "/finance/settings/income-source-types",
+    title: "Income source types",
+    icon: TagIcon,
+    tone: "bg-teal-500/10 text-teal-400",
+  },
+  {
     href: "/settings/people",
     title: "People",
     icon: UsersIcon,

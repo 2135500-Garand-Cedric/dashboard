@@ -12,12 +12,7 @@ import {
   XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { useRef, useState, type FormEvent } from "react";
-import {
-  INCOME_KINDS,
-  type IncomeKind,
-  type IncomeSource,
-  type DeductionType,
-} from "@/lib/finance/income";
+import { type IncomeSource, type DeductionType } from "@/lib/finance/income";
 import { useSnackbar } from "@/context/SnackbarContext";
 import {
   fieldClass,
@@ -28,16 +23,28 @@ import {
   useFinanceData,
 } from "./shared";
 
-export default function IncomeSettings({ source }: { source: boolean }) {
-  const endpoint = source ? "income-sources" : "deduction-types",
-    label = source ? "income source" : "deduction type";
-  const result = useFinanceData<{ sources?: IncomeSource[]; types?: DeductionType[] }>(
-    `/api/finance/${endpoint}`,
-  );
+export default function IncomeSettings({
+  source,
+  sourceType = false,
+}: {
+  source: boolean;
+  sourceType?: boolean;
+}) {
+  const endpoint = source
+      ? "income-sources"
+      : sourceType
+        ? "income-source-types"
+        : "deduction-types",
+    label = source ? "income source" : sourceType ? "income source type" : "deduction type";
+  const result = useFinanceData<{
+    sources?: IncomeSource[];
+    types?: DeductionType[];
+    sourceTypes?: (DeductionType & { legacyKind?: string })[];
+  }>(`/api/finance/${endpoint}`);
   const items = (source ? result.data?.sources : result.data?.types) ?? [];
   const [editing, setEditing] = useState<number | null>(null),
     [name, setName] = useState(""),
-    [kind, setKind] = useState<IncomeKind>("EMPLOYMENT");
+    [typeId, setTypeId] = useState("");
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const guard = useRef(false);
@@ -47,7 +54,7 @@ export default function IncomeSettings({ source }: { source: boolean }) {
     setModalOpen(false);
     setEditing(null);
     setName("");
-    setKind("EMPLOYMENT");
+    setTypeId("");
     setError("");
   };
   async function save(event: FormEvent) {
@@ -60,9 +67,11 @@ export default function IncomeSettings({ source }: { source: boolean }) {
       await financeRequest(`/api/finance/${endpoint}${editing === null ? "" : `/${editing}`}`, {
         method: editing === null ? "POST" : "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, ...(source ? { kind } : {}) }),
+        body: JSON.stringify({ name, ...(source ? { typeId: Number(typeId) } : {}) }),
       });
-      showMessage(`${source ? "Income source" : "Deduction type"} saved.`);
+      showMessage(
+        `${source ? "Income source" : sourceType ? "Income source type" : "Deduction type"} saved.`,
+      );
       reset();
       result.retry();
     } catch (error) {
@@ -101,7 +110,9 @@ export default function IncomeSettings({ source }: { source: boolean }) {
   return (
     <section className="min-w-0 space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-2xl font-semibold">{source ? "Income sources" : "Deduction types"}</h2>
+        <h2 className="text-2xl font-semibold">
+          {source ? "Income sources" : sourceType ? "Income source types" : "Deduction types"}
+        </h2>
         <div className="flex flex-wrap gap-2">
           <Link href="/finance/settings" className={`${settingsButton} border-card-border`}>
             <ArrowLeftIcon className="h-4 w-4" aria-hidden="true" />
@@ -144,9 +155,11 @@ export default function IncomeSettings({ source }: { source: boolean }) {
           )}
           <fieldset disabled={busy || result.loading} className="space-y-3">
             <label className="block space-y-1">
-              {source ? "Employer / source name" : "Deduction name"}
+              {source ? "Employer / source name" : sourceType ? "Type name" : "Deduction name"}
               <input
-                aria-label={source ? "Employer / source name" : "Deduction name"}
+                aria-label={
+                  source ? "Employer / source name" : sourceType ? "Type name" : "Deduction name"
+                }
                 className={fieldClass}
                 required
                 maxLength={100}
@@ -160,14 +173,18 @@ export default function IncomeSettings({ source }: { source: boolean }) {
                 <select
                   aria-label="Income source type"
                   className={fieldClass}
-                  value={kind}
-                  onChange={(event) => setKind(event.target.value as IncomeKind)}
+                  value={typeId}
+                  required
+                  onChange={(event) => setTypeId(event.target.value)}
                 >
-                  {Object.entries(INCOME_KINDS).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
+                  <option value="">Choose a type</option>
+                  {(result.data?.sourceTypes ?? [])
+                    .filter((item) => item.active || item.id === Number(typeId))
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
                 </select>
               </label>
             )}
@@ -189,11 +206,14 @@ export default function IncomeSettings({ source }: { source: boolean }) {
         </form>
       </TaskModal>
       {result.loading ? (
-        <p role="status">Loading {source ? "sources" : "deduction types"}…</p>
+        <p role="status">
+          Loading {source ? "sources" : sourceType ? "income source types" : "deduction types"}…
+        </p>
       ) : (
         !items.length && (
           <p className="text-sm text-gray-400">
-            No {source ? "income sources" : "deduction types"} yet.
+            No {source ? "income sources" : sourceType ? "income source types" : "deduction types"}{" "}
+            yet.
           </p>
         )
       )}
@@ -205,7 +225,7 @@ export default function IncomeSettings({ source }: { source: boolean }) {
                 <p className="break-words font-medium">{item.name}</p>
                 {source && (
                   <p className="text-sm text-gray-400">
-                    {INCOME_KINDS[(item as IncomeSource).kind]}
+                    {(item as IncomeSource).type?.name ?? (item as IncomeSource).kind}
                   </p>
                 )}
               </div>
@@ -220,7 +240,16 @@ export default function IncomeSettings({ source }: { source: boolean }) {
                 onClick={() => {
                   setEditing(item.id);
                   setName(item.name);
-                  if (source) setKind((item as IncomeSource).kind);
+                  if (source)
+                    setTypeId(
+                      String(
+                        (item as IncomeSource).type?.id ??
+                          result.data?.sourceTypes?.find(
+                            (type) => type.legacyKind === (item as IncomeSource).kind,
+                          )?.id ??
+                          "",
+                      ),
+                    );
                   setError("");
                   setModalOpen(true);
                 }}

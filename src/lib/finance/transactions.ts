@@ -37,6 +37,12 @@ export interface TransactionInput {
 export interface FinanceTransaction {
   reimbursement?: ReimbursementSummary | null;
   reimbursementAllocated?: string;
+  reimbursementCategories?: {
+    expenseId: number;
+    description: string;
+    category: string;
+    amount: string;
+  }[];
   id: number;
   date: string;
   description: string;
@@ -63,7 +69,7 @@ export interface FinanceTransaction {
     id: number;
     description: string;
     date: string;
-    source?: Pick<IncomeSource, "id" | "name" | "kind"> | null;
+    source?: Pick<IncomeSource, "id" | "name" | "kind" | "type"> | null;
   }[];
   receipts: { id: number; merchant: string | null; date: string }[];
   transfer: {
@@ -167,7 +173,7 @@ export function transactionInput(value: unknown, editing = false): TransactionIn
     throw new FinanceValidationError("Choose a supported three-letter currency code.");
   const accountId = id(body.accountId, "account");
   const categoryId =
-    ["EXPENSE", "REFUND"].includes(type) || (type === "INCOME" && body.categoryId != null)
+    type === "EXPENSE" || (["INCOME", "REFUND"].includes(type) && body.categoryId != null)
       ? id(body.categoryId, "category")
       : null;
   if (!categoryId && body.categoryId != null)

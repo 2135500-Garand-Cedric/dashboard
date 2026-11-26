@@ -217,7 +217,7 @@ export async function getReimbursements(id: number, search = ""): Promise<Reimbu
       );
       const links = await db.financialReimbursement.findMany({
         where: { userId: owner, ...(expense ? { expenseId: id } : { paymentId: id }) },
-        include: { expense: true, payment: true, plan: true },
+        include: { expense: { include: { category: true } }, payment: true, plan: true },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       });
       // Limit only after excluding settled expenses, so old unpaid items remain findable.
@@ -248,7 +248,9 @@ export async function getReimbursements(id: number, search = ""): Promise<Reimbu
                 excludedAmount: 0,
               },
             },
-            include: { expense: { include: { account: true, reimbursementsReceived: true } } },
+            include: {
+              expense: { include: { account: true, category: true, reimbursementsReceived: true } },
+            },
             orderBy: { expense: { occurredOn: "desc" } },
           });
       return {
@@ -297,6 +299,7 @@ export async function getReimbursements(id: number, search = ""): Promise<Reimbu
             amount: link.amount.toFixed(4),
             updatedAt: link.updatedAt.toISOString(),
             description: other.description,
+            category: link.expense.category?.name ?? null,
             date: other.occurredOn.toISOString().slice(0, 10),
           };
         }),
@@ -314,6 +317,7 @@ export async function getReimbursements(id: number, search = ""): Promise<Reimbu
               date: item.expense.occurredOn.toISOString().slice(0, 10),
               remaining: remaining.toFixed(4),
               account: item.expense.account.name,
+              category: item.expense.category?.name ?? null,
             },
           ];
         }),

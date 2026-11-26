@@ -113,7 +113,10 @@ export default function ActivityCard({ transaction }: { transaction: FinanceTran
             </p>
           )}
         </div>
-        {(transfer || transaction.type === "INCOME" || transaction.category) && (
+        {(transfer ||
+          transaction.type === "INCOME" ||
+          transaction.type === "REFUND" ||
+          transaction.category) && (
           <div className="space-y-3 rounded-lg bg-foreground/[0.03] p-3">
             {transfer ? (
               <div className="space-y-2 text-sm">
@@ -125,9 +128,22 @@ export default function ActivityCard({ transaction }: { transaction: FinanceTran
             ) : transaction.type === "INCOME" ? (
               incomeSources.map((source) => (
                 <p key={source.id} className="break-words text-sm">
-                  {source.name} · {INCOME_KINDS[source.kind]}
+                  {source.name} · {source.type?.name ?? INCOME_KINDS[source.kind]}
                 </p>
               ))
+            ) : transaction.type === "REFUND" ? (
+              <div className="space-y-1 text-sm">
+                {transaction.reimbursementCategories?.length ? (
+                  transaction.reimbursementCategories.map((item, index) => (
+                    <p key={`${item.expenseId}:${index}`} className="break-words">
+                      {item.category} ·{" "}
+                      {displayAmount(item.amount, transaction.currency).replace(/^\+/, "")}
+                    </p>
+                  ))
+                ) : (
+                  <p className="text-muted">Not allocated to expenses</p>
+                )}
+              </div>
             ) : (
               transaction.category && (
                 <p className="flex items-start gap-2 text-sm">

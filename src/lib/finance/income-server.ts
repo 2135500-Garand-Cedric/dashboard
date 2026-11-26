@@ -20,7 +20,13 @@ import {
 } from "./receipt-files";
 
 type DB = Prisma.TransactionClient;
-export const incomeSourceSelect = { id: true, name: true, kind: true, active: true } as const;
+export const incomeSourceSelect = {
+  id: true,
+  name: true,
+  kind: true,
+  active: true,
+  type: { select: { id: true, name: true, active: true } },
+} as const;
 export const deductionTypeSelect = { id: true, name: true, active: true } as const;
 const include = {
   source: { select: incomeSourceSelect },

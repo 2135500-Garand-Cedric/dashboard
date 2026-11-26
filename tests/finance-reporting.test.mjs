@@ -161,6 +161,7 @@ test("refunds can make period spending negative; account/category/currency and e
     row(3, "-10", "EXPENSE", { accountId: 3 }),
     row(4, "12.50", "INCOME", { accountId: 4, currency: "USD" }),
   ];
+  data.reimbursements = [{ expenseId: 1, paymentId: 2, amount: "30" }];
   data.examples.accountIds = [3];
   const all = buildReport(data, filters({}));
   assert.equal(all.totals.expenses, "-20.0000");

@@ -243,7 +243,7 @@ export default function TransactionHistory({
             {!history.data.transactions.length ? (
               <div className="card py-10 text-center">No {view} found.</div>
             ) : (
-              <ul className="grid max-w-[1800px] grid-cols-1 items-stretch gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+              <ul className="grid w-full grid-cols-1 items-stretch gap-4 lg:grid-cols-2 2xl:grid-cols-3">
                 {history.data.transactions.map((transaction) => (
                   <li key={transaction.id} className="min-w-0">
                     <ActivityCard transaction={transaction} />

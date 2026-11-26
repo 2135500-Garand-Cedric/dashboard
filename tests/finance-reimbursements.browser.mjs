@@ -13,8 +13,12 @@ test(
   async () => {
     const require = createRequire(import.meta.url);
     require("@next/env").loadEnvConfig(fileURLToPath(new URL("../", import.meta.url)), true, {
-      info() {},
-      error() {},
+      info() {
+
+      },
+      error() {
+
+      },
     });
     const { chromium } = require("playwright");
     const base = "http://localhost:3000";
@@ -281,11 +285,28 @@ test(
           if (viewport.width >= 768)
             await page.getByRole("tab", { name: "Reimbursements", exact: true }).click();
           await page.getByRole("button", { name: "Track reimbursement", exact: true }).click();
-          await page.getByLabel("Reimbursement person").selectOption("11");
-          assert.equal(await page.getByLabel("Expected reimbursement", { exact: true }).inputValue(), "1000.00");
+          const personModal = page.getByRole("dialog", {
+            name: "Add reimbursement person",
+            exact: true,
+          });
+          await personModal.waitFor();
+          assert.equal(
+            await personModal.getByRole("link", { name: "Manage people", exact: true }).count(),
+            0,
+          );
+          const personBounds = await personModal.boundingBox();
+          assert.ok(Math.abs(personBounds.y + personBounds.height / 2 - viewport.height / 2) < 3);
+          await page.mouse.click(2, 2);
+          await personModal.waitFor({ state: "hidden" });
+          await page.getByRole("button", { name: "Track reimbursement", exact: true }).click();
+          await page.getByLabel("Reimbursement person", { exact: true }).selectOption("11");
+          assert.equal(
+            await page.getByLabel("Expected reimbursement", { exact: true }).inputValue(),
+            "1000.00",
+          );
           assert.equal(
             await page
-              .getByLabel("Reimbursement person")
+              .getByLabel("Reimbursement person", { exact: true })
               .getByRole("option", { name: "Friend", exact: true })
               .count(),
             0,
@@ -308,7 +329,7 @@ test(
         await page.getByLabel("Expected reimbursement", { exact: true }).fill("600");
         await page.getByRole("button", { name: "Save tracking", exact: true }).click();
         await page.getByRole("button", { name: "Add person", exact: true }).click();
-        await page.getByLabel("Reimbursement person").selectOption("12");
+        await page.getByLabel("Reimbursement person", { exact: true }).selectOption("12");
         await page.getByLabel("Expected reimbursement", { exact: true }).fill("400");
         failPlanSave = true;
         await page.getByRole("button", { name: "Save tracking", exact: true }).click();

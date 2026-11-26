@@ -1,5 +1,7 @@
 import {
   moneyText,
+  moneyUnits,
+  categoryMovements,
   countedUnits,
   type FinanceReport,
   type ReportData,
@@ -16,7 +18,11 @@ export interface OverviewStatement {
   to: string | null;
   rows: { date: string | null; transactionId: number | null }[];
 }
-export type OverviewData = ReportData & { statements?: OverviewStatement[] };
+export type OverviewData = ReportData & {
+  statements?: OverviewStatement[];
+  today?: string;
+  reimbursementPlans?: { expenseId: number; person: string; expected: string }[];
+};
 export type FinanceOverviewReport = FinanceReport & { overview: ReturnType<typeof buildOverview> };
 
 // A statement match confirms an existing activity; documents are never extra spending.
@@ -28,7 +34,7 @@ export function buildOverview(data: OverviewData, filters: ReportFilters, recent
   const includeDataset = (id: number) =>
     filters.dataset === "all" || (filters.dataset === "examples") === examples.has(id);
   const inRange = (date: string) => date >= filters.from && date <= filters.to;
-  const selected = data.transactions.filter(
+  const selected = (filters.categoryId ? categoryMovements(data) : data.transactions).filter(
     (row) =>
       row.currency === filters.currency &&
       (!filters.accountId || row.accountId === filters.accountId) &&
@@ -99,7 +105,24 @@ export function buildOverview(data: OverviewData, filters: ReportFilters, recent
         fromAccount:
           row.type === "TRANSFER" ? (accounts.get(outgoing.accountId)?.name ?? null) : null,
         toAccount: peer ? (accounts.get(peer.accountId)?.name ?? null) : null,
-        category: row.categoryId ? (categories.get(row.categoryId) ?? null) : null,
+        category:
+          row.type === "REFUND"
+            ? [
+                ...new Set(
+                  (data.reimbursements ?? [])
+                    .filter((link) => link.paymentId === row.id)
+                    .flatMap((link) => {
+                      const expense = data.transactions.find((item) => item.id === link.expenseId);
+                      return expense?.categoryId &&
+                        (!filters.categoryId || expense.categoryId === filters.categoryId)
+                        ? [categories.get(expense.categoryId) ?? "Uncategorized"]
+                        : [];
+                    }),
+                ),
+              ].join(" · ") || "Unallocated refund"
+            : row.categoryId
+              ? (categories.get(row.categoryId) ?? null)
+              : null,
         incomeSource: source ? { name: source.name, kind: source.kind } : null,
         status,
       };
@@ -157,7 +180,54 @@ export function buildOverview(data: OverviewData, filters: ReportFilters, recent
     })
     .filter((row) => row.total > 0)
     .sort((a, b) => b.remaining - a.remaining || b.id - a.id);
+  const asOf = data.today ?? filters.to;
+  const owedExpenses = data.transactions.filter(
+    (row) =>
+      row.type === "EXPENSE" &&
+      row.date <= asOf &&
+      row.currency === filters.currency &&
+      (!filters.accountId || row.accountId === filters.accountId) &&
+      (!filters.categoryId || row.categoryId === filters.categoryId) &&
+      includeDataset(row.accountId) &&
+      countedUnits(row) < BigInt(0),
+  );
+  const outstanding = owedExpenses
+    .map((expense) => {
+      const plans = (data.reimbursementPlans ?? []).filter((plan) => plan.expenseId === expense.id);
+      const expected = plans.reduce((sum, plan) => sum + moneyUnits(plan.expected), BigInt(0));
+      const received = (data.reimbursements ?? [])
+        .filter(
+          (link) =>
+            link.expenseId === expense.id &&
+            data.transactions.some(
+              (payment) => payment.id === link.paymentId && payment.date <= asOf,
+            ),
+        )
+        .reduce((sum, link) => sum + moneyUnits(link.amount), BigInt(0));
+      const remaining = expected > received ? expected - received : BigInt(0);
+      return {
+        id: expense.id,
+        description: expense.description,
+        people: plans.map((plan) => plan.person).join(", "),
+        expected: moneyText(expected),
+        received: moneyText(received),
+        remaining: moneyText(remaining),
+      };
+    })
+    .filter((row) => moneyUnits(row.remaining) > BigInt(0))
+    .sort((a, b) => {
+      const difference = moneyUnits(b.remaining) - moneyUnits(a.remaining);
+      return difference === BigInt(0) ? a.id - b.id : difference > BigInt(0) ? 1 : -1;
+    });
   return {
+    awaitingReimbursements: {
+      asOf,
+      total: moneyText(
+        outstanding.reduce((sum, row) => sum + moneyUnits(row.remaining), BigInt(0)),
+      ),
+      count: outstanding.length,
+      expenses: outstanding.slice(0, 5),
+    },
     groups,
     matching: {
       total: activities.length,

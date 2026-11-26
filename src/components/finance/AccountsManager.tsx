@@ -8,6 +8,8 @@ import {
   type FinanceAccount,
 } from "@/lib/finance/validation";
 import Link from "next/link";
+import { BalanceControl } from "./AccountBalances";
+import type { AccountBalance } from "@/lib/finance/balances";
 import TaskModal from "@/components/shared/TaskModal";
 import {
   ArrowLeftIcon,
@@ -40,6 +42,7 @@ export default function AccountsManager({ currencies }: { currencies: string[] }
   const { data, setData, loading, error, retry } = useFinanceData<{ accounts: FinanceAccount[] }>(
     "/api/finance/accounts",
   );
+  const balances = useFinanceData<{ balances: AccountBalance[] }>("/api/finance/balances");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState(emptyAccount);
   const [busy, setBusy] = useState(false);
@@ -78,6 +81,7 @@ export default function AccountsManager({ currencies }: { currencies: string[] }
         editingId === null ? "Account created successfully." : "Account updated successfully.",
       );
       reset();
+      balances.retry();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to save the account.";
       setActionError(message);
@@ -142,6 +146,7 @@ export default function AccountsManager({ currencies }: { currencies: string[] }
           </button>
         </div>
       </div>
+      {balances.error && <FinanceLoadError error={balances.error} retry={balances.retry} />}
       {error && <FinanceLoadError error={error} retry={retry} />}
       {actionError && !modalOpen && (
         <p
@@ -285,6 +290,11 @@ export default function AccountsManager({ currencies }: { currencies: string[] }
                   <h4 className="min-w-0 break-words text-lg font-semibold">{account.name}</h4>
                   <FinanceStatus active={account.active} />
                 </div>
+                {balances.data?.balances
+                  .filter((row) => row.id === account.id)
+                  .map((balance) => (
+                    <BalanceControl key={balance.id} balance={balance} onSaved={balances.retry} />
+                  ))}
                 <dl className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <dt className="text-gray-500">Type</dt>

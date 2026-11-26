@@ -203,53 +203,63 @@ function ReimbursementContent({
           ))}
         </ul>
       )}
-      {expense && editPlan && (
-        <form onSubmit={submitPlan} className="space-y-3 rounded-lg border border-card-border p-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <PersonSelect
-              value={contactId}
-              currentName={editingPlan?.person}
-              onChange={setContactId}
-              disabled={busy}
-            />
-            <label className="space-y-1 text-sm">
-              Expected amount
-              <input
-                aria-label="Expected reimbursement"
-                className={fieldClass}
-                inputMode="decimal"
-                value={expected}
-                required
+      <TaskModal
+        open={expense && editPlan}
+        title={editingPlan ? "Edit reimbursement person" : "Add reimbursement person"}
+        busy={busy}
+        onClose={() => setEditPlan(false)}
+      >
+        {expense && editPlan && (
+          <form
+            onSubmit={submitPlan}
+            className="space-y-3 rounded-lg border border-card-border p-4"
+          >
+            <div className="grid gap-3 sm:grid-cols-2">
+              <PersonSelect
+                value={contactId}
+                currentName={editingPlan?.person}
+                onChange={setContactId}
                 disabled={busy}
-                onChange={(event) => setExpected(event.target.value)}
               />
-            </label>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button disabled={busy} className={primaryButton}>
-              Save tracking
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              className={secondaryButton}
-              onClick={() => setEditPlan(false)}
-            >
-              Cancel
-            </button>
-            {editingPlan && (
+              <label className="space-y-1 text-sm">
+                Expected amount
+                <input
+                  aria-label="Expected reimbursement"
+                  className={fieldClass}
+                  inputMode="decimal"
+                  value={expected}
+                  required
+                  disabled={busy}
+                  onChange={(event) => setExpected(event.target.value)}
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button disabled={busy} className={primaryButton}>
+                Save tracking
+              </button>
               <button
                 type="button"
-                disabled={busy || data.links.some((link) => link.planId === editingPlan?.id)}
-                className={`${secondaryButton} border-rose-500/40`}
-                onClick={() => setConfirm("plan")}
+                disabled={busy}
+                className={secondaryButton}
+                onClick={() => setEditPlan(false)}
               >
-                Remove tracking
+                Cancel
               </button>
-            )}
-          </div>
-        </form>
-      )}
+              {editingPlan && (
+                <button
+                  type="button"
+                  disabled={busy || data.links.some((link) => link.planId === editingPlan?.id)}
+                  className={`${secondaryButton} border-rose-500/40`}
+                  onClick={() => setConfirm("plan")}
+                >
+                  Remove tracking
+                </button>
+              )}
+            </div>
+          </form>
+        )}
+      </TaskModal>
       {!expense && (
         <>
           <div className="flex flex-wrap gap-6">
@@ -282,6 +292,7 @@ function ReimbursementContent({
                       <option key={item.planId} value={item.planId}>
                         {item.date} · {item.description} · {item.person} · {money(item.remaining)}{" "}
                         owed · {item.account}
+                        {item.category ? ` · ${item.category}` : ""}
                       </option>
                     ))}
                   </select>
@@ -340,6 +351,7 @@ function ReimbursementContent({
                 <p className="text-xs text-muted">
                   {dateFormat.format(new Date(`${link.date}T00:00:00Z`))} · {link.person} ·{" "}
                   {money(link.amount)}
+                  {link.category ? ` · ${link.category}` : ""}
                 </p>
               </div>
               <div className="flex gap-2">

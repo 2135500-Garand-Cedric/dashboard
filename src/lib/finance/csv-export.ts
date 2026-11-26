@@ -151,7 +151,7 @@ export function incomeCsv(rows: FinanceIncome[]) {
       row.date,
       row.description,
       row.source?.name ?? null,
-      row.source?.kind ?? null,
+      row.source?.type?.name ?? row.source?.kind ?? null,
       row.account?.name ?? null,
       row.category?.name ?? null,
       row.currency,

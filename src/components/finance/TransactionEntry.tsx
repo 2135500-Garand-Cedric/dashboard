@@ -10,6 +10,7 @@ import { useRef, useState, type FormEvent } from "react";
 import type { FinanceAccount, FinanceCategory } from "@/lib/finance/validation";
 import {
   TRANSACTION_TYPES,
+  twoDecimalAmount,
   type TransactionType,
   type FinanceTransaction,
 } from "@/lib/finance/transactions";
@@ -140,20 +141,22 @@ function EntryForm({
     type:
       existing?.type ??
       ((refundOnly ? "REFUND" : transferOnly ? "TRANSFER" : "EXPENSE") as TransactionType),
-    amount: existing?.amount.replace(/^-/, "") ?? "",
+    amount: existing ? twoDecimalAmount(existing.amount.replace(/^-/, "")) : "",
     accountId: existing ? String(existing.account.id) : "",
     categoryId: existing?.category ? String(existing.category.id) : "",
     counterparty: existing?.counterparty ?? "",
     notes: existing?.notes ?? "",
     destinationAccountId: existing?.transfer ? String(existing.transfer.account.id) : "",
-    destinationAmount: existing?.transfer?.amount ?? "",
+    destinationAmount: existing?.transfer
+      ? twoDecimalAmount(existing.transfer.amount.replace(/^-/, ""))
+      : "",
     adjustmentDirection: existing?.amount.startsWith("-") ? "OUT" : "IN",
   }));
   const account = accounts.data?.accounts.find((item) => item.id === Number(draft.accountId));
   const destination = accounts.data?.accounts.find(
     (item) => item.id === Number(draft.destinationAccountId),
   );
-  const needsCategory = ["EXPENSE", "REFUND"].includes(draft.type);
+  const needsCategory = draft.type === "EXPENSE";
   const crossCurrency =
     draft.type === "TRANSFER" &&
     account &&
@@ -267,8 +270,9 @@ function EntryForm({
         <section className="card space-y-3">
           {existing.excludedAmount && existing.excludedAmount !== "0.0000" && (
             <p className="text-sm text-amber-500">
-              Counted amount: {existing.ledgerAmount} {existing.currency}. {existing.excludedAmount}{" "}
-              is confirmed duplicate activity retained for audit.
+              Counted amount: {twoDecimalAmount(existing.ledgerAmount)} {existing.currency}.{" "}
+              {twoDecimalAmount(existing.excludedAmount)} is confirmed duplicate activity retained
+              for audit.
             </p>
           )}
         </section>
@@ -444,7 +448,7 @@ function EntryForm({
                   ))}
                 </select>
               </label>
-              {!refundOnly && (
+              {!refundOnly && draft.type !== "TRANSFER" && (
                 <label className="block space-y-2">
                   <span className="text-sm font-medium">Currency</span>
                   <input
@@ -469,6 +473,13 @@ function EntryForm({
                   placeholder="0.00"
                   className={fieldClass}
                   value={draft.amount}
+                  onBlur={() => {
+                    if (/^\d+(?:\.\d{1,4})?$/.test(draft.amount))
+                      setDraft((current) => ({
+                        ...current,
+                        amount: twoDecimalAmount(current.amount),
+                      }));
+                  }}
                   onChange={(event) => setDraft({ ...draft, amount: event.target.value })}
                 />
               </label>
@@ -548,6 +559,13 @@ function EntryForm({
                     maxLength={20}
                     className={fieldClass}
                     value={draft.destinationAmount}
+                    onBlur={() => {
+                      if (/^\d+(?:\.\d{1,4})?$/.test(draft.destinationAmount))
+                        setDraft((current) => ({
+                          ...current,
+                          destinationAmount: twoDecimalAmount(current.destinationAmount),
+                        }));
+                    }}
                     onChange={(event) =>
                       setDraft({ ...draft, destinationAmount: event.target.value })
                     }
