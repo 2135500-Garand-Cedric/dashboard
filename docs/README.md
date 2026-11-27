@@ -34,7 +34,13 @@ before using historical instructions.
 | [Dashboard improvement ideas](planned/DASHBOARD_IMPROVEMENT_IDEAS.md)     | Recoverable drafts remain a proposal; ideas 1 and 3–5 have implementation references                          |
 | [Stock market overview](planned/STOCK_MARKET_PLAN.md)                     | Major indexes, notable stock movers and one or two market news items; free and paid data options              |
 | [Integrated AI assistant](planned/AI_ASSISTANT_PLAN.md)                   | Chat/voice capture, validated task/calendar/Knowledge actions, hosting options and worked usage-cost examples |
+| [Evening audio briefing](planned/EVENING_BRIEFING_PLAN.md)               | Short spoken preview of tomorrow's events, deadlines, and tasks; depends on the AI assistant foundation |
+| [Contextual Japanese listening](planned/JAPANESE_LISTENING_CONTEXT_PLAN.md) | Explicit readings, short example sentences, and gradually accepted AI suggestions using the assistant foundation |
 | [Outlook calendar synchronization](planned/OUTLOOK_CALENDAR_SYNC_PLAN.md) | Automatic one-way imports, read-only event details, task links, sync reliability and expected costs           |
 | [Daily journal](planned/DAILY_JOURNAL_PLAN.md)                            | Voice-first daily memories, speech-to-text transcription, editable entries and positive-moment prompts        |
+| [Simple notepad](planned/NOTEPAD_PLAN.md)                                | Quick private text notes, simple editing and search, without requiring tasks or full Knowledge articles        |
+| [Knowledge publications for members](planned/KNOWLEDGE_MEMBER_PUBLICATION_PLAN.md) | Owner-published guides/news in the existing Knowledge module, with permission-controlled member read access |
+| [Configurable roles and permissions](planned/ROLES_AND_PERMISSIONS_PLAN.md) | Custom member roles, action/data-scoped authorization across modules, signup privilege protection, and safe migration |
+| [Public portfolio and private dashboard](planned/PORTFOLIO_DASHBOARD_PLAN.md) | Shared repository, a Next.js portfolio, owner-managed content, domain choices, and safe migration from PHP |
 
 These are planning documents, not features enabled by reorganizing this folder.
