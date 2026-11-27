@@ -161,4 +161,4 @@ balances. Missing history should be identified instead of estimated.
 Global search would improve everyday navigation; recoverable Knowledge drafts
 would protect time spent writing. Quick add, the notification inbox and the weekly
 report now have their own implementation and maintenance references above. A
-separate [activity log proposal](AUDIT_LOG_PLAN.md) describes a new possible addition.
+separate [activity log design](../implemented/AUDIT_LOG_PLAN.md) describes the implemented history.

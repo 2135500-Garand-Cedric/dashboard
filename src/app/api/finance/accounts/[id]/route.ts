@@ -1,3 +1,4 @@
+import { auditedCommand } from "@/lib/audit/command";
 import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -30,35 +31,47 @@ export async function PATCH(request: Request, context: Context) {
     const data = accountInput(await request.json(), true);
     const account = await prisma.$transaction(
       async (tx) => {
-        const current = await tx.financialAccount.findFirst({
-          where: { id, userId: FINANCE_USER_ID },
-          include: {
-            _count: {
-              select: {
-                transactions: true,
-                receipts: true,
-                incomeRecords: true,
-                imports: true,
-                balances: true,
-              },
-            },
+        return auditedCommand(
+          tx,
+          {
+            model: "financialAccount",
+            category: "FINANCE",
+            entityType: "account",
+            label: "Account",
+            id: id,
           },
-        });
-        if (!current) throw new FinanceValidationError("Account not found.", 404);
-        if (
-          data.currency &&
-          data.currency !== current.currency &&
-          Object.values(current._count).some((count) => count > 0)
-        )
-          throw new FinanceValidationError(
-            "Currency cannot change once an account has financial records. Create a separate account for the new currency.",
-            409,
-          );
-        return tx.financialAccount.update({
-          where: { id, userId: FINANCE_USER_ID },
-          data,
-          select: accountSelect,
-        });
+          async () => {
+            const current = await tx.financialAccount.findFirst({
+              where: { id, userId: FINANCE_USER_ID },
+              include: {
+                _count: {
+                  select: {
+                    transactions: true,
+                    receipts: true,
+                    incomeRecords: true,
+                    imports: true,
+                    balances: true,
+                  },
+                },
+              },
+            });
+            if (!current) throw new FinanceValidationError("Account not found.", 404);
+            if (
+              data.currency &&
+              data.currency !== current.currency &&
+              Object.values(current._count).some((count) => count > 0)
+            )
+              throw new FinanceValidationError(
+                "Currency cannot change once an account has financial records. Create a separate account for the new currency.",
+                409,
+              );
+            return tx.financialAccount.update({
+              where: { id, userId: FINANCE_USER_ID },
+              data,
+              select: accountSelect,
+            });
+          },
+        );
       },
       { isolationLevel: "Serializable" },
     );

@@ -1,3 +1,4 @@
+import { updateDelivery } from "../audit/delivery.mjs";
 import { reminderSources, resolveReminder } from "./sources.mjs";
 export { reminderSources } from "./sources.mjs";
 import { materializeInbox, reconcileInbox, cleanupInbox, activeInboxWhere } from "./inbox.mjs";
@@ -52,7 +53,7 @@ export async function runReminderPass(
   await materializeInbox(db, userId, state, now);
   await reconcileInbox(db, userId, state, now);
   await cleanupInbox(db, userId, now);
-  await db.pushDelivery.updateMany({
+  await updateDelivery(db, "pushDelivery", {
     where: {
       subscription: { userId },
       status: "PENDING",
@@ -86,7 +87,7 @@ export async function runReminderPass(
           (old.sendAt.getTime() !== candidate.sendAt.getTime() ||
             old.targetAt.getTime() !== candidate.targetAt.getTime())
         ) {
-          await db.pushDelivery.updateMany({
+          await updateDelivery(db, "pushDelivery", {
             where: {
               id: old.id,
               status: "PENDING",
@@ -174,7 +175,7 @@ export async function runReminderPass(
   });
   let sent = 0;
   for (const job of queue) {
-    const claimed = await db.pushDelivery.updateMany({
+    const claimed = await updateDelivery(db, "pushDelivery", {
       where: {
         id: job.id,
         status: "PENDING",
@@ -211,7 +212,7 @@ export async function runReminderPass(
       else if (candidate && job.generation > 0) candidate.sendAt = notification.dueAt;
       // Drain compatible legacy null-FK jobs without inventing historical inbox rows.
       if (!job.notificationId)
-        await db.pushDelivery.update({
+        await updateDelivery(db, "pushDelivery", {
           where: { id: job.id },
           data: { notificationId: notification.id },
         });
@@ -222,7 +223,7 @@ export async function runReminderPass(
       candidate.occurrenceKey === job.occurrenceKey &&
       candidate.sendAt > now
     ) {
-      await db.pushDelivery.update({
+      await updateDelivery(db, "pushDelivery", {
         where: { id: job.id },
         data: {
           sendAt: candidate.sendAt,
@@ -243,7 +244,7 @@ export async function runReminderPass(
       candidate.sendAt < current.settings.enabledAt ||
       candidate.sendAt < device.createdAt
     ) {
-      await db.pushDelivery.update({
+      await updateDelivery(db, "pushDelivery", {
         where: { id: job.id },
         data: { status: "SKIPPED", errorCode: "CHANGED", leaseUntil: null },
       });
@@ -275,7 +276,7 @@ export async function runReminderPass(
           ),
         ),
       });
-      await db.pushDelivery.update({
+      await updateDelivery(db, "pushDelivery", {
         where: { id: job.id },
         data: {
           status: "SENT",
@@ -293,7 +294,7 @@ export async function runReminderPass(
       const permanent = [400, 401, 403, 404, 410, 413].includes(status) || job.attempts + 1 >= 4;
       if ([404, 410].includes(status))
         await db.pushSubscription.update({ where: { id: device.id }, data: { active: false } });
-      await db.pushDelivery.update({
+      await updateDelivery(db, "pushDelivery", {
         where: { id: job.id },
         data: {
           status: permanent ? "FAILED" : "PENDING",

@@ -1,3 +1,4 @@
+import { auditRecordChange } from "./audit/server";
 import type { Prisma } from "@/generated/prisma";
 import { OWNER_DATABASE_USER_ID as owner } from "./owner-policy";
 import { workBody, workId, WorkValidationError } from "./work-management/validation";
@@ -71,6 +72,19 @@ export async function linkOccasionTask(db: DB, value: unknown, todoId: number) {
   const where = { ...parent, userId: owner, todoId, date: target.date };
   if (!(await db.calendarOccasionTaskLink.findFirst({ where }))) {
     await db.calendarOccasionTaskLink.create({ data: where });
+    await auditRecordChange(
+      db,
+      {
+        category: "CALENDAR",
+        action: "occasion.task_linked",
+        entityType: target.kind,
+        entityId: target.id,
+        summary: "Task linked to calendar date",
+        related: [{ type: "task", id: todoId }],
+      },
+      null,
+      { date: target.date },
+    );
     await db.todo.update({ where: { id: todoId }, data: { revision: { increment: 1 } } });
     await appendTaskActivity(db, todoId, "CALENDAR_DATE_LINKED", {
       calendarDate: { before: null, after: { ...target, title: source.title } },

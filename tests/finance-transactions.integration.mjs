@@ -14,7 +14,7 @@ function load(file, dependencies = {}) {
   const exports = {};
   new Function("exports", "require", compiled)(
     exports,
-    (name) => dependencies[name] ?? timeZoneTestDependency(name) ?? require(name),
+    (name) => dependencies[name] ?? timeZoneTestDependency(name, dependencies) ?? require(name),
   );
   return exports;
 }

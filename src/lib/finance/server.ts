@@ -1,3 +1,4 @@
+import { recordSaveFailure } from "@/lib/audit/failure";
 import { NextResponse } from "next/server";
 import { FinanceValidationError } from "./validation";
 
@@ -6,7 +7,13 @@ import { FinanceValidationError } from "./validation";
 export const FINANCE_USER_ID = 1;
 export const financeHeaders = { "Cache-Control": "private, no-store" };
 
-export function financeError(error: unknown, operation: string) {
+export async function financeError(error: unknown, operation: string) {
+  if (
+    /^(?:save|create|update|delete|remove|set|commit|match|unlink|allocate|upload|replace)\b/.test(
+      operation,
+    )
+  )
+    await recordSaveFailure("FINANCE", "command", error);
   if (error instanceof FinanceValidationError)
     return NextResponse.json(
       { error: error.message },

@@ -1,3 +1,4 @@
+import { auditedCommand } from "@/lib/audit/command";
 import {
   FIXED_STATEMENT_MAPPING,
   fixedReview,
@@ -505,75 +506,88 @@ export async function createStatement(
       try {
         const result = await prisma.$transaction(
           async (db) => {
-            const account = await db.financialAccount.findFirst({
-              where: { id: accountId, userId: FINANCE_USER_ID, active: true },
-            });
-            if (!account)
-              throw new FinanceValidationError(
-                "Choose an active statement account belonging to you.",
-              );
-            const existing = await db.financialImport.findFirst({
-              where: { userId: FINANCE_USER_ID, accountId, fingerprint: file.contentHash },
-              include,
-            });
-            if (existing) {
-              if (
-                period &&
-                existing.periodStart &&
-                (existing.periodStart.toISOString().slice(0, 10) !== period.periodStart ||
-                  existing.periodEnd?.toISOString().slice(0, 10) !== period.periodEnd)
-              )
-                throw new FinanceValidationError(
-                  "This file was already uploaded for a different statement period.",
-                  409,
-                );
-              return { batch: await serialize(db, existing), reused: true };
-            }
-            const batch = await db.financialImport.create({
-              data: {
-                userId: FINANCE_USER_ID,
-                accountId,
-                fingerprint: file.contentHash,
-                ...(period
-                  ? {
-                      periodStart: new Date(`${period.periodStart}T00:00:00Z`),
-                      periodEnd: new Date(`${period.periodEnd}T00:00:00Z`),
-                      matchingOnly: true,
-                      mapping: json(FIXED_STATEMENT_MAPPING),
-                    }
-                  : {}),
-                originalName: file.originalName,
-                byteSize: file.buffer.length,
-                parsing: json(parsed.parsing),
-                headers: json(parsed.headers),
-                entries: {
-                  create: parsed.rows.map((row, index) => ({
-                    rowKey: String(index + 1),
-                    rowNumber: index + 1,
-                    originalData: json(row),
+            return auditedCommand(
+              db,
+              {
+                model: "financialImport",
+                category: "FINANCE",
+                entityType: "statement",
+                label: "Statement",
+                resultId: (r) => r.batch.id,
+              },
+              async () => {
+                const account = await db.financialAccount.findFirst({
+                  where: { id: accountId, userId: FINANCE_USER_ID, active: true },
+                });
+                if (!account)
+                  throw new FinanceValidationError(
+                    "Choose an active statement account belonging to you.",
+                  );
+                const existing = await db.financialImport.findFirst({
+                  where: { userId: FINANCE_USER_ID, accountId, fingerprint: file.contentHash },
+                  include,
+                });
+                if (existing) {
+                  if (
+                    period &&
+                    existing.periodStart &&
+                    (existing.periodStart.toISOString().slice(0, 10) !== period.periodStart ||
+                      existing.periodEnd?.toISOString().slice(0, 10) !== period.periodEnd)
+                  )
+                    throw new FinanceValidationError(
+                      "This file was already uploaded for a different statement period.",
+                      409,
+                    );
+                  return { batch: await serialize(db, existing), reused: true };
+                }
+                const batch = await db.financialImport.create({
+                  data: {
+                    userId: FINANCE_USER_ID,
+                    accountId,
+                    fingerprint: file.contentHash,
                     ...(period
                       ? {
-                          action: "MATCH",
-                          normalized: json(fixedReview(row.cells, account.currency)),
+                          periodStart: new Date(`${period.periodStart}T00:00:00Z`),
+                          periodEnd: new Date(`${period.periodEnd}T00:00:00Z`),
+                          matchingOnly: true,
+                          mapping: json(FIXED_STATEMENT_MAPPING),
                         }
                       : {}),
-                  })),
-                },
+                    originalName: file.originalName,
+                    byteSize: file.buffer.length,
+                    parsing: json(parsed.parsing),
+                    headers: json(parsed.headers),
+                    entries: {
+                      create: parsed.rows.map((row, index) => ({
+                        rowKey: String(index + 1),
+                        rowNumber: index + 1,
+                        originalData: json(row),
+                        ...(period
+                          ? {
+                              action: "MATCH",
+                              normalized: json(fixedReview(row.cells, account.currency)),
+                            }
+                          : {}),
+                      })),
+                    },
+                  },
+                });
+                await db.financialDocument.create({
+                  data: {
+                    userId: FINANCE_USER_ID,
+                    accountId,
+                    importId: batch.id,
+                    type:
+                      account.type === "CREDIT_CARD" ? "CREDIT_CARD_STATEMENT" : "BANK_STATEMENT",
+                    storageKey: key!,
+                    originalName: file.originalName,
+                    mimeType: file.mimeType,
+                    byteSize: file.buffer.length,
+                  },
+                });
+                return { batch: await serialize(db, await findBatch(db, batch.id)), reused: false };
               },
-            });
-            await db.financialDocument.create({
-              data: {
-                userId: FINANCE_USER_ID,
-                accountId,
-                importId: batch.id,
-                type: account.type === "CREDIT_CARD" ? "CREDIT_CARD_STATEMENT" : "BANK_STATEMENT",
-                storageKey: key!,
-                originalName: file.originalName,
-                mimeType: file.mimeType,
-                byteSize: file.buffer.length,
-              },
-            });
-            return { batch: await serialize(db, await findBatch(db, batch.id)), reused: false };
+            );
           },
           { isolationLevel: "Serializable", timeout: 60000 },
         );
@@ -676,108 +690,124 @@ export async function updateStatement(id: number, value: unknown) {
     throw new FinanceValidationError("Save either column mapping or reviewed rows.");
   return prisma.$transaction(
     async (db) => {
-      let batch = await findBatch(db, id);
-      checkRevision(batch, body.expectedRevision);
-      if (batch.status !== "DRAFT" && !batch.matchingOnly)
-        throw new FinanceValidationError("Completed imports are read-only.", 409);
-      if (batch.matchingOnly && body.mapping !== undefined)
-        throw new FinanceValidationError(
-          "The four statement columns are fixed; select the matching records instead.",
-        );
-      if (body.mapping !== undefined) {
-        const width = Array.isArray(batch.headers) ? batch.headers.length : 0,
-          mapping = mappingInput(body.mapping, width),
-          refs = await references(db);
-        for (const [categoryId, kind] of [
-          [mapping.expenseCategoryId, "EXPENSE"],
-          [mapping.incomeCategoryId, "INCOME"],
-        ] as const)
-          if (
-            categoryId !== null &&
-            !refs.categories.some(
-              (item) => item.id === categoryId && item.type === kind && item.active,
-            )
-          )
-            throw new FinanceValidationError("Choose active default categories belonging to you.");
-        for (const entry of batch.entries) {
-          const review = mappedReview(original(entry).cells, mapping, batch.account.currency);
-          if (
-            mapping.categoryColumn !== null &&
-            review.type &&
-            ["INCOME", "EXPENSE", "REFUND"].includes(review.type)
-          ) {
-            const name = normalizedText(original(entry).cells[mapping.categoryColumn] ?? ""),
-              kind = review.type === "INCOME" ? "INCOME" : "EXPENSE";
-            review.categoryId =
-              refs.categories.find(
-                (item) => item.type === kind && item.active && normalizedText(item.name) === name,
-              )?.id ?? null;
-          }
-          await db.financialImportEntry.update({
-            where: { id: entry.id },
-            data: {
-              action: "REVIEW",
-              normalized: json(review),
-              rowFingerprint: sourceFingerprint(review),
-              sourceIdentifier: review.reference || null,
-            },
-          });
-        }
-        await db.financialImport.update({
-          where: { id, userId: FINANCE_USER_ID },
-          data: { mapping: json(mapping), revision: { increment: 1 } },
-        });
-        batch = await findBatch(db, id);
-        const preview = await serialize(db, batch, true);
-        for (const row of preview.rows)
-          await db.financialImportEntry.update({
-            where: { id: row.id },
-            data: { action: row.action, normalized: json(row.review) },
-          });
-        return preview;
-      }
-      if (!Array.isArray(body.rows) || !body.rows.length || body.rows.length > MAX_CSV_ROWS)
-        throw new FinanceValidationError("Provide 1 to 1,000 reviewed rows.");
-      const seen = new Set<number>();
-      for (const value of body.rows) {
-        const item = strictObject(value, ["id", "action", "review"]),
-          rowId = statementId(item.id);
-        if (seen.has(rowId) || !batch.entries.some((entry) => entry.id === rowId))
-          throw new FinanceValidationError(
-            "A reviewed row is repeated or does not belong to this import.",
-          );
-        seen.add(rowId);
-        if (typeof item.action !== "string" || !Object.hasOwn(IMPORT_ACTIONS, item.action))
-          throw new FinanceValidationError("Choose a valid import action.");
-        const review = reviewInput(item.review);
-        if (batch.matchingOnly) {
-          if (item.action !== "MATCH")
+      return auditedCommand(
+        db,
+        {
+          model: "financialImport",
+          category: "FINANCE",
+          entityType: "statement",
+          label: "Statement",
+          id: id,
+          action: "statement.reviewed",
+        },
+        async () => {
+          let batch = await findBatch(db, id);
+          checkRevision(batch, body.expectedRevision);
+          if (batch.status !== "DRAFT" && !batch.matchingOnly)
+            throw new FinanceValidationError("Completed imports are read-only.", 409);
+          if (batch.matchingOnly && body.mapping !== undefined)
             throw new FinanceValidationError(
-              "Every statement row must be matched to an existing income, expense or transfer.",
+              "The four statement columns are fixed; select the matching records instead.",
             );
-          const entry = batch.entries.find((entry) => entry.id === rowId)!;
-          const source = mappedReview(
-            original(entry).cells,
-            batch.mapping as unknown as ImportMapping,
-            batch.account.currency,
-          );
-          assertFixedReview(source, review);
-        }
-        await db.financialImportEntry.update({
-          where: { id: rowId },
-          data: {
-            action: item.action as ImportAction,
-            normalized: json(review),
-            sourceIdentifier: review.reference || null,
-          },
-        });
-      }
-      await db.financialImport.update({
-        where: { id, userId: FINANCE_USER_ID },
-        data: { revision: { increment: 1 } },
-      });
-      if (batch.matchingOnly) await saveStatementMatches(db, await findBatch(db, id));
-      return serialize(db, await findBatch(db, id));
+          if (body.mapping !== undefined) {
+            const width = Array.isArray(batch.headers) ? batch.headers.length : 0,
+              mapping = mappingInput(body.mapping, width),
+              refs = await references(db);
+            for (const [categoryId, kind] of [
+              [mapping.expenseCategoryId, "EXPENSE"],
+              [mapping.incomeCategoryId, "INCOME"],
+            ] as const)
+              if (
+                categoryId !== null &&
+                !refs.categories.some(
+                  (item) => item.id === categoryId && item.type === kind && item.active,
+                )
+              )
+                throw new FinanceValidationError(
+                  "Choose active default categories belonging to you.",
+                );
+            for (const entry of batch.entries) {
+              const review = mappedReview(original(entry).cells, mapping, batch.account.currency);
+              if (
+                mapping.categoryColumn !== null &&
+                review.type &&
+                ["INCOME", "EXPENSE", "REFUND"].includes(review.type)
+              ) {
+                const name = normalizedText(original(entry).cells[mapping.categoryColumn] ?? ""),
+                  kind = review.type === "INCOME" ? "INCOME" : "EXPENSE";
+                review.categoryId =
+                  refs.categories.find(
+                    (item) =>
+                      item.type === kind && item.active && normalizedText(item.name) === name,
+                  )?.id ?? null;
+              }
+              await db.financialImportEntry.update({
+                where: { id: entry.id },
+                data: {
+                  action: "REVIEW",
+                  normalized: json(review),
+                  rowFingerprint: sourceFingerprint(review),
+                  sourceIdentifier: review.reference || null,
+                },
+              });
+            }
+            await db.financialImport.update({
+              where: { id, userId: FINANCE_USER_ID },
+              data: { mapping: json(mapping), revision: { increment: 1 } },
+            });
+            batch = await findBatch(db, id);
+            const preview = await serialize(db, batch, true);
+            for (const row of preview.rows)
+              await db.financialImportEntry.update({
+                where: { id: row.id },
+                data: { action: row.action, normalized: json(row.review) },
+              });
+            return preview;
+          }
+          if (!Array.isArray(body.rows) || !body.rows.length || body.rows.length > MAX_CSV_ROWS)
+            throw new FinanceValidationError("Provide 1 to 1,000 reviewed rows.");
+          const seen = new Set<number>();
+          for (const value of body.rows) {
+            const item = strictObject(value, ["id", "action", "review"]),
+              rowId = statementId(item.id);
+            if (seen.has(rowId) || !batch.entries.some((entry) => entry.id === rowId))
+              throw new FinanceValidationError(
+                "A reviewed row is repeated or does not belong to this import.",
+              );
+            seen.add(rowId);
+            if (typeof item.action !== "string" || !Object.hasOwn(IMPORT_ACTIONS, item.action))
+              throw new FinanceValidationError("Choose a valid import action.");
+            const review = reviewInput(item.review);
+            if (batch.matchingOnly) {
+              if (item.action !== "MATCH")
+                throw new FinanceValidationError(
+                  "Every statement row must be matched to an existing income, expense or transfer.",
+                );
+              const entry = batch.entries.find((entry) => entry.id === rowId)!;
+              const source = mappedReview(
+                original(entry).cells,
+                batch.mapping as unknown as ImportMapping,
+                batch.account.currency,
+              );
+              assertFixedReview(source, review);
+            }
+            await db.financialImportEntry.update({
+              where: { id: rowId },
+              data: {
+                action: item.action as ImportAction,
+                normalized: json(review),
+                sourceIdentifier: review.reference || null,
+              },
+            });
+          }
+          await db.financialImport.update({
+            where: { id, userId: FINANCE_USER_ID },
+            data: { revision: { increment: 1 } },
+          });
+          if (batch.matchingOnly) await saveStatementMatches(db, await findBatch(db, id));
+          return serialize(db, await findBatch(db, id));
+        },
+      );
     },
     { isolationLevel: "Serializable", timeout: 60000 },
   );
@@ -837,83 +867,98 @@ export async function commitStatement(id: number, value: unknown) {
     try {
       return await prisma.$transaction(
         async (db) => {
-          const batch = await findBatch(db, id);
-          if (batch.status === "COMPLETED")
-            return { batch: await serialize(db, batch), replayed: true };
-          checkRevision(batch, body.expectedRevision);
-          if (batch.matchingOnly) {
-            if (
-              !batch.entries.some((entry) => (entry.normalized as unknown as ImportReview)?.matchId)
-            )
-              throw new FinanceValidationError(
-                "Choose at least one matching record before saving this statement.",
-              );
-            const changed = await saveStatementMatches(db, batch);
-            if (changed)
+          return auditedCommand(
+            db,
+            {
+              model: "financialImport",
+              category: "FINANCE",
+              entityType: "statement",
+              label: "Statement",
+              id: id,
+              action: "statement.saved",
+            },
+            async () => {
+              const batch = await findBatch(db, id);
+              if (batch.status === "COMPLETED")
+                return { batch: await serialize(db, batch), replayed: true };
+              checkRevision(batch, body.expectedRevision);
+              if (batch.matchingOnly) {
+                if (
+                  !batch.entries.some(
+                    (entry) => (entry.normalized as unknown as ImportReview)?.matchId,
+                  )
+                )
+                  throw new FinanceValidationError(
+                    "Choose at least one matching record before saving this statement.",
+                  );
+                const changed = await saveStatementMatches(db, batch);
+                if (changed)
+                  await db.financialImport.update({
+                    where: { id },
+                    data: { revision: { increment: 1 } },
+                  });
+                return { batch: await serialize(db, await findBatch(db, id)), replayed: !changed };
+              }
+              if (!batch.account.active)
+                throw new FinanceValidationError("Reactivate this account before importing.", 409);
+              if (!batch.mapping)
+                throw new FinanceValidationError("Map and review the CSV before importing.");
+              const refs = await references(db),
+                first = new Map<string, number>();
+              // Recheck row-by-row inside the same transaction, including earlier rows just created.
+              for (const entry of batch.entries) {
+                if (entry.action === "SKIP") continue;
+                const review = entry.normalized as unknown as ImportReview | null;
+                if (!review)
+                  throw new FinanceValidationError(
+                    `Row ${entry.rowNumber}: map columns before importing.`,
+                  );
+                const key = financialKey(review),
+                  duplicateOf = first.get(key) ?? null;
+                if (!first.has(key)) first.set(key, entry.rowNumber ?? 0);
+                const checked = await analyze(db, batch, entry, refs, duplicateOf);
+                if (checked.errors.length)
+                  throw new FinanceValidationError(
+                    `Row ${entry.rowNumber}: ${checked.errors.join(" ")}`,
+                    409,
+                  );
+                const row = checked.review!;
+                const transactionId =
+                  checked.action === "MATCH" ? row.matchId! : await createMovement(db, batch, row);
+                await db.financialImportEntry.update({
+                  where: { id: entry.id },
+                  data: {
+                    transactionId,
+                    normalized: json(row),
+                    sourceIdentifier: row.reference || null,
+                  },
+                });
+                if (checked.action === "MATCH")
+                  await writeMatch(db, {
+                    kind: "STATEMENT",
+                    sourceId: entry.id,
+                    transactionId,
+                    amount: row.amount.replace(/^-/, ""),
+                    currency: row.currency,
+                    status: "CONFIRMED",
+                    snapshot: json({
+                      ...row,
+                      label: row.description,
+                      signedAmount: row.amount,
+                      accountId: batch.accountId,
+                      origin: "import",
+                    }),
+                    action: "CONFIRM",
+                    note: "Confirmed when importing reviewed statement rows",
+                  });
+              }
               await db.financialImport.update({
-                where: { id },
-                data: { revision: { increment: 1 } },
+                where: { id, userId: FINANCE_USER_ID },
+                data: { status: "COMPLETED", completedAt: new Date(), revision: { increment: 1 } },
               });
-            return { batch: await serialize(db, await findBatch(db, id)), replayed: !changed };
-          }
-          if (!batch.account.active)
-            throw new FinanceValidationError("Reactivate this account before importing.", 409);
-          if (!batch.mapping)
-            throw new FinanceValidationError("Map and review the CSV before importing.");
-          const refs = await references(db),
-            first = new Map<string, number>();
-          // Recheck row-by-row inside the same transaction, including earlier rows just created.
-          for (const entry of batch.entries) {
-            if (entry.action === "SKIP") continue;
-            const review = entry.normalized as unknown as ImportReview | null;
-            if (!review)
-              throw new FinanceValidationError(
-                `Row ${entry.rowNumber}: map columns before importing.`,
-              );
-            const key = financialKey(review),
-              duplicateOf = first.get(key) ?? null;
-            if (!first.has(key)) first.set(key, entry.rowNumber ?? 0);
-            const checked = await analyze(db, batch, entry, refs, duplicateOf);
-            if (checked.errors.length)
-              throw new FinanceValidationError(
-                `Row ${entry.rowNumber}: ${checked.errors.join(" ")}`,
-                409,
-              );
-            const row = checked.review!;
-            const transactionId =
-              checked.action === "MATCH" ? row.matchId! : await createMovement(db, batch, row);
-            await db.financialImportEntry.update({
-              where: { id: entry.id },
-              data: {
-                transactionId,
-                normalized: json(row),
-                sourceIdentifier: row.reference || null,
-              },
-            });
-            if (checked.action === "MATCH")
-              await writeMatch(db, {
-                kind: "STATEMENT",
-                sourceId: entry.id,
-                transactionId,
-                amount: row.amount.replace(/^-/, ""),
-                currency: row.currency,
-                status: "CONFIRMED",
-                snapshot: json({
-                  ...row,
-                  label: row.description,
-                  signedAmount: row.amount,
-                  accountId: batch.accountId,
-                  origin: "import",
-                }),
-                action: "CONFIRM",
-                note: "Confirmed when importing reviewed statement rows",
-              });
-          }
-          await db.financialImport.update({
-            where: { id, userId: FINANCE_USER_ID },
-            data: { status: "COMPLETED", completedAt: new Date(), revision: { increment: 1 } },
-          });
-          return { batch: await serialize(db, await findBatch(db, id)), replayed: false };
+              return { batch: await serialize(db, await findBatch(db, id)), replayed: false };
+            },
+          );
         },
         { isolationLevel: "Serializable", timeout: 60000 },
       );
@@ -928,27 +973,40 @@ export async function commitStatement(id: number, value: unknown) {
 export async function deleteStatement(id: number, revision: unknown, documentOnly = false) {
   const keys = await prisma.$transaction(
     async (db) => {
-      const batch = await findBatch(db, id);
-      checkRevision(batch, revision);
-      if (!documentOnly && batch.status !== "DRAFT")
-        throw new FinanceValidationError(
-          "Completed import history is retained. You can delete its source CSV without changing transactions.",
-          409,
-        );
-      await db.financialDocument.deleteMany({
-        where: {
-          userId: FINANCE_USER_ID,
-          importId: id,
-          type: { in: ["BANK_STATEMENT", "CREDIT_CARD_STATEMENT"] },
+      return auditedCommand(
+        db,
+        {
+          model: "financialImport",
+          category: "FINANCE",
+          entityType: "statement",
+          label: "Statement",
+          id: id,
+          action: documentOnly ? "statement.document_removed" : "statement.deleted",
         },
-      });
-      if (documentOnly)
-        await db.financialImport.update({
-          where: { id, userId: FINANCE_USER_ID },
-          data: { revision: { increment: 1 } },
-        });
-      else await db.financialImport.delete({ where: { id, userId: FINANCE_USER_ID } });
-      return batch.documents.map((document) => document.storageKey);
+        async () => {
+          const batch = await findBatch(db, id);
+          checkRevision(batch, revision);
+          if (!documentOnly && batch.status !== "DRAFT")
+            throw new FinanceValidationError(
+              "Completed import history is retained. You can delete its source CSV without changing transactions.",
+              409,
+            );
+          await db.financialDocument.deleteMany({
+            where: {
+              userId: FINANCE_USER_ID,
+              importId: id,
+              type: { in: ["BANK_STATEMENT", "CREDIT_CARD_STATEMENT"] },
+            },
+          });
+          if (documentOnly)
+            await db.financialImport.update({
+              where: { id, userId: FINANCE_USER_ID },
+              data: { revision: { increment: 1 } },
+            });
+          else await db.financialImport.delete({ where: { id, userId: FINANCE_USER_ID } });
+          return batch.documents.map((document) => document.storageKey);
+        },
+      );
     },
     { isolationLevel: "Serializable" },
   );

@@ -219,6 +219,7 @@ test(
       if (userId) {
         await prisma.emailDelivery.deleteMany({ where: { userId } });
         await prisma.emailSettings.deleteMany({ where: { userId } });
+        await prisma.auditEvent.deleteMany({where:{userId}});
         await prisma.user.delete({ where: { id: userId } });
       }
       await prisma.$disconnect();

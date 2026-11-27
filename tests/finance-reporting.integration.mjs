@@ -21,7 +21,7 @@ function load(file, deps = {}) {
   const exports = {};
   new Function("exports", "require", compiled)(
     exports,
-    (name) => deps[name] ?? timeZoneTestDependency(name) ?? require(name),
+    (name) => deps[name] ?? timeZoneTestDependency(name, deps) ?? require(name),
   );
   return exports;
 }

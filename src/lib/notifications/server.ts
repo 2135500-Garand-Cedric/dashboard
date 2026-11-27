@@ -1,3 +1,4 @@
+import { auditRecordChange } from "@/lib/audit/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { OWNER_DATABASE_USER_ID as userId } from "@/lib/owner-policy";
@@ -94,7 +95,7 @@ export async function saveNotificationSettings(value: unknown) {
     )[]) {
       if (data[key] === true && previous?.[key] === false) cutoffs[key] = now.toISOString();
     }
-    await db.notificationSettings.upsert({
+    const saved = await db.notificationSettings.upsert({
       where: { userId },
       create: { userId, ...data },
       update: {
@@ -103,6 +104,35 @@ export async function saveNotificationSettings(value: unknown) {
         ...(data.enabled === true && previous?.enabled === false ? { enabledAt: now } : {}),
       },
     });
+    const prefs = (row: typeof saved | null) =>
+      row
+        ? {
+            enabled: row.enabled,
+            leadMinutes: row.leadMinutes,
+            dateOnlyTime: row.dateOnlyTime,
+            showDetails: row.showDetails,
+            settings: {
+              events: row.events,
+              sessions: row.sessions,
+              deadlines: row.deadlines,
+              followUps: row.followUps,
+              milestones: row.milestones,
+              weeklyReports: row.weeklyReports,
+            },
+          }
+        : null;
+    await auditRecordChange(
+      db,
+      {
+        category: "SETTINGS",
+        entityType: "settings",
+        entityId: userId,
+        action: "notifications.preferences_changed",
+        summary: "Notification preferences changed",
+      },
+      prefs(previous),
+      prefs(saved),
+    );
   });
   return notificationOverview();
 }
@@ -139,18 +169,63 @@ export async function registerDevice(value: unknown) {
           : {}),
       },
     });
+    await auditRecordChange(
+      db,
+      {
+        category: "SETTINGS",
+        entityType: "device",
+        entityId: device.id,
+        action: "device.registered",
+        summary: "Notification device registered",
+      },
+      existing
+        ? {
+            ...existing,
+            settings: {
+              endpoint: existing.endpoint,
+              p256dh: existing.p256dh,
+              auth: existing.auth,
+              vapidPublicKey: existing.vapidPublicKey,
+            },
+          }
+        : null,
+      {
+        ...device,
+        settings: {
+          endpoint: device.endpoint,
+          p256dh: device.p256dh,
+          auth: device.auth,
+          vapidPublicKey: device.vapidPublicKey,
+        },
+      },
+    );
     return { id: device.id };
   });
 }
 export async function unregisterDevice(id: string) {
-  const result = await prisma.pushSubscription.updateMany({
-    where: { id, userId },
-    data: { active: false },
-  });
-  if (!result.count) throw new NotificationError("Device not found.", 404);
-  await prisma.pushDelivery.updateMany({
-    where: { subscriptionId: id, status: "PENDING" },
-    data: { status: "SKIPPED", errorCode: "DISABLED", leaseUntil: null },
+  await prisma.$transaction(async (db) => {
+    const previous = await db.pushSubscription.findFirst({ where: { id, userId } });
+    if (!previous) throw new NotificationError("Device not found.", 404);
+    const saved = await db.pushSubscription.update({
+      where: { id, userId },
+      data: { active: false },
+    });
+    await db.pushDelivery.updateMany({
+      where: { subscriptionId: id, status: "PENDING" },
+      data: { status: "SKIPPED", errorCode: "DISABLED", leaseUntil: null },
+    });
+    await auditRecordChange(
+      db,
+      {
+        category: "SETTINGS",
+        entityType: "device",
+        entityId: id,
+        action: "device.disabled",
+        summary: "Notification device disabled",
+      },
+      previous,
+      saved,
+    );
   });
 }
 export async function sendTestNotification(id: string) {

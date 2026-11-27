@@ -11,10 +11,10 @@ function load(file, dependencies = {}) {
   const exports = {};
   new Function("exports", "require", code)(exports, (name) => {
     assert.ok(
-      name in dependencies || timeZoneTestDependency(name),
+      name in dependencies || timeZoneTestDependency(name, dependencies),
       `Missing test dependency ${name}`,
     );
-    return dependencies[name] ?? timeZoneTestDependency(name);
+    return dependencies[name] ?? timeZoneTestDependency(name, dependencies);
   });
   return exports;
 }

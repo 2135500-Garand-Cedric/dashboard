@@ -1,3 +1,5 @@
+import { OWNER_GITHUB_ID } from "../owner-identity.mjs";
+import { appendAudit, auditSnapshot } from "../audit/writer.mjs";
 import { resolveReminder } from "./sources.mjs";
 import { createHash } from "node:crypto";
 import { activeInboxWhere, inboxWhere, reconcileItem, snoozeInstant } from "./inbox.mjs";
@@ -134,6 +136,9 @@ export async function inboxCommand(
       return prior.result;
     }
     let result = { ok: true };
+    let auditBefore = null,
+      auditAfter = null,
+      auditChanged = false;
     if (action === "read-all") {
       const cutoff = new Date(body.cutoff);
       if (typeof body.cutoff !== "string" || !Number.isFinite(cutoff.getTime()) || cutoff > now)
@@ -148,6 +153,8 @@ export async function inboxCommand(
         data: { readAt: now, revision: { increment: 1 } },
       });
       result = { ok: true, count: updated.count };
+      auditChanged = updated.count > 0;
+      auditAfter = { count: updated.count };
     } else {
       if (!Number.isInteger(revision) || revision < 1)
         throw new InboxError("Reload this notification before changing it.", 428);
@@ -158,6 +165,11 @@ export async function inboxCommand(
       if (item.revision !== revision)
         throw new InboxError("This notification changed. Reload it and try again.", 409);
       let data;
+      auditBefore = {
+        readAt: item.readAt,
+        dismissedAt: item.dismissedAt,
+        snoozedUntil: item.snoozedUntil,
+      };
       if (action === "snooze") {
         if (item.lifecycle !== "ACTIVE")
           throw new InboxError("This reminder is no longer active.", 409);
@@ -184,12 +196,29 @@ export async function inboxCommand(
       });
       if (!updated.count)
         throw new InboxError("This notification changed. Reload it and try again.", 409);
+      auditAfter = { ...auditBefore, ...data };
+      auditChanged = JSON.stringify(auditBefore) !== JSON.stringify(auditAfter);
       if (action === "snooze" || body.action === "dismiss")
         await tx.pushDelivery.updateMany({
           where: { notificationId: id, status: "PENDING" },
           data: { status: "SKIPPED", errorCode: "CHANGED", leaseUntil: null },
         });
     }
+    if (auditChanged)
+      await appendAudit(tx, {
+        userId,
+        actorKind: "OWNER",
+        actorGithubId: OWNER_GITHUB_ID,
+        category: "NOTIFICATIONS",
+        entityType: "notification",
+        entityId: id,
+        action: `notification.${action === "read-all" ? "read-all" : action === "snooze" ? "snoozed" : body.action}`,
+        summary: action === "read-all" ? "Notifications marked read" : "Notification changed",
+        before: auditSnapshot(auditBefore),
+        after: auditSnapshot(auditAfter),
+        eventKey: `notification:${key}`,
+        operationKey: key,
+      });
     await tx.workMutationReceipt.create({
       data: { userId, requestKey: key, fingerprint, operation: `notification:${action}`, result },
     });

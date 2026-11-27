@@ -1,6 +1,9 @@
+import { auditTestDependency } from "./audit.mjs";
 // Existing domain fixtures use the configured baseline zone and do not read user
 // preferences. Settings/request-context tests load the actual modules separately.
-export function timeZoneTestDependency(name) {
+export function timeZoneTestDependency(name, dependencies = {}) {
+  const audit = auditTestDependency(name, dependencies);
+  if (audit) return audit;
   if (name === "@/lib/user-settings")
     return {
       withUserTimeZone: async (action) => action(),

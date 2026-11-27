@@ -1,3 +1,4 @@
+import { auditedCommand } from "@/lib/audit/command";
 import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
 import { workTransaction, WORK_USER_ID } from "@/lib/work-management/server";
@@ -28,10 +29,25 @@ export async function PATCH(request: Request, context: Context) {
   if (body.active !== undefined) data.active = Boolean(body.active);
 
   try {
-    const activityType = await prisma.activityType.update({
-      where: { id: Number(id) },
-      data,
-    });
+    const activityType = await prisma.$transaction(
+      (db) =>
+        auditedCommand(
+          db,
+          {
+            model: "activityType",
+            category: "SETTINGS",
+            entityType: "activity-type",
+            label: "Activity type",
+            id: Number(id),
+          },
+          async () =>
+            db.activityType.update({
+              where: { id: Number(id) },
+              data,
+            }),
+        ),
+      { isolationLevel: "Serializable" },
+    );
     return NextResponse.json(activityType);
   } catch (error: unknown) {
     if (error && typeof error === "object" && "code" in error && error.code === "P2002") {
@@ -54,19 +70,31 @@ export async function DELETE(_: Request, context: Context) {
     return NextResponse.json({ error: "Activity type not found" }, { status: 404 });
 
   await workTransaction(async (db) => {
-    await db.event.updateMany({
-      where: { userId: WORK_USER_ID, type: activityType.name },
-      data: { type: null, revision: { increment: 1 } },
-    });
-    await db.todo.updateMany({
-      where: { userId: WORK_USER_ID, activityTypeId: Number(id) },
-      data: { activityTypeId: null, revision: { increment: 1 } },
-    });
-    await db.workProject.updateMany({
-      where: { userId: WORK_USER_ID, activityTypeId: Number(id) },
-      data: { activityTypeId: null, revision: { increment: 1 } },
-    });
-    await db.activityType.delete({ where: { id: Number(id) } });
+    return auditedCommand(
+      db,
+      {
+        model: "activityType",
+        category: "SETTINGS",
+        entityType: "activity-type",
+        label: "Activity type",
+        id: Number(id),
+      },
+      async () => {
+        await db.event.updateMany({
+          where: { userId: WORK_USER_ID, type: activityType.name },
+          data: { type: null, revision: { increment: 1 } },
+        });
+        await db.todo.updateMany({
+          where: { userId: WORK_USER_ID, activityTypeId: Number(id) },
+          data: { activityTypeId: null, revision: { increment: 1 } },
+        });
+        await db.workProject.updateMany({
+          where: { userId: WORK_USER_ID, activityTypeId: Number(id) },
+          data: { activityTypeId: null, revision: { increment: 1 } },
+        });
+        await db.activityType.delete({ where: { id: Number(id) } });
+      },
+    );
   });
 
   return NextResponse.json({ success: true });

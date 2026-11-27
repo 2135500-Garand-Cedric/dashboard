@@ -1,3 +1,4 @@
+import { pruneAudit } from "../src/lib/audit/writer.mjs";
 import { PrismaClient } from "../src/generated/prisma/index.js";
 import { pushConfiguration } from "../src/lib/notifications/rules.mjs";
 import { runReminderPass } from "../src/lib/notifications/engine.mjs";
@@ -7,6 +8,7 @@ import { ensureOccurrences } from "../src/lib/recurrence/engine.mjs";
 
 let lastGeneration = 0;
 let lastEmailPass = 0;
+let lastAuditRetention = 0;
 const db = new PrismaClient({ log: [] });
 let stopping = false,
   wake,
@@ -50,6 +52,14 @@ try {
         console.error(
           "[email] Delivery unavailable. Check email configuration and delivery status.",
         );
+    }
+    if (!stopping && Date.now() - lastAuditRetention >= 3600000) {
+      try {
+        await pruneAudit(db);
+        lastAuditRetention = Date.now();
+      } catch {
+        console.error("Audit: retention unavailable.");
+      }
     }
     if (!stopping)
       await new Promise((resolve) => {

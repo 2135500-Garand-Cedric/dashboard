@@ -11,7 +11,7 @@ function load(file, deps = {}) {
   }).outputText;
   new Function("exports", "require", code)(
     exports,
-    (name) => deps[name] ?? timeZoneTestDependency(name),
+    (name) => deps[name] ?? timeZoneTestDependency(name, deps),
   );
   return exports;
 }

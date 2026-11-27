@@ -1,3 +1,4 @@
+import { auditRecordChange } from "@/lib/audit/server";
 import { withUserTimeZone } from "@/lib/user-settings";
 import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
@@ -150,7 +151,7 @@ export async function PATCH(req: Request) {
         });
 
         // 4. Create practice summary
-        await tx.practice.create({
+        const practice = await tx.practice.create({
           data: {
             activityId: Number(activityId),
             wordCount: counts.wordCount,
@@ -160,6 +161,20 @@ export async function PATCH(req: Request) {
           },
         });
         await recordJapaneseProgress(tx);
+        await auditRecordChange(
+          tx,
+          {
+            category: "JAPANESE",
+            action: "practice.saved",
+            entityType: "practice",
+            entityId: practice.id,
+            entityReference: `Practice #${practice.id}`,
+            summary: "Japanese practice saved",
+            eventKey: `practice:${practice.id}`,
+          },
+          null,
+          counts,
+        );
       });
 
       return NextResponse.json({

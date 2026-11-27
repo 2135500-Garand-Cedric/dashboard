@@ -1,3 +1,4 @@
+import { auditedCommand } from "@/lib/audit/command";
 import { withUserTimeZone } from "@/lib/user-settings";
 import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
@@ -55,9 +56,23 @@ export async function POST(req: Request) {
         );
       }
 
-      const newCategory = await prisma.category.create({
-        data: { name: name.trim() },
-      });
+      const newCategory = await prisma.$transaction(
+        (db) =>
+          auditedCommand(
+            db,
+            {
+              model: "category",
+              category: "JAPANESE",
+              entityType: "vocab-category",
+              label: "Vocabulary category",
+            },
+            async () =>
+              db.category.create({
+                data: { name: name.trim() },
+              }),
+          ),
+        { isolationLevel: "Serializable" },
+      );
 
       return NextResponse.json({ success: true, category: newCategory });
     } catch (error) {

@@ -1,3 +1,4 @@
+import { auditedCommand } from "@/lib/audit/command";
 import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -28,9 +29,23 @@ export async function POST(request: Request) {
   }
 
   try {
-    const activityType = await prisma.activityType.create({
-      data: { name, color, active: body.active !== false },
-    });
+    const activityType = await prisma.$transaction(
+      (db) =>
+        auditedCommand(
+          db,
+          {
+            model: "activityType",
+            category: "SETTINGS",
+            entityType: "activity-type",
+            label: "Activity type",
+          },
+          async () =>
+            db.activityType.create({
+              data: { name, color, active: body.active !== false },
+            }),
+        ),
+      { isolationLevel: "Serializable" },
+    );
     return NextResponse.json(activityType, { status: 201 });
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "P2002") {

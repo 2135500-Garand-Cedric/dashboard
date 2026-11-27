@@ -495,6 +495,7 @@ test(
         await db.userNotification.deleteMany({ where: { userId } });
         await db.event.deleteMany({ where: { userId } });
         await db.notificationSettings.deleteMany({ where: { userId } });
+        await db.auditEvent.deleteMany({where:{userId}});
         await db.user.delete({ where: { id: userId } });
       }
       await db.$disconnect();

@@ -1,3 +1,4 @@
+import { auditTestDependency } from "./audit.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -22,6 +23,8 @@ export function weeklyModules(db, overrides = {}) {
       },
     }).outputText;
     new Function("exports", "require", compiled)(exports, (name) => {
+      const audit = auditTestDependency(name, {"@/lib/prisma": {prisma:db}});
+      if (audit) return audit;
       if (Object.hasOwn(overrides, name)) return overrides[name];
       if (name === "@/lib/prisma") return { prisma: db };
       if (name === "@/generated/prisma")

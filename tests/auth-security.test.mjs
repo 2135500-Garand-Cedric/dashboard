@@ -19,10 +19,10 @@ function load(file, dependencies) {
   const exports = {};
   new Function("exports", "require", code)(exports, (name) => {
     assert.ok(
-      name in dependencies || timeZoneTestDependency(name),
+      name in dependencies || timeZoneTestDependency(name, dependencies),
       `Missing dependency ${name} for ${file}`,
     );
-    return dependencies[name] ?? timeZoneTestDependency(name);
+    return dependencies[name] ?? timeZoneTestDependency(name, dependencies);
   });
   return exports;
 }
@@ -135,6 +135,10 @@ test("every data API handler denies access before executing database or external
     (file) => file.endsWith("/route.ts") && !file.includes("/api/auth/"),
   )) {
     const source = fs.readFileSync(file, "utf8");
+    if (file.endsWith("/api/email/process/route.ts")) {
+      assert.match(source, /if \(!authorizedEmailWorker\(request\)\)/);
+      continue; // Separate worker-token endpoint, covered by weekly-email tests.
+    }
     const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
     const methods = ast.statements.filter(
       (node) =>

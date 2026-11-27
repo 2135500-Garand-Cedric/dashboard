@@ -1,3 +1,4 @@
+import { auditedCommand } from "@/lib/audit/command";
 import { NextResponse } from "next/server";
 import { requireOwner } from "@/lib/require-owner";
 import { prisma } from "@/lib/prisma";
@@ -37,7 +38,21 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Choose a valid timezone." }, { status: 400, headers });
   }
   try {
-    await prisma.user.update({ where: { id: OWNER_DATABASE_USER_ID }, data: { timeZone } });
+    await prisma.$transaction(
+      (db) =>
+        auditedCommand(
+          db,
+          {
+            model: "user",
+            category: "SETTINGS",
+            entityType: "settings",
+            label: "Timezone",
+            id: OWNER_DATABASE_USER_ID,
+          },
+          async () => db.user.update({ where: { id: OWNER_DATABASE_USER_ID }, data: { timeZone } }),
+        ),
+      { isolationLevel: "Serializable" },
+    );
     return NextResponse.json({ timeZone }, { headers });
   } catch {
     return NextResponse.json(

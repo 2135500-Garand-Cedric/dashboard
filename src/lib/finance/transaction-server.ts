@@ -1,3 +1,5 @@
+import { auditRecordChange } from "@/lib/audit/server";
+import { auditedCommand } from "@/lib/audit/command";
 import { createHash } from "node:crypto";
 import { Prisma } from "@/generated/prisma";
 import { NextResponse } from "next/server";
@@ -562,38 +564,83 @@ export async function saveTransactionInDb(db: DB, input: TransactionInput, id?: 
     });
   }
   const saved = await rowById(db, root.id);
+  await auditRecordChange(
+    db,
+    {
+      category: "FINANCE",
+      entityType: "transaction",
+      entityId: saved.id,
+      action: saved.type === "TRANSFER" ? "transfer.saved" : "transaction.saved",
+      summary: `${saved.type.charAt(0)}${saved.type.slice(1).toLowerCase()} ${current ? "updated" : "created"}`,
+      entityReference: `${saved.type.charAt(0)}${saved.type.slice(1).toLowerCase()} #${saved.id}`,
+      ...(input.requestKey ? { eventKey: `finance:${input.requestKey}` } : {}),
+    },
+    current
+      ? {
+          ...current,
+          settings: current.transfer?.transactions.map((leg) => ({
+            accountId: leg.accountId,
+            amount: leg.amount,
+            currency: leg.currency,
+          })),
+        }
+      : null,
+    {
+      ...saved,
+      settings: saved.transfer?.transactions.map((leg) => ({
+        accountId: leg.accountId,
+        amount: leg.amount,
+        currency: leg.currency,
+      })),
+    },
+  );
   return { transaction: serializeTransaction(saved), replayed: false };
 }
 
 export async function deleteTransaction(id: number) {
   await prisma.$transaction(
     async (db) => {
-      const row = await rowById(db, id);
-      assertEditable(row);
-      if (
-        row.reimbursementPlans.length ||
-        row.reimbursementsReceived.length ||
-        row.reimbursementsPaid.length
-      )
-        throw new FinanceValidationError(
-          "Unlink reimbursements and remove tracking before deleting this record.",
-          409,
-        );
-      if (row.incomeRecords.length)
-        throw new FinanceValidationError(
-          "This deposit belongs to an income record. Delete the income record before deleting its deposit.",
-          409,
-        );
-      if (row.matchTargets.length || row.matchSources.length)
-        throw new FinanceValidationError(
-          "Unlink confirmed reconciliation allocations before deleting this transaction.",
-          409,
-        );
-      if (row.transferId)
-        await db.financialTransfer.delete({
-          where: { id: row.transferId, userId: FINANCE_USER_ID },
-        });
-      else await db.financialTransaction.delete({ where: { id: row.id, userId: FINANCE_USER_ID } });
+      return auditedCommand(
+        db,
+        {
+          model: "financialTransaction",
+          category: "FINANCE",
+          entityType: "transaction",
+          label: "Financial activity",
+          id: id,
+        },
+        async () => {
+          const row = await rowById(db, id);
+          assertEditable(row);
+          if (
+            row.reimbursementPlans.length ||
+            row.reimbursementsReceived.length ||
+            row.reimbursementsPaid.length
+          )
+            throw new FinanceValidationError(
+              "Unlink reimbursements and remove tracking before deleting this record.",
+              409,
+            );
+          if (row.incomeRecords.length)
+            throw new FinanceValidationError(
+              "This deposit belongs to an income record. Delete the income record before deleting its deposit.",
+              409,
+            );
+          if (row.matchTargets.length || row.matchSources.length)
+            throw new FinanceValidationError(
+              "Unlink confirmed reconciliation allocations before deleting this transaction.",
+              409,
+            );
+          if (row.transferId)
+            await db.financialTransfer.delete({
+              where: { id: row.transferId, userId: FINANCE_USER_ID },
+            });
+          else
+            await db.financialTransaction.delete({
+              where: { id: row.id, userId: FINANCE_USER_ID },
+            });
+        },
+      );
     },
     { isolationLevel: "Serializable" },
   );

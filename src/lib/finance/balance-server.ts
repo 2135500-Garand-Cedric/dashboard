@@ -1,3 +1,4 @@
+import { auditRecordChange } from "@/lib/audit/server";
 import { prisma } from "@/lib/prisma";
 import { FINANCE_USER_ID, accountSelect } from "./server";
 import { FinanceValidationError } from "./validation";
@@ -105,6 +106,23 @@ export async function setAccountBalance(id: number, value: unknown) {
         [],
         input.date,
       ).amount;
+      const previousBalance = accountBalance(
+        movements.map((row) => ({
+          date: row.occurredOn.toISOString().slice(0, 10),
+          amount: row.amount.toFixed(4),
+          excludedAmount: row.excludedAmount.toFixed(4),
+        })),
+        latest
+          ? [
+              {
+                date: latest.date.toISOString().slice(0, 10),
+                amount: latest.amount.toFixed(4),
+                ledgerAmount: latest.ledgerAmount.toFixed(4),
+              },
+            ]
+          : [],
+        input.date,
+      ).amount;
       const checkpoint = await db.financialAccountBalance.upsert({
         where: { accountId_date: { accountId: id, date } },
         create: {
@@ -116,6 +134,34 @@ export async function setAccountBalance(id: number, value: unknown) {
         },
         update: { amount: input.amount, ledgerAmount },
       });
+      await auditRecordChange(
+        db,
+        {
+          category: "FINANCE",
+          entityType: "balance",
+          entityId: checkpoint.id,
+          action: "balance.corrected",
+          entityReference: `Account #${id}`,
+          summary: "Account balance corrected",
+          eventKey: `balance:${id}:${input.expectedRevision + 1}`,
+          related: [{ type: "account", id }],
+        },
+        {
+          currentBalance: previousBalance,
+          closingBalance: latest?.amount ?? null,
+          previousClosingDate: latest?.date?.toISOString().slice(0, 10) ?? null,
+          date: input.date,
+          currency: account.currency,
+        },
+        {
+          currentBalance: checkpoint.amount,
+          closingBalance: checkpoint.amount,
+          previousClosingDate: latest?.date?.toISOString().slice(0, 10) ?? null,
+          date: input.date,
+          currency: account.currency,
+          balanceRevision: input.expectedRevision + 1,
+        },
+      );
       return { checkpoint: { date: input.date, amount: checkpoint.amount.toFixed(4) } };
     },
     { isolationLevel: "Serializable" },

@@ -14,7 +14,7 @@ function load(file, dependencies = {}) {
   const exports = {};
   new Function("exports", "require", compiled)(
     exports,
-    (name) => dependencies[name] ?? timeZoneTestDependency(name) ?? require(name),
+    (name) => dependencies[name] ?? timeZoneTestDependency(name, dependencies) ?? require(name),
   );
   return exports;
 }
@@ -48,6 +48,12 @@ test(
               "./vocabulary-progress": progress,
               "./progress-history": history,
             });
+            for (const id of [1, 5])
+              await tx.activity.upsert({
+                where: { id },
+                create: { id, activity: id === 5 ? "Kanji writing" : "English to Japanese" },
+                update: {},
+              });
             const lastCategory = await tx.category.aggregate({ _max: { id: true } });
             const category = await tx.category.create({
               data: {
@@ -105,7 +111,15 @@ test(
               (await tx.activityVocab.findUnique({ where: { id: links[0].id } })).status,
               "WEAK",
             );
+            const practiceStarted = performance.now();
             const saved = await sessions.savePracticeSession(sessions.parsePracticeSession(input));
+            console.log(
+              `Representative practice save including audit: ${(performance.now() - practiceStarted).toFixed(1)} ms`,
+            );
+            assert.equal(
+              await tx.auditEvent.count({ where: { eventKey: `practice:${input.sessionKey}` } }),
+              1,
+            );
             assert.equal(saved.id !== null, true);
             assert.ok(Math.abs(saved.averageBefore - review.averageBefore) < 1e-9);
             assert.ok(Math.abs(saved.averageAfter - review.averageAfter) < 1e-9);
@@ -250,6 +264,9 @@ test(
     assert.equal(url.pathname, "/work_test");
     const { PrismaClient } = await import("../src/generated/prisma/index.js");
     const db = new PrismaClient({ log: [] });
+    const hadActivity = await db.activity.findUnique({ where: { id: 1 } });
+    if (!hadActivity)
+      await db.activity.create({ data: { id: 1, activity: "English to Japanese" } });
     const user = await db.user.findUniqueOrThrow({
       where: { id: 1 },
       select: { totalXp: true, coins: true, updatedAt: true },
@@ -324,6 +341,10 @@ test(
       ]);
       assert.equal(first.id, second.id);
       assert.equal(await db.practice.count({ where: { sessionKey: input.sessionKey } }), 1);
+      assert.equal(
+        await db.auditEvent.count({ where: { eventKey: `practice:${input.sessionKey}` } }),
+        1,
+      );
       assert.deepEqual(await balances(), { totalXp: user.totalXp + 10, coins: user.coins + 2 });
       assert.equal(first.xpEarned, 10);
       assert.equal(first.goldEarned, 2);
@@ -382,6 +403,10 @@ test(
         for (const { id, ...data } of snapshots)
           await db.japaneseProgressSnapshot.update({ where: { id }, data });
         await db.user.update({ where: { id: 1 }, data: user });
+        await db.auditEvent.deleteMany({
+          where: { eventKey: { in: keys.map((key) => `practice:${key}`) } },
+        });
+        if (!hadActivity) await db.activity.delete({ where: { id: 1 } });
       } finally {
         await db.$disconnect();
       }

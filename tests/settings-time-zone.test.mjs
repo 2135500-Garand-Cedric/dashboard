@@ -86,6 +86,10 @@ test("settings authenticate first and validate timezone without changing date re
     "@/lib/require-owner": { requireOwner: async () => denied },
     "@/lib/prisma": {
       prisma: {
+        $transaction: async (action) => action({
+          user: {findFirst: async () => ({timeZone:"UTC"}), update: async (args) => {writes.push(args);return {timeZone:args.data.timeZone};}},
+          auditEvent: {createMany: async () => ({count:1})},
+        }),
         user: {
           update: async (args) => {
             writes.push(args);

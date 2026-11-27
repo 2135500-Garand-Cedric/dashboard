@@ -21,7 +21,7 @@ export function loadWorkModule(file, deps = {}) {
       },
     ).outputText;
   new Function("exports", "require", code)(exports, (name) =>
-    Object.hasOwn(deps, name) ? deps[name] : (timeZoneTestDependency(name) ?? require(name)),
+    Object.hasOwn(deps, name) ? deps[name] : (timeZoneTestDependency(name, deps) ?? require(name)),
   );
   return exports;
 }

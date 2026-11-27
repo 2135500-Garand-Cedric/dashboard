@@ -1,3 +1,4 @@
+import { auditRecordChange } from "@/lib/audit/server";
 import { prisma } from "@/lib/prisma";
 import { FINANCE_USER_ID } from "./server";
 import { FinanceValidationError } from "./validation";
@@ -92,8 +93,25 @@ export async function saveIncomeConfig(
                 data: sourceData,
                 select: incomeSourceSelect,
               });
+        await auditRecordChange(
+          db,
+          {
+            category: "FINANCE",
+            entityType: "income-source",
+            entityId: saved.id,
+            action: "income-source.saved",
+            summary: "Income source saved",
+            entityReference: `Source #${saved.id}`,
+          },
+          current,
+          { ...saved, typeId: selectedType?.id ?? current?.typeId },
+        );
         return { source: saved };
       }
+      const previous =
+        id === undefined
+          ? null
+          : await db.financialDeductionType.findFirst({ where: { id, userId: FINANCE_USER_ID } });
       const typeData = {
         name: data.name,
         normalizedName: data.normalizedName,
@@ -115,6 +133,19 @@ export async function saveIncomeConfig(
               data: typeData,
               select: deductionTypeSelect,
             });
+      await auditRecordChange(
+        db,
+        {
+          category: "FINANCE",
+          entityType: "deduction-type",
+          entityId: saved.id,
+          action: "deduction-type.saved",
+          summary: "Deduction type saved",
+          entityReference: `Deduction #${saved.id}`,
+        },
+        previous,
+        saved,
+      );
       return { type: saved };
     },
     { isolationLevel: "Serializable" },

@@ -1,3 +1,4 @@
+import { auditAuthentication } from "./audit/auth";
 import { NextAuthOptions } from "next-auth";
 import GitHubProvider from "next-auth/providers/github";
 import { isOwnerGithubId, OWNER_AUTH_VERSION } from "./owner-policy";
@@ -14,13 +15,16 @@ export const authOptions: NextAuthOptions = {
   pages: { error: "/access-denied" },
   callbacks: {
     async signIn({ account, profile }) {
-      return account?.provider === "github" &&
+      const allowed =
+        account?.provider === "github" &&
         isOwnerGithubId(account.providerAccountId) &&
         profile &&
         "id" in profile &&
         String(profile.id) === account.providerAccountId
-        ? true
-        : "/access-denied";
+          ? true
+          : false;
+      if (!allowed) await auditAuthentication("denied");
+      return allowed ? true : "/access-denied";
     },
     async jwt({ token, account }) {
       if (account) {
@@ -37,6 +41,21 @@ export const authOptions: NextAuthOptions = {
         token.provider === "github" &&
         isOwnerGithubId(token.githubId);
       return session;
+    },
+  },
+  events: {
+    async signIn({ account }) {
+      if (account?.provider === "github" && isOwnerGithubId(account.providerAccountId))
+        await auditAuthentication("signed-in");
+    },
+    async signOut(message) {
+      if (
+        "token" in message &&
+        message.token?.provider === "github" &&
+        message.token.ownerAuthVersion === OWNER_AUTH_VERSION &&
+        isOwnerGithubId(message.token.githubId)
+      )
+        await auditAuthentication("signed-out");
     },
   },
   secret: process.env.NEXTAUTH_SECRET,

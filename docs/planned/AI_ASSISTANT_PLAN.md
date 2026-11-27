@@ -291,7 +291,7 @@ small usage records/counters for limits. Reuse existing mutation receipts and
 domain histories rather than inventing another task or article storage model.
 Avoid retaining raw audio by default.
 
-The [activity log proposal](AUDIT_LOG_PLAN.md) would complement this by showing
+The [activity log design](../implemented/AUDIT_LOG_PLAN.md) would complement this by showing
 which changes came from an assistant action. That global log is still planned;
 the first assistant version can preserve existing module history without waiting
 for it. Applying a tool should never require the model to hold a database password.

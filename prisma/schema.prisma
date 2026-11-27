@@ -28,6 +28,8 @@ enum ActivityVocabStatus {
 model User {
   id        Int       @id @default(autoincrement())
   email     String    @unique
+  auditStartedAt DateTime @default(now()) @db.Timestamptz(3)
+  auditEvents AuditEvent[]
   name      String?
   timeZone  String? @db.VarChar(100)
   knowledgeTemplates KnowledgeTemplate[]
@@ -1544,4 +1546,31 @@ model EmailSettings {
   recipient String? @db.VarChar(254)
   revision Int @default(1)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
+}
+
+
+model AuditEvent {
+  id String @id @default(uuid()) @db.Uuid
+  userId Int
+  occurredAt DateTime @default(now()) @db.Timestamptz(3)
+  actorKind String @db.VarChar(12)
+  actorGithubId String? @db.VarChar(30)
+  category String @db.VarChar(30)
+  action String @db.VarChar(100)
+  outcome String @db.VarChar(12)
+  entityType String @db.VarChar(50)
+  entityId String? @db.VarChar(128)
+  entityReference String @db.VarChar(160)
+  summary String @db.VarChar(300)
+  changes Json
+  operationKey String @db.VarChar(240)
+  eventKey String @db.VarChar(240)
+  originType String? @db.VarChar(50)
+  originId String? @db.VarChar(128)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, eventKey])
+  @@index([userId, occurredAt, id])
+  @@index([userId, category, occurredAt, id])
+  @@index([userId, entityType, entityId, occurredAt])
 }

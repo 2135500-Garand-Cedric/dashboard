@@ -1,3 +1,4 @@
+import { auditedCommand } from "@/lib/audit/command";
 import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -35,27 +36,39 @@ export async function PATCH(request: Request, context: Context) {
     const data = categoryInput(await request.json(), true);
     const category = await prisma.$transaction(
       async (tx) => {
-        const current = await tx.financeCategory.findFirst({
-          where: { id, userId: FINANCE_USER_ID },
-          include: {
-            _count: { select: { transactions: true, receipts: true, incomeRecords: true } },
+        return auditedCommand(
+          tx,
+          {
+            model: "financeCategory",
+            category: "FINANCE",
+            entityType: "category",
+            label: "Expense category",
+            id: id,
           },
-        });
-        if (!current) throw new FinanceValidationError("Category not found.", 404);
-        if (
-          data.type &&
-          data.type !== current.type &&
-          Object.values(current._count).some((count) => count > 0)
-        )
-          throw new FinanceValidationError(
-            "This category has financial records. Its Income/Expense type cannot change; create a new category instead.",
-            409,
-          );
-        return tx.financeCategory.update({
-          where: { id, userId: FINANCE_USER_ID },
-          data,
-          select: categorySelect,
-        });
+          async () => {
+            const current = await tx.financeCategory.findFirst({
+              where: { id, userId: FINANCE_USER_ID },
+              include: {
+                _count: { select: { transactions: true, receipts: true, incomeRecords: true } },
+              },
+            });
+            if (!current) throw new FinanceValidationError("Category not found.", 404);
+            if (
+              data.type &&
+              data.type !== current.type &&
+              Object.values(current._count).some((count) => count > 0)
+            )
+              throw new FinanceValidationError(
+                "This category has financial records. Its Income/Expense type cannot change; create a new category instead.",
+                409,
+              );
+            return tx.financeCategory.update({
+              where: { id, userId: FINANCE_USER_ID },
+              data,
+              select: categorySelect,
+            });
+          },
+        );
       },
       { isolationLevel: "Serializable" },
     );
@@ -70,7 +83,21 @@ export async function DELETE(request: Request, context: Context) {
   if (accessError) return accessError;
   try {
     const id = financeId((await context.params).id);
-    await prisma.financeCategory.delete({ where: { id, userId: FINANCE_USER_ID } });
+    await prisma.$transaction(
+      (db) =>
+        auditedCommand(
+          db,
+          {
+            model: "financeCategory",
+            category: "FINANCE",
+            entityType: "category",
+            label: "Expense category",
+            id: id,
+          },
+          async () => db.financeCategory.delete({ where: { id, userId: FINANCE_USER_ID } }),
+        ),
+      { isolationLevel: "Serializable" },
+    );
     return NextResponse.json({ success: true }, { headers: financeHeaders });
   } catch (error) {
     return financeError(error, "delete the category");

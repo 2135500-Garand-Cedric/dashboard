@@ -1,3 +1,4 @@
+import { auditedCommand } from "@/lib/audit/command";
 import { withUserTimeZone } from "@/lib/user-settings";
 import { requireOwner } from "@/lib/require-owner";
 import { NextResponse } from "next/server";
@@ -26,12 +27,24 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
       }
 
       const updatedCategory = await prisma.$transaction(async (tx) => {
-        const category = await tx.category.update({
-          where: { id: categoryId },
-          data: { name: name.trim() },
-        });
-        await recordJapaneseProgress(tx);
-        return category;
+        return auditedCommand(
+          tx,
+          {
+            model: "category",
+            category: "JAPANESE",
+            entityType: "vocab-category",
+            label: "Vocabulary category",
+            id: categoryId,
+          },
+          async () => {
+            const category = await tx.category.update({
+              where: { id: categoryId },
+              data: { name: name.trim() },
+            });
+            await recordJapaneseProgress(tx);
+            return category;
+          },
+        );
       });
 
       return NextResponse.json({ success: true, category: updatedCategory });
@@ -77,9 +90,24 @@ export async function DELETE(req: Request, context: { params: Promise<{ id: stri
       }
 
       // 🗑 Delete category
-      await prisma.category.delete({
-        where: { id: categoryId },
-      });
+      await prisma.$transaction(
+        (db) =>
+          auditedCommand(
+            db,
+            {
+              model: "category",
+              category: "JAPANESE",
+              entityType: "vocab-category",
+              label: "Vocabulary category",
+              id: categoryId,
+            },
+            async () =>
+              db.category.delete({
+                where: { id: categoryId },
+              }),
+          ),
+        { isolationLevel: "Serializable" },
+      );
 
       return NextResponse.json({
         success: true,

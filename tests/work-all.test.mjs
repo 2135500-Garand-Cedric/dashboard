@@ -12,7 +12,7 @@ function load(file, deps = {}) {
     }).outputText;
   new Function("exports", "require", source)(
     result,
-    (name) => deps[name] ?? timeZoneTestDependency(name),
+    (name) => deps[name] ?? timeZoneTestDependency(name, deps),
   );
   return result;
 }

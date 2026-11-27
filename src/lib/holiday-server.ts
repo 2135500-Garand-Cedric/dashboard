@@ -1,3 +1,4 @@
+import { auditedCommand } from "@/lib/audit/command";
 import { compareNextDate, occasionHref } from "./calendar-annual";
 import { prisma } from "@/lib/prisma";
 import type { Prisma, CalendarHoliday } from "@/generated/prisma";
@@ -101,13 +102,22 @@ export async function addHoliday(value: unknown) {
       "This holiday does not belong to the selected country. Choose it again.",
     );
   await initializeHolidaySelections();
-  return workTransaction((db) =>
-    db.calendarHoliday.upsert({
+  return workTransaction(async (db) => {
+    const previous = await db.calendarHoliday.findUnique({
       where: { userId_key: { userId: owner, key: choice.key } },
-      create: { ...columns(choice), ...appearance },
-      update: {},
-    }),
-  );
+    });
+    if (previous) return previous;
+    return auditedCommand(
+      db,
+      { model: "calendarHoliday", category: "SETTINGS", entityType: "holiday", label: "Holiday" },
+      async () =>
+        db.calendarHoliday.upsert({
+          where: { userId_key: { userId: owner, key: choice.key } },
+          create: { ...columns(choice), ...appearance },
+          update: {},
+        }),
+    );
+  });
 }
 function holidayAppearance(body: Record<string, unknown>) {
   const data: { name?: string; type?: string } = {};
@@ -125,17 +135,41 @@ export async function updateHoliday(id: number, value: unknown) {
   if (!Object.keys(data).length)
     throw new WorkValidationError("Enter a display name or choose a type.");
   return workTransaction(async (db) => {
-    const result = await db.calendarHoliday.updateMany({ where: { id, userId: owner }, data });
-    if (!result.count) throw new WorkValidationError("Selected holiday not found.", 404);
-    return db.calendarHoliday.findFirst({ where: { id, userId: owner } });
+    return auditedCommand(
+      db,
+      {
+        model: "calendarHoliday",
+        category: "SETTINGS",
+        entityType: "holiday",
+        label: "Holiday",
+        id: id,
+      },
+      async () => {
+        const result = await db.calendarHoliday.updateMany({ where: { id, userId: owner }, data });
+        if (!result.count) throw new WorkValidationError("Selected holiday not found.", 404);
+        return db.calendarHoliday.findFirst({ where: { id, userId: owner } });
+      },
+    );
   });
 }
 export async function removeHoliday(id: number) {
   await initializeHolidaySelections();
   return workTransaction(async (db) => {
-    const result = await db.calendarHoliday.deleteMany({ where: { id, userId: owner } });
-    if (!result.count) throw new WorkValidationError("Selected holiday not found.", 404);
-    return { ok: true };
+    return auditedCommand(
+      db,
+      {
+        model: "calendarHoliday",
+        category: "SETTINGS",
+        entityType: "holiday",
+        label: "Holiday",
+        id: id,
+      },
+      async () => {
+        const result = await db.calendarHoliday.deleteMany({ where: { id, userId: owner } });
+        if (!result.count) throw new WorkValidationError("Selected holiday not found.", 404);
+        return { ok: true };
+      },
+    );
   });
 }
 export async function holidayItems(

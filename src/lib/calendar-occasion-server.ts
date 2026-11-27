@@ -1,3 +1,4 @@
+import { auditRecordChange } from "./audit/server";
 import { prisma } from "@/lib/prisma";
 import { OWNER_DATABASE_USER_ID as owner } from "./owner-policy";
 import { workTransaction } from "./work-management/server";
@@ -41,6 +42,19 @@ export async function occasionTaskCommand(
       where: { userId: owner, ...parent, date: target.date, todoId },
     });
     if (result.count) {
+      await auditRecordChange(
+        db,
+        {
+          category: "CALENDAR",
+          action: "occasion.task_unlinked",
+          entityType: target.kind,
+          entityId: target.id,
+          summary: "Task unlinked from calendar date",
+          related: [{ type: "task", id: todoId }],
+        },
+        { date: target.date },
+        null,
+      );
       await db.todo.update({
         where: { id: todoId, userId: owner },
         data: { revision: { increment: 1 } },

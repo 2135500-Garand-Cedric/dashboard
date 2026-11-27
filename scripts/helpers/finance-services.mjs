@@ -17,8 +17,8 @@ export function loadFinanceServices(db) {
       if (name === "@/lib/prisma") return { prisma: db };
       if (name.startsWith("@/generated/prisma"))
         return native(path.join(root, "src/generated/prisma/index.js"));
-      if (name.startsWith("@/")) return load(`src/${name.slice(2)}.ts`);
-      if (name.startsWith(".")) return load(path.resolve(path.dirname(file), `${name}.ts`));
+      if (name.startsWith("@/")) return load(`src/${name.slice(2)}${path.extname(name) ? "" : ".ts"}`);
+      if (name.startsWith(".")) return load(path.resolve(path.dirname(file), `${name}${path.extname(name) ? "" : ".ts"}`));
       return native(name);
     };
     const code = ts.transpileModule(fs.readFileSync(file, "utf8"), {

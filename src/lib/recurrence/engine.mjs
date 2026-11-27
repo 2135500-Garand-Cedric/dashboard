@@ -1,3 +1,4 @@
+import { appendAudit, auditSnapshot } from "../audit/writer.mjs";
 import {
   dateInZone,
   shiftDate,
@@ -37,6 +38,7 @@ export async function generateSeries(db, series, through) {
     // Closing a project pauses generation without losing the repeat rule.
     if (!project) return;
   }
+  let created = 0;
   for (const date of dates) {
     if (skips.has(date)) continue;
     const delegate = series.kind === "TASK" ? db.todo : db.event;
@@ -81,6 +83,7 @@ export async function generateSeries(db, series, through) {
           affectedPeople: { create: contacts.map(({ id }) => ({ contactId: id })) },
         },
       });
+      created++;
       await db.workActivity.create({
         data: {
           userId: series.userId,
@@ -104,6 +107,7 @@ export async function generateSeries(db, series, through) {
           taskLinks: { create: links.map((link) => ({ ...link, origin: "EXPLICIT" })) },
         },
       });
+      created++;
       await db.workEventActivity.create({
         data: {
           eventId: row.id,
@@ -117,6 +121,18 @@ export async function generateSeries(db, series, through) {
     }
   }
   await db.recurrenceSeries.update({ where: { id: series.id }, data: { generatedThrough: end } });
+  if (created)
+    await appendAudit(db, {
+      userId: series.userId,
+      actorKind: "SYSTEM",
+      category: series.kind === "TASK" ? "WORK" : "CALENDAR",
+      entityType: "recurrence",
+      entityId: series.id,
+      action: "recurrence.generated",
+      summary: "Recurring occurrences generated",
+      after: auditSnapshot({ count: created, date: end, kind: series.kind }),
+      eventKey: `recurrence:${series.id}:${end}`,
+    });
 }
 
 // Keep enough actual records for four upcoming unfinished occurrences, including

@@ -1,3 +1,4 @@
+import { auditedCommand } from "@/lib/audit/command";
 import {
   guardSupportingEdit,
   assertSupportingUnmatched,
@@ -142,238 +143,252 @@ export async function saveReceipt(
       try {
         const result = await prisma.$transaction(
           async (db) => {
-            if (id === undefined) {
-              const replay = await db.financialReceipt.findUnique({
-                where: {
-                  userId_requestKey: { userId: FINANCE_USER_ID, requestKey: input.requestKey! },
-                },
-                include,
-              });
-              if (replay) {
-                if (replay.requestFingerprint !== fingerprint)
-                  throw new ReceiptConflict(
-                    "This form already saved a different receipt. Review it or open a new form.",
-                    "RECEIPT_REQUEST_USED",
-                    replay.id,
-                  );
-                return {
-                  receipt: serialize(replay),
-                  replayed: true,
-                  adopted: false,
-                  oldKeys: [] as string[],
-                };
-              }
-            }
-            const current = id === undefined ? null : await rowById(db, id);
-            await assertSupportingUnmatched(
+            return auditedCommand(
               db,
-              "RECEIPT",
-              current?.id,
-              current?.transactionId ??
-                (input.transactionAction === "LINK" ? input.transactionId : null),
-            );
-            await guardSupportingEdit(db, "RECEIPT", current, input);
-            if (current && current.updatedAt.getTime() !== Date.parse(input.expectedUpdatedAt!))
-              throw new FinanceValidationError(
-                "This receipt changed since you opened it. Reload before saving.",
-                409,
-              );
-            const account = await db.financialAccount.findFirst({
-              where: { id: input.accountId, userId: FINANCE_USER_ID },
-            });
-            const category = await db.financeCategory.findFirst({
-              where: { id: input.categoryId, userId: FINANCE_USER_ID, type: "EXPENSE" },
-            });
-            if (
-              !account ||
-              (!account.active &&
-                current?.accountId !== account.id &&
-                input.transactionAction !== "LINK")
-            )
-              throw new FinanceValidationError(
-                "Choose an active payment account belonging to you.",
-              );
-            if (!category || (!category.active && current?.categoryId !== category.id))
-              throw new FinanceValidationError(
-                "Choose an active expense category belonging to you.",
-              );
-            if (
-              receiptDifference(input.subtotal, input.tax, input.tip, input.total) !== "0.0000" &&
-              !input.acknowledgeMismatch
-            )
-              throw new FinanceValidationError(
-                "Subtotal + tax + tip does not equal total. Review the amounts or confirm that you want to keep this difference.",
-              );
-            if (file) {
-              const duplicate = await db.financialDocument.findFirst({
-                where: {
-                  userId: FINANCE_USER_ID,
-                  contentHash: file.contentHash,
-                  ...(current
-                    ? { OR: [{ receiptId: null }, { receiptId: { not: current.id } }] }
-                    : {}),
-                },
-                select: { receiptId: true, incomeRecordId: true },
-              });
-              if (duplicate?.incomeRecordId)
-                throw new ReceiptConflict(
-                  "This file is already stored as an income document. Choose another file.",
-                  "DUPLICATE_DOCUMENT",
-                );
-              if (duplicate)
-                throw new ReceiptConflict(
-                  "This original file is already attached to a receipt. Review that receipt instead of uploading it again.",
-                  "DUPLICATE_RECEIPT",
-                  duplicate.receiptId ?? undefined,
-                );
-            }
-            let transactionId: number | null = null;
-            const date = new Date(`${input.date}T00:00:00Z`),
-              total = new Prisma.Decimal(input.total);
-            if (input.transactionAction === "LINK") {
-              if (input.syncMovement) {
-                const { syncActivityMovement } = await import("./activity-movement");
-                await syncActivityMovement(
+              {
+                model: "financialReceipt",
+                category: "FINANCE",
+                entityType: "receipt",
+                label: "Expense details",
+                id: id,
+                resultId: (r) => r.receipt.id,
+              },
+              async () => {
+                if (id === undefined) {
+                  const replay = await db.financialReceipt.findUnique({
+                    where: {
+                      userId_requestKey: { userId: FINANCE_USER_ID, requestKey: input.requestKey! },
+                    },
+                    include,
+                  });
+                  if (replay) {
+                    if (replay.requestFingerprint !== fingerprint)
+                      throw new ReceiptConflict(
+                        "This form already saved a different receipt. Review it or open a new form.",
+                        "RECEIPT_REQUEST_USED",
+                        replay.id,
+                      );
+                    return {
+                      receipt: serialize(replay),
+                      replayed: true,
+                      adopted: false,
+                      oldKeys: [] as string[],
+                    };
+                  }
+                }
+                const current = id === undefined ? null : await rowById(db, id);
+                await assertSupportingUnmatched(
                   db,
                   "RECEIPT",
-                  current?.id ?? null,
-                  input.transactionId!,
-                  {
-                    amount: input.total,
-                    accountId: input.accountId,
-                    currency: input.currency,
-                    date: input.date,
-                    description: input.merchant,
-                    categoryId: input.categoryId,
-                    counterparty: input.merchant,
-                    notes: input.notes,
-                    allowDuplicate: input.allowDuplicate,
-                  },
+                  current?.id,
+                  current?.transactionId ??
+                    (input.transactionAction === "LINK" ? input.transactionId : null),
                 );
-              }
-              const transaction = await db.financialTransaction.findFirst({
-                where: { id: input.transactionId!, userId: FINANCE_USER_ID },
-              });
-              if (
-                !transaction ||
-                transaction.type !== "EXPENSE" ||
-                transaction.accountId !== input.accountId ||
-                transaction.currency !== input.currency ||
-                !transaction.amount.equals(total.negated())
-              )
-                throw new FinanceValidationError(
-                  "Link an expense belonging to you with the same account, currency and total. Receipt and transaction dates may differ.",
-                );
-              transactionId = transaction.id;
-            } else if (input.transactionAction === "CREATE") {
-              if (current?.transactionId)
-                throw new ReceiptConflict(
-                  "This receipt already has a transaction. Keep the link or unlink and save before creating another expense.",
-                  "EXISTING_EXPENSE",
-                  current.transactionId,
-                );
-              if (total.isZero())
-                throw new FinanceValidationError(
-                  "A zero-total receipt can stay unmatched but cannot create a zero-value expense.",
-                );
-              const duplicate = await db.financialTransaction.findFirst({
-                where: {
-                  userId: FINANCE_USER_ID,
-                  type: "EXPENSE",
-                  accountId: input.accountId,
-                  currency: input.currency,
-                  occurredOn: date,
-                  amount: total.negated(),
-                },
-                select: { id: true },
-              });
-              if (duplicate && !input.allowDuplicate)
-                throw new ReceiptConflict(
-                  "An expense with this account, date, currency and total already exists. Select and link that expense instead of creating another.",
-                  "EXISTING_EXPENSE",
-                  duplicate.id,
-                );
-              transactionId = (
-                await saveTransactionInDb(
-                  db,
-                  transactionInput({
-                    date: input.date,
-                    description: input.merchant,
-                    amount: input.total,
-                    currency: input.currency,
-                    type: "EXPENSE",
-                    accountId: input.accountId,
-                    categoryId: input.categoryId,
-                    counterparty: input.merchant,
-                    notes: input.notes,
-                    requestKey: randomUUID(),
-                    allowDuplicate: input.allowDuplicate,
-                  }),
+                await guardSupportingEdit(db, "RECEIPT", current, input);
+                if (current && current.updatedAt.getTime() !== Date.parse(input.expectedUpdatedAt!))
+                  throw new FinanceValidationError(
+                    "This receipt changed since you opened it. Reload before saving.",
+                    409,
+                  );
+                const account = await db.financialAccount.findFirst({
+                  where: { id: input.accountId, userId: FINANCE_USER_ID },
+                });
+                const category = await db.financeCategory.findFirst({
+                  where: { id: input.categoryId, userId: FINANCE_USER_ID, type: "EXPENSE" },
+                });
+                if (
+                  !account ||
+                  (!account.active &&
+                    current?.accountId !== account.id &&
+                    input.transactionAction !== "LINK")
                 )
-              ).transaction.id;
-            }
-            const data = {
-              accountId: input.accountId,
-              categoryId: input.categoryId,
-              purchasedOn: date,
-              merchant: input.merchant,
-              subtotal: input.subtotal,
-              tax: input.tax,
-              tip: input.tip,
-              total: input.total,
-              currency: input.currency,
-              notes: input.notes,
-              transactionId,
-            };
-            const saved = current
-              ? await db.financialReceipt.update({
-                  where: { id: current.id, userId: FINANCE_USER_ID },
-                  data,
-                })
-              : await db.financialReceipt.create({
-                  data: {
-                    ...data,
-                    userId: FINANCE_USER_ID,
-                    requestKey: input.requestKey,
-                    requestFingerprint: fingerprint,
-                  },
-                });
-            await syncSupportingMatch(db, "RECEIPT", saved, current?.transactionId ?? null);
-            if (input.syncMovement && transactionId)
-              await db.financialTransaction.update({
-                where: { id: transactionId, userId: FINANCE_USER_ID },
-                data: { updatedAt: new Date() },
-              });
-            const oldKeys: string[] = [];
-            if (file && storageKey) {
-              if (current?.documents.length) {
-                oldKeys.push(...current.documents.map((document) => document.storageKey));
-                await db.financialDocument.deleteMany({
-                  where: {
-                    id: { in: current.documents.map((document) => document.id) },
-                    userId: FINANCE_USER_ID,
-                  },
-                });
-              }
-              await db.financialDocument.create({
-                data: {
-                  userId: FINANCE_USER_ID,
-                  receiptId: saved.id,
-                  type: "RECEIPT",
-                  storageKey,
-                  originalName: file.originalName,
-                  mimeType: file.mimeType,
-                  byteSize: file.buffer.length,
-                  contentHash: file.contentHash,
-                },
-              });
-            }
-            return {
-              receipt: serialize(await rowById(db, saved.id)),
-              replayed: false,
-              adopted: !!file,
-              oldKeys,
-            };
+                  throw new FinanceValidationError(
+                    "Choose an active payment account belonging to you.",
+                  );
+                if (!category || (!category.active && current?.categoryId !== category.id))
+                  throw new FinanceValidationError(
+                    "Choose an active expense category belonging to you.",
+                  );
+                if (
+                  receiptDifference(input.subtotal, input.tax, input.tip, input.total) !==
+                    "0.0000" &&
+                  !input.acknowledgeMismatch
+                )
+                  throw new FinanceValidationError(
+                    "Subtotal + tax + tip does not equal total. Review the amounts or confirm that you want to keep this difference.",
+                  );
+                if (file) {
+                  const duplicate = await db.financialDocument.findFirst({
+                    where: {
+                      userId: FINANCE_USER_ID,
+                      contentHash: file.contentHash,
+                      ...(current
+                        ? { OR: [{ receiptId: null }, { receiptId: { not: current.id } }] }
+                        : {}),
+                    },
+                    select: { receiptId: true, incomeRecordId: true },
+                  });
+                  if (duplicate?.incomeRecordId)
+                    throw new ReceiptConflict(
+                      "This file is already stored as an income document. Choose another file.",
+                      "DUPLICATE_DOCUMENT",
+                    );
+                  if (duplicate)
+                    throw new ReceiptConflict(
+                      "This original file is already attached to a receipt. Review that receipt instead of uploading it again.",
+                      "DUPLICATE_RECEIPT",
+                      duplicate.receiptId ?? undefined,
+                    );
+                }
+                let transactionId: number | null = null;
+                const date = new Date(`${input.date}T00:00:00Z`),
+                  total = new Prisma.Decimal(input.total);
+                if (input.transactionAction === "LINK") {
+                  if (input.syncMovement) {
+                    const { syncActivityMovement } = await import("./activity-movement");
+                    await syncActivityMovement(
+                      db,
+                      "RECEIPT",
+                      current?.id ?? null,
+                      input.transactionId!,
+                      {
+                        amount: input.total,
+                        accountId: input.accountId,
+                        currency: input.currency,
+                        date: input.date,
+                        description: input.merchant,
+                        categoryId: input.categoryId,
+                        counterparty: input.merchant,
+                        notes: input.notes,
+                        allowDuplicate: input.allowDuplicate,
+                      },
+                    );
+                  }
+                  const transaction = await db.financialTransaction.findFirst({
+                    where: { id: input.transactionId!, userId: FINANCE_USER_ID },
+                  });
+                  if (
+                    !transaction ||
+                    transaction.type !== "EXPENSE" ||
+                    transaction.accountId !== input.accountId ||
+                    transaction.currency !== input.currency ||
+                    !transaction.amount.equals(total.negated())
+                  )
+                    throw new FinanceValidationError(
+                      "Link an expense belonging to you with the same account, currency and total. Receipt and transaction dates may differ.",
+                    );
+                  transactionId = transaction.id;
+                } else if (input.transactionAction === "CREATE") {
+                  if (current?.transactionId)
+                    throw new ReceiptConflict(
+                      "This receipt already has a transaction. Keep the link or unlink and save before creating another expense.",
+                      "EXISTING_EXPENSE",
+                      current.transactionId,
+                    );
+                  if (total.isZero())
+                    throw new FinanceValidationError(
+                      "A zero-total receipt can stay unmatched but cannot create a zero-value expense.",
+                    );
+                  const duplicate = await db.financialTransaction.findFirst({
+                    where: {
+                      userId: FINANCE_USER_ID,
+                      type: "EXPENSE",
+                      accountId: input.accountId,
+                      currency: input.currency,
+                      occurredOn: date,
+                      amount: total.negated(),
+                    },
+                    select: { id: true },
+                  });
+                  if (duplicate && !input.allowDuplicate)
+                    throw new ReceiptConflict(
+                      "An expense with this account, date, currency and total already exists. Select and link that expense instead of creating another.",
+                      "EXISTING_EXPENSE",
+                      duplicate.id,
+                    );
+                  transactionId = (
+                    await saveTransactionInDb(
+                      db,
+                      transactionInput({
+                        date: input.date,
+                        description: input.merchant,
+                        amount: input.total,
+                        currency: input.currency,
+                        type: "EXPENSE",
+                        accountId: input.accountId,
+                        categoryId: input.categoryId,
+                        counterparty: input.merchant,
+                        notes: input.notes,
+                        requestKey: randomUUID(),
+                        allowDuplicate: input.allowDuplicate,
+                      }),
+                    )
+                  ).transaction.id;
+                }
+                const data = {
+                  accountId: input.accountId,
+                  categoryId: input.categoryId,
+                  purchasedOn: date,
+                  merchant: input.merchant,
+                  subtotal: input.subtotal,
+                  tax: input.tax,
+                  tip: input.tip,
+                  total: input.total,
+                  currency: input.currency,
+                  notes: input.notes,
+                  transactionId,
+                };
+                const saved = current
+                  ? await db.financialReceipt.update({
+                      where: { id: current.id, userId: FINANCE_USER_ID },
+                      data,
+                    })
+                  : await db.financialReceipt.create({
+                      data: {
+                        ...data,
+                        userId: FINANCE_USER_ID,
+                        requestKey: input.requestKey,
+                        requestFingerprint: fingerprint,
+                      },
+                    });
+                await syncSupportingMatch(db, "RECEIPT", saved, current?.transactionId ?? null);
+                if (input.syncMovement && transactionId)
+                  await db.financialTransaction.update({
+                    where: { id: transactionId, userId: FINANCE_USER_ID },
+                    data: { updatedAt: new Date() },
+                  });
+                const oldKeys: string[] = [];
+                if (file && storageKey) {
+                  if (current?.documents.length) {
+                    oldKeys.push(...current.documents.map((document) => document.storageKey));
+                    await db.financialDocument.deleteMany({
+                      where: {
+                        id: { in: current.documents.map((document) => document.id) },
+                        userId: FINANCE_USER_ID,
+                      },
+                    });
+                  }
+                  await db.financialDocument.create({
+                    data: {
+                      userId: FINANCE_USER_ID,
+                      receiptId: saved.id,
+                      type: "RECEIPT",
+                      storageKey,
+                      originalName: file.originalName,
+                      mimeType: file.mimeType,
+                      byteSize: file.buffer.length,
+                      contentHash: file.contentHash,
+                    },
+                  });
+                }
+                return {
+                  receipt: serialize(await rowById(db, saved.id)),
+                  replayed: false,
+                  adopted: !!file,
+                  oldKeys,
+                };
+              },
+            );
           },
           { isolationLevel: "Serializable", timeout: 15000 },
         );
@@ -399,23 +414,36 @@ export async function deleteReceipt(
 ) {
   const keys = await prisma.$transaction(
     async (db) => {
-      const row = await rowById(db, id);
-      await assertSupportingUnmatched(db, "RECEIPT", row.id, row.transactionId);
-      if (!expectedUpdatedAt || Date.parse(expectedUpdatedAt) !== row.updatedAt.getTime())
-        throw new FinanceValidationError("This receipt changed. Reload before deleting.", 409);
-      await db.financialDocument.deleteMany({
-        where: { userId: FINANCE_USER_ID, receiptId: id, type: "RECEIPT" },
-      });
-      if (documentOnly)
-        await db.financialReceipt.update({
-          where: { id, userId: FINANCE_USER_ID },
-          data: { updatedAt: new Date() },
-        });
-      else {
-        await unlinkSupportingMatches(db, "RECEIPT", id);
-        await db.financialReceipt.delete({ where: { id, userId: FINANCE_USER_ID } });
-      }
-      return row.documents.map((document) => document.storageKey);
+      return auditedCommand(
+        db,
+        {
+          model: "financialReceipt",
+          category: "FINANCE",
+          entityType: "receipt",
+          label: "Expense details",
+          id: id,
+          action: documentOnly ? "receipt.document_removed" : "receipt.deleted",
+        },
+        async () => {
+          const row = await rowById(db, id);
+          await assertSupportingUnmatched(db, "RECEIPT", row.id, row.transactionId);
+          if (!expectedUpdatedAt || Date.parse(expectedUpdatedAt) !== row.updatedAt.getTime())
+            throw new FinanceValidationError("This receipt changed. Reload before deleting.", 409);
+          await db.financialDocument.deleteMany({
+            where: { userId: FINANCE_USER_ID, receiptId: id, type: "RECEIPT" },
+          });
+          if (documentOnly)
+            await db.financialReceipt.update({
+              where: { id, userId: FINANCE_USER_ID },
+              data: { updatedAt: new Date() },
+            });
+          else {
+            await unlinkSupportingMatches(db, "RECEIPT", id);
+            await db.financialReceipt.delete({ where: { id, userId: FINANCE_USER_ID } });
+          }
+          return row.documents.map((document) => document.storageKey);
+        },
+      );
     },
     { isolationLevel: "Serializable" },
   );

@@ -1,3 +1,4 @@
+import { auditRecordChange } from "@/lib/audit/server";
 import type { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
 import { vocabularyProgress } from "./vocabulary-progress";
@@ -303,6 +304,28 @@ export async function savePracticeSession(input: PracticeSessionInput, userId = 
               select: { id: true },
             });
           await recordJapaneseProgress(tx, userId);
+          await auditRecordChange(
+            tx,
+            {
+              category: "JAPANESE",
+              entityType: "practice",
+              entityId: saved.id,
+              entityReference: `Practice #${saved.id}`,
+              action: "practice.saved",
+              summary: "Japanese practice saved",
+              eventKey: `practice:${input.sessionKey}`,
+            },
+            null,
+            {
+              activityName: review.activityName,
+              wordCount: review.wordCount,
+              weakCount: review.weakCount,
+              goodCount: review.goodCount,
+              perfectCount: review.perfectCount,
+              xpEarned: review.xpEarned,
+              goldEarned: review.goldEarned,
+            },
+          );
           return serializePractice(saved);
         },
         { isolationLevel: "Serializable", timeout: 20000 },

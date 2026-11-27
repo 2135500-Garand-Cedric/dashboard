@@ -1,3 +1,4 @@
+import { auditedCommand } from "@/lib/audit/command";
 import type { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
 import { OWNER_DATABASE_USER_ID as owner } from "./owner-policy";
@@ -32,53 +33,77 @@ function birthdayInput(value: unknown) {
 export async function saveBirthday(value: unknown, id?: number) {
   const data = birthdayInput(value);
   return workTransaction(async (db) => {
-    const previous = id
-      ? await db.calendarBirthday.findFirst({ where: { id, userId: owner } })
-      : null;
-    if (id && !previous) throw new WorkValidationError("Birthday not found.", 404);
-    const duplicate = await db.calendarBirthday.findFirst({
-      where: {
-        userId: owner,
-        name: { equals: data.name, mode: "insensitive" },
-        month: data.month,
-        day: data.day,
-        ...(id ? { id: { not: id } } : {}),
+    return auditedCommand(
+      db,
+      {
+        model: "calendarBirthday",
+        category: "SETTINGS",
+        entityType: "birthday",
+        label: "Birthday",
+        id: id,
       },
-    });
-    if (duplicate) {
-      if (!id) return duplicate;
-      throw new WorkValidationError("This person and birthday are already in your list.", 409);
-    }
-    const row = id
-      ? await db.calendarBirthday.update({ where: { id, userId: owner }, data })
-      : await db.calendarBirthday.create({ data: { userId: owner, ...data } });
-    if (previous && (previous.month !== row.month || previous.day !== row.day)) {
-      const links = await db.calendarOccasionTaskLink.findMany({
-        where: { userId: owner, birthdayId: row.id },
-      });
-      for (const link of links) {
-        const date = birthdayDate(row.month, row.day, Number(link.date.slice(0, 4)));
-        await db.calendarOccasionTaskLink.update({ where: { id: link.id }, data: { date } });
-        await db.todo.update({
-          where: { id: link.todoId, userId: owner },
-          data: { revision: { increment: 1 } },
-        });
-        await appendTaskActivity(db, link.todoId, "CALENDAR_DATE_RESCHEDULED", {
-          calendarDate: {
-            before: { kind: "birthday", id: row.id, date: link.date },
-            after: { kind: "birthday", id: row.id, date },
+      async () => {
+        const previous = id
+          ? await db.calendarBirthday.findFirst({ where: { id, userId: owner } })
+          : null;
+        if (id && !previous) throw new WorkValidationError("Birthday not found.", 404);
+        const duplicate = await db.calendarBirthday.findFirst({
+          where: {
+            userId: owner,
+            name: { equals: data.name, mode: "insensitive" },
+            month: data.month,
+            day: data.day,
+            ...(id ? { id: { not: id } } : {}),
           },
         });
-      }
-    }
-    return row;
+        if (duplicate) {
+          if (!id) return duplicate;
+          throw new WorkValidationError("This person and birthday are already in your list.", 409);
+        }
+        const row = id
+          ? await db.calendarBirthday.update({ where: { id, userId: owner }, data })
+          : await db.calendarBirthday.create({ data: { userId: owner, ...data } });
+        if (previous && (previous.month !== row.month || previous.day !== row.day)) {
+          const links = await db.calendarOccasionTaskLink.findMany({
+            where: { userId: owner, birthdayId: row.id },
+          });
+          for (const link of links) {
+            const date = birthdayDate(row.month, row.day, Number(link.date.slice(0, 4)));
+            await db.calendarOccasionTaskLink.update({ where: { id: link.id }, data: { date } });
+            await db.todo.update({
+              where: { id: link.todoId, userId: owner },
+              data: { revision: { increment: 1 } },
+            });
+            await appendTaskActivity(db, link.todoId, "CALENDAR_DATE_RESCHEDULED", {
+              calendarDate: {
+                before: { kind: "birthday", id: row.id, date: link.date },
+                after: { kind: "birthday", id: row.id, date },
+              },
+            });
+          }
+        }
+        return row;
+      },
+    );
   });
 }
 export async function deleteBirthday(id: number) {
   return workTransaction(async (db) => {
-    const result = await db.calendarBirthday.deleteMany({ where: { id, userId: owner } });
-    if (!result.count) throw new WorkValidationError("Birthday not found.", 404);
-    return { ok: true };
+    return auditedCommand(
+      db,
+      {
+        model: "calendarBirthday",
+        category: "SETTINGS",
+        entityType: "birthday",
+        label: "Birthday",
+        id: id,
+      },
+      async () => {
+        const result = await db.calendarBirthday.deleteMany({ where: { id, userId: owner } });
+        if (!result.count) throw new WorkValidationError("Birthday not found.", 404);
+        return { ok: true };
+      },
+    );
   });
 }
 export async function birthdayItems(

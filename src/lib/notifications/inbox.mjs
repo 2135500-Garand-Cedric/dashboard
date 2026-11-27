@@ -1,3 +1,4 @@
+import { appendAudit, auditSnapshot } from "../audit/writer.mjs";
 import { DateTime } from "luxon";
 import { reminderSources, resolveReminder } from "./sources.mjs";
 import { reminderCandidate } from "./rules.mjs";
@@ -45,22 +46,43 @@ export async function materializeInbox(db, userId, state, now) {
       candidate.sendAt.getTime() < Math.max(now.getTime() - CATCHUP_MS, cutoff)
     )
       continue;
-    await db.userNotification.createMany({
-      skipDuplicates: true,
-      data: {
-        userId,
-        occurrenceKey: candidate.occurrenceKey,
-        sourceKind: source.kind,
-        sourceId: source.id,
-        category: source.option,
-        titleSnapshot: source.title.slice(0, 150),
-        labelSnapshot: source.label,
-        sourceDate: source.date || null,
-        targetAt: candidate.targetAt,
-        dueAt: candidate.sendAt,
-        createdAt: now,
-      },
-    });
+    const save = async (tx) => {
+      const added = await tx.userNotification.createMany({
+        skipDuplicates: true,
+        data: {
+          userId,
+          occurrenceKey: candidate.occurrenceKey,
+          sourceKind: source.kind,
+          sourceId: source.id,
+          category: source.option,
+          titleSnapshot: source.title.slice(0, 150),
+          labelSnapshot: source.label,
+          sourceDate: source.date || null,
+          targetAt: candidate.targetAt,
+          dueAt: candidate.sendAt,
+          createdAt: now,
+        },
+      });
+      if (added.count) {
+        const notification = await tx.userNotification.findUnique({
+          where: { userId_occurrenceKey: { userId, occurrenceKey: candidate.occurrenceKey } },
+          select: { id: true },
+        });
+        await appendAudit(tx, {
+          userId,
+          actorKind: "SYSTEM",
+          category: "NOTIFICATIONS",
+          entityType: "notification",
+          entityId: notification.id,
+          action: source.kind === "WEEKLY_REPORT" ? "report.available" : "notification.created",
+          summary: source.kind === "WEEKLY_REPORT" ? "Weekly report available" : "Reminder created",
+          after: auditSnapshot({ date: source.date ?? null, kind: source.kind }),
+          eventKey: `notification-created:${notification.id}`,
+        });
+      }
+    };
+    if (typeof db.$transaction === "function") await db.$transaction(save);
+    else await save(db);
   }
 }
 

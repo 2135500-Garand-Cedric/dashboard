@@ -1,3 +1,5 @@
+import { recordSaveFailure } from "@/lib/audit/failure";
+import { prepareWorkAudit, finishWorkAudit } from "@/lib/audit/work";
 import { articleRow as knowledgeArticleRow } from "@/lib/knowledge/core";
 import { OWNER_GITHUB_ID as knowledgeActor } from "@/lib/owner-policy";
 import { linkOccasionTask } from "@/lib/calendar-occasion-core";
@@ -187,7 +189,9 @@ export async function mutation(
         );
       return previous.result;
     }
+    const audit = await prepareWorkAudit(db, operation, input);
     const result = JSON.parse(JSON.stringify(await action(db))) as Prisma.InputJsonValue;
+    await finishWorkAudit(db, operation, result, command.requestKey, audit);
     await db.workMutationReceipt.create({
       data: {
         userId: WORK_USER_ID,
@@ -198,6 +202,21 @@ export async function mutation(
       },
     });
     return result;
+  }).catch(async (error) => {
+    const area = operation.split(":")[0];
+    if (!operation.includes("draft"))
+      await recordSaveFailure(
+        area === "knowledge"
+          ? "KNOWLEDGE"
+          : area === "event"
+            ? "CALENDAR"
+            : area === "contact"
+              ? "PEOPLE"
+              : "WORK",
+        "command",
+        error,
+      );
+    throw error;
   });
 }
 export async function todoRow(db: DB, id: number) {

@@ -1,3 +1,4 @@
+import { auditedCommand } from "@/lib/audit/command";
 import { requireOwner } from "@/lib/require-owner";
 import { prisma } from "@/lib/prisma";
 import { incomeConfigInput } from "@/lib/finance/income";
@@ -9,11 +10,26 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   try {
     const id = financeId((await context.params).id),
       data = incomeConfigInput(await request.json(), false, true);
-    const type = await prisma.financialIncomeSourceType.update({
-      where: { id, userId: FINANCE_USER_ID },
-      data: { name: data.name, normalizedName: data.normalizedName, active: data.active },
-      select: { id: true, name: true, active: true },
-    });
+    const type = await prisma.$transaction(
+      (db) =>
+        auditedCommand(
+          db,
+          {
+            model: "financialIncomeSourceType",
+            category: "FINANCE",
+            entityType: "income-type",
+            label: "Income source type",
+            id: id,
+          },
+          async () =>
+            db.financialIncomeSourceType.update({
+              where: { id, userId: FINANCE_USER_ID },
+              data: { name: data.name, normalizedName: data.normalizedName, active: data.active },
+              select: { id: true, name: true, active: true },
+            }),
+        ),
+      { isolationLevel: "Serializable" },
+    );
     return Response.json({ type }, { headers: financeHeaders });
   } catch (error) {
     return financeError(error, "update the income source type");

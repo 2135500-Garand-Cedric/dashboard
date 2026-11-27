@@ -1,3 +1,4 @@
+import { auditRecordChange } from "@/lib/audit/server";
 import { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
 import { FINANCE_USER_ID } from "./server";
@@ -87,6 +88,19 @@ export async function saveReimbursementPlan(id: number, value: unknown) {
           409,
         );
       await db.financialReimbursementPlan.delete({ where: { id: plan.id, userId: owner } });
+      await auditRecordChange(
+        db,
+        {
+          category: "FINANCE",
+          entityType: "reimbursement-plan",
+          entityId: plan.id,
+          action: "reimbursement-plan.removed",
+          summary: "Reimbursement tracking removed",
+          related: [{ type: "transaction", id }],
+        },
+        plan,
+        null,
+      );
     } else {
       const expected = new Prisma.Decimal(input.amount!);
       const total = row.reimbursementPlans
@@ -129,6 +143,25 @@ export async function saveReimbursementPlan(id: number, value: unknown) {
           },
         });
     }
+    const savedPlan = input.remove
+      ? null
+      : await db.financialReimbursementPlan.findFirst({
+          where: { expenseId: id, contactId: input.contactId, userId: owner },
+        });
+    if (!input.remove)
+      await auditRecordChange(
+        db,
+        {
+          category: "FINANCE",
+          entityType: "reimbursement-plan",
+          entityId: savedPlan?.id,
+          action: "reimbursement-plan.saved",
+          summary: "Reimbursement tracking saved",
+          related: [{ type: "transaction", id }],
+        },
+        plan ?? null,
+        savedPlan,
+      );
     return { success: true };
   });
 }
@@ -172,11 +205,27 @@ export async function saveReimbursementAllocation(paymentId: number, value: unkn
       throw new FinanceValidationError(
         "This allocation exceeds the expense's remaining reimbursement.",
       );
-    await db.financialReimbursement.upsert({
+    const savedAllocation = await db.financialReimbursement.upsert({
       where: { planId_paymentId: { planId: plan.id, paymentId } },
       create: { userId: owner, expenseId: expense.id, planId: plan.id, paymentId, amount },
       update: { amount, updatedAt: new Date() },
     });
+    await auditRecordChange(
+      db,
+      {
+        category: "FINANCE",
+        entityType: "reimbursement",
+        entityId: savedAllocation.id,
+        action: "reimbursement.allocated",
+        summary: "Reimbursement allocated",
+        related: [
+          { type: "transaction", id: paymentId },
+          { type: "transaction", id: expense.id },
+        ],
+      },
+      prior ?? null,
+      savedAllocation,
+    );
     return { success: true };
   });
 }
@@ -198,6 +247,22 @@ export async function removeReimbursementAllocation(
     if (!link) throw new FinanceValidationError("Reimbursement link not found.", 404);
     checkVersion(link.updatedAt, version);
     await db.financialReimbursement.delete({ where: { id: link.id, userId: owner } });
+    await auditRecordChange(
+      db,
+      {
+        category: "FINANCE",
+        entityType: "reimbursement",
+        entityId: link.id,
+        action: "reimbursement.unlinked",
+        summary: "Reimbursement unlinked",
+        related: [
+          { type: "transaction", id: link.paymentId },
+          { type: "transaction", id: link.expenseId },
+        ],
+      },
+      link,
+      null,
+    );
     return { success: true };
   });
 }

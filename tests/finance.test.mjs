@@ -10,8 +10,8 @@ function load(file, dependencies = {}) {
   }).outputText;
   const exports = {};
   new Function("exports", "require", compiled)(exports, (name) => {
-    assert.ok(name in dependencies, `Missing ${name}`);
-    return dependencies[name] ?? timeZoneTestDependency(name);
+    assert.ok(name in dependencies || timeZoneTestDependency(name, dependencies), `Missing ${name}`);
+    return dependencies[name] ?? timeZoneTestDependency(name, dependencies);
   });
   return exports;
 }
@@ -93,18 +93,18 @@ test("finance error responses never echo ORM internals or financial payloads", a
     "next/server": { NextResponse: { json: (data, options) => Response.json(data, options) } },
     "./validation": validation,
   });
-  const duplicate = financeError(
+  const duplicate = await financeError(
     { code: "P2002", message: "SECRET_FINANCIAL_PAYLOAD" },
     "create account",
   );
   assert.equal(duplicate.status, 409);
   assert.ok(!(await duplicate.text()).includes("SECRET"));
-  assert.equal(financeError(new SyntaxError("invalid"), "create account").status, 400);
+  assert.equal((await financeError(new SyntaxError("invalid"), "create account")).status, 400);
   const original = console.error;
   const logs = [];
   console.error = (...values) => logs.push(values.join(" "));
   try {
-    const failure = financeError(new Error("SECRET_FINANCIAL_PAYLOAD"), "create the account");
+    const failure = await financeError(new Error("SECRET_FINANCIAL_PAYLOAD"), "create the account");
     assert.equal(failure.status, 500);
     assert.ok(!(await failure.text()).includes("SECRET"));
     assert.ok(logs.every((message) => !message.includes("SECRET")));

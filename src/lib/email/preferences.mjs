@@ -1,3 +1,5 @@
+import { OWNER_GITHUB_ID } from "../owner-identity.mjs";
+import { appendAudit, auditSnapshot } from "../audit/writer.mjs";
 import { EmailError, emailConfiguration, validEmailRecipient } from "./resend.mjs";
 
 export class EmailSettingsError extends Error {
@@ -69,6 +71,18 @@ export async function saveEmailPreferences(db, userId, value) {
           recipient: input.recipient || null,
           revision: { increment: 1 },
         },
+      });
+      await appendAudit(tx, {
+        userId,
+        actorKind: "OWNER",
+        actorGithubId: OWNER_GITHUB_ID,
+        category: "SETTINGS",
+        entityType: "settings",
+        entityId: String(userId),
+        action: "email.preferences_changed",
+        summary: "Email preferences changed",
+        before: auditSnapshot(previous),
+        after: auditSnapshot(saved),
       });
       return { enabled: saved.enabled, recipient: saved.recipient || "", revision: saved.revision };
     },

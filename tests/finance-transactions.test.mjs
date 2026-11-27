@@ -10,8 +10,8 @@ function load(file, dependencies = {}) {
   }).outputText;
   const exports = {};
   new Function("exports", "require", compiled)(exports, (name) => {
-    assert.ok(name in dependencies, `Missing ${name}`);
-    return dependencies[name] ?? timeZoneTestDependency(name);
+    assert.ok(name in dependencies || timeZoneTestDependency(name, dependencies), `Missing ${name}`);
+    return dependencies[name] ?? timeZoneTestDependency(name, dependencies);
   });
   return exports;
 }
