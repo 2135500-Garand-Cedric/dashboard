@@ -1,3 +1,4 @@
+import * as actorContext from "../../src/lib/accounts/context.mjs";
 import fs from "node:fs";
 import ts from "typescript";
 import * as writer from "../../src/lib/audit/writer.mjs";
@@ -26,6 +27,7 @@ export function auditTestDependency(name, dependencies = {}) {
       },
     ).outputText;
     new Function("exports", "require", code)(exports, (dep) => {
+      if (dep === "@/lib/accounts/context.mjs") return actorContext;
       if (dep === "@/lib/prisma") return dependencies[dep];
       if (dep === "@/lib/owner-policy") return identity;
       if (dep.startsWith("./")) return load(dep);

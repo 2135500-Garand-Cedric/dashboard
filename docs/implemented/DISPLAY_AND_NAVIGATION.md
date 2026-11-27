@@ -1,8 +1,8 @@
 # Dashboard display and navigation
 
-Settings in the left navigation controls the owner's display timezone. The
+Settings → My account controls the connected user's display timezone. The
 preference is stored in `User.timeZone`, validated by the authenticated
-`/api/settings` endpoint, and shared through `SettingsProvider`. Until a preference
+`/api/account` profile endpoint, and shared through `SettingsProvider`. Until a preference
 is saved, the existing application timezone remains the default.
 
 Timed values use UTC instants in API/database writes and the saved timezone for
@@ -336,3 +336,8 @@ pagination, stage membership, project targets and active/archived behavior on th
 disposable database. `RUN_WORK_FINANCE_REFINEMENTS_BROWSER_TEST=1 node
 tests/work-finance-refinements.browser.mjs` checks the corresponding phone/desktop
 flows against the isolated port-3002 app.
+
+Account preferences now live under Settings → My account (`/settings/account`),
+including the connected user's display timezone. There is no separate timezone
+editor or sidebar entry for accounts/user management. Members see Settings with
+only their account tile; the owner's Settings retains user management.

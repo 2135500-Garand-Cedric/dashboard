@@ -1,10 +1,10 @@
 import { withUserTimeZone } from "@/lib/user-settings";
-import { requireOwner } from "@/lib/require-owner";
+import { requirePermission } from "@/lib/accounts/access";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
-  const accessError = await requireOwner();
+  const accessError = await requirePermission("japanese.vocabulary.read");
   if (accessError) return accessError;
   return withUserTimeZone(async () => {
     const activities = await prisma.activity.findMany({

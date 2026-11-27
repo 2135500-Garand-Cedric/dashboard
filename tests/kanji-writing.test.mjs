@@ -1,3 +1,4 @@
+import { categoryKind } from "./helpers/category-kind.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
@@ -9,7 +10,10 @@ function load(file) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2017 },
   }).outputText;
   const exports = {};
-  new Function("exports", code)(exports);
+  new Function("exports", "require", code)(exports, (name) => {
+    if (name === "./category-kind") return { categoryKind };
+    throw new Error(`Unexpected dependency ${name}`);
+  });
   return exports;
 }
 const { getKnownKanji, isKanjiWritingEligible, getApplicableActivityIds } = load(

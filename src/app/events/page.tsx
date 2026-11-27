@@ -191,7 +191,7 @@ export default function EventsPage() {
               }}
               className={`${button} bg-blue-600 text-white`}
             >
-              New event / session
+              New event
             </button>
           )}
         </div>
@@ -378,7 +378,7 @@ export default function EventsPage() {
                   const style = calendarAppearance(info.event);
                   return (
                     <span
-                      className="block min-w-0 max-w-full truncate text-xs"
+                      className={`block min-w-0 max-w-full truncate text-xs ${info.event.extendedProps.completed ? "line-through opacity-70" : ""}`}
                       ref={(node) => {
                         // FullCalendar list markers put their border color on
                         // the inner dot. Keep the outer accent in sync on edits.
@@ -480,7 +480,7 @@ export default function EventsPage() {
       </div>
       <TaskModal
         open={creating && !!data}
-        title="New event or work session"
+        title="New event"
         busy={eventSaving}
         onClose={() =>
           eventEditor.current?.querySelector<HTMLButtonElement>("[data-event-cancel]")?.click()

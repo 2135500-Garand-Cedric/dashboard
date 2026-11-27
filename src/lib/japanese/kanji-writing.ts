@@ -1,3 +1,4 @@
+import { categoryKind } from "./category-kind";
 export const KANJI_WRITING_ACTIVITY_ID = 5;
 
 export function isKanji(character: string): boolean {
@@ -5,11 +6,11 @@ export function isKanji(character: string): boolean {
 }
 
 export function getKnownKanji(
-  vocabulary: { japanese: string | null; category?: { name: string } | null }[],
+  vocabulary: { japanese: string | null; category?: { name: string; kind?: string } | null }[],
 ): Set<string> {
   return new Set(
     vocabulary
-      .filter((word) => word.category?.name.trim().toLowerCase() === "kanji")
+      .filter((word) => categoryKind(word.category) === "KANJI")
       .flatMap((word) => Array.from(word.japanese || "").filter(isKanji)),
   );
 }

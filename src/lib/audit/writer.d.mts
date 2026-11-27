@@ -4,8 +4,9 @@ export const AUDIT_OUTCOMES: readonly string[];
 export type AuditState = Record<string, unknown> | null;
 export type AuditInput = {
   userId: number;
-  actorKind: "OWNER" | "SYSTEM" | "ANONYMOUS";
+  actorKind: "OWNER" | "USER" | "SYSTEM" | "ANONYMOUS";
   actorGithubId?: string;
+  actorUserId?: number | null;
   category: string;
   action: string;
   entityType: string;

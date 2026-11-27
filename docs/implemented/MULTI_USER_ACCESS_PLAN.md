@@ -1,7 +1,30 @@
 # Multiple users, Japanese sharing and account management
 
-Status: proposal only. No authentication, permissions, schema or user data are
-changed by this document. Based on the repository inspected November 26, 2026.
+Status: implemented for an invite-only Japanese pilot. This document retains the
+original architecture proposal and historical inventory below; they describe the
+starting system, not the current authentication implementation. Current operational
+guidance is in [Multi-user maintenance](MULTI_USER_MAINTENANCE.md).
+
+## Selected scope and implementation
+
+- Invite-only registration; single-use invitations expire after seven days.
+- GitHub and optional Google. Apple, open signup and other module access are deferred.
+- The owner confirmed redistribution rights and selected **all owner vocabulary** for
+  the initial immutable starter version. Publishing creates a new version for future
+  learners; it never changes existing copies.
+- Members may edit and delete their copies. Each has isolated categories, readings,
+  verb forms, practice results, timers, statistics and rewards.
+- Owner user 1 and permanent GitHub identity are preserved, with access to everything.
+  The administration page cannot demote/suspend this account.
+- Database sessions, explicit linking, supported Japanese capabilities, suspension,
+  session revocation, account privacy information and owner-only security logs are implemented.
+- No new container or identity subscription is required. Google credentials must be
+  configured before its button appears. Live provider consent and NAS capacity remain
+  deployment verification tasks.
+- Migration was rehearsed on a restored development database, comparing preserved
+  owner/domain records before and after. No production database was changed.
+- Basic account/privacy information is published at `/privacy`. Deletion/export requests
+  are handled by the host administrator; there is no automated account deletion tool.
 
 ## Recommendation
 
@@ -22,22 +45,22 @@ workspace, not access to your accounts, receipts or income.
 
 ## What exists today
 
-| Existing code/model | Consequence for this change |
-| --- | --- |
-| `src/lib/auth.ts` | NextAuth v4, GitHub only, JWT sessions and an explicit permanent GitHub owner allowlist. There is no database authentication adapter today. |
-| `src/lib/require-owner.ts`, `ProtectedLayout.tsx` | APIs and pages reject every non-owner. Preserve these protections for private modules during the transition. |
-| `src/app/layout.tsx`, `AppShell.tsx`, `SideMenu.tsx` | The shell is owner-only and mounts inbox/search/music providers globally; navigation and providers need an authorized member variant. |
-| `User` | Integer IDs, required unique email, existing owner data under ID 1. No OAuth `Account`, persistent `Session`, role, suspension or permission models. |
-| Japanese routes and helpers | Many use `userId = 1`, including vocabulary creation/editing, statistics, history, progress snapshots and practice defaults. |
-| `api/japanese-practice/practices/route.ts` | Today's practice query filters by date without a user predicate. The owner guard currently protects it; it cannot be opened to all authenticated users unchanged. |
-| `Vocabulary`, `VerbForm`, `ActivityVocab` | Vocabulary has ownership, but child form/progress ownership must be validated through its parent; mutable IDs must never authorize themselves. |
-| `Category` | Globally editable, globally unique names, no owner. Member edits/deletions would affect other users unless redesigned. |
-| `Practice`, `JapaneseProgressSnapshot` | Have user IDs, but lack a Prisma User relation; Practice defaults to user 1 and its session key is globally unique. |
-| `Activity`, `VerbFormType` | Useful shared activity/conjugation definitions; keep them read-only to ordinary members. |
-| `src/lib/user-settings.ts` | Reads the owner's timezone, not a current signed-in user's timezone. |
-| Search, Quick add, weekly reports, email and notifications | Several entry points explicitly use the owner ID. They must not be mounted/enabled for members by merely changing the shell guard. |
-| `src/lib/audit/` | Owner-centric actor/subject mapping, GitHub-specific attribution and owner-scoped readers/retention. These need deliberate multi-user changes. |
-| `public/sw.js` | Does not cache authenticated pages or API responses. Preserve this behavior and address device/account switching. |
+| Existing code/model                                        | Consequence for this change                                                                                                                                       |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/auth.ts`                                          | NextAuth v4, GitHub only, JWT sessions and an explicit permanent GitHub owner allowlist. There is no database authentication adapter today.                       |
+| `src/lib/require-owner.ts`, `ProtectedLayout.tsx`          | APIs and pages reject every non-owner. Preserve these protections for private modules during the transition.                                                      |
+| `src/app/layout.tsx`, `AppShell.tsx`, `SideMenu.tsx`       | The shell is owner-only and mounts inbox/search/music providers globally; navigation and providers need an authorized member variant.                             |
+| `User`                                                     | Integer IDs, required unique email, existing owner data under ID 1. No OAuth `Account`, persistent `Session`, role, suspension or permission models.              |
+| Japanese routes and helpers                                | Many use `userId = 1`, including vocabulary creation/editing, statistics, history, progress snapshots and practice defaults.                                      |
+| `api/japanese-practice/practices/route.ts`                 | Today's practice query filters by date without a user predicate. The owner guard currently protects it; it cannot be opened to all authenticated users unchanged. |
+| `Vocabulary`, `VerbForm`, `ActivityVocab`                  | Vocabulary has ownership, but child form/progress ownership must be validated through its parent; mutable IDs must never authorize themselves.                    |
+| `Category`                                                 | Globally editable, globally unique names, no owner. Member edits/deletions would affect other users unless redesigned.                                            |
+| `Practice`, `JapaneseProgressSnapshot`                     | Have user IDs, but lack a Prisma User relation; Practice defaults to user 1 and its session key is globally unique.                                               |
+| `Activity`, `VerbFormType`                                 | Useful shared activity/conjugation definitions; keep them read-only to ordinary members.                                                                          |
+| `src/lib/user-settings.ts`                                 | Reads the owner's timezone, not a current signed-in user's timezone.                                                                                              |
+| Search, Quick add, weekly reports, email and notifications | Several entry points explicitly use the owner ID. They must not be mounted/enabled for members by merely changing the shell guard.                                |
+| `src/lib/audit/`                                           | Owner-centric actor/subject mapping, GitHub-specific attribution and owner-scoped readers/retention. These need deliberate multi-user changes.                    |
+| `public/sw.js`                                             | Does not cache authenticated pages or API responses. Preserve this behavior and address device/account switching.                                                 |
 
 The shared `WorkContact` People directory is not an account directory. A person
 who requested a task or reimburses an expense must not become a login account.
@@ -72,14 +95,14 @@ Do not make manual approval mandatory unless you choose that policy.
 
 ### Proposed order
 
-| Method | Recommendation and setup |
-| --- | --- |
-| Google | First addition: convenient for non-technical users. Register a Google OAuth client and consent configuration; configure production/development callback URLs and minimal identity scopes. |
-| GitHub | Keep it, including your current permanent owner identity. Friends can use their own accounts after safe registration is enabled. |
-| Apple | Later option, especially useful for iPhone users, with additional developer-account configuration and credential maintenance. |
-| Microsoft | A reasonable later addition if intended users prefer personal Microsoft or work/school accounts; choose supported tenant/account types explicitly. |
-| Email magic link | Optional later fallback. Requires short-lived, single-use verification tokens and an authentication-mail policy distinct from report-email preferences. |
-| Username/password | Defer. It adds password storage, reset/recovery, credential-stuffing defenses and support obligations that OAuth avoids for this first release. |
+| Method            | Recommendation and setup                                                                                                                                                                  |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Google            | First addition: convenient for non-technical users. Register a Google OAuth client and consent configuration; configure production/development callback URLs and minimal identity scopes. |
+| GitHub            | Keep it, including your current permanent owner identity. Friends can use their own accounts after safe registration is enabled.                                                          |
+| Apple             | Later option, especially useful for iPhone users, with additional developer-account configuration and credential maintenance.                                                             |
+| Microsoft         | A reasonable later addition if intended users prefer personal Microsoft or work/school accounts; choose supported tenant/account types explicitly.                                        |
+| Email magic link  | Optional later fallback. Requires short-lived, single-use verification tokens and an authentication-mail policy distinct from report-email preferences.                                   |
+| Username/password | Defer. It adds password storage, reset/recovery, credential-stuffing defenses and support obligations that OAuth avoids for this first release.                                           |
 
 The installed library is `next-auth` v4.24.x, not Auth.js v5. Choose an adapter
 compatible with the installed version, or plan/test a separate framework upgrade;
@@ -146,13 +169,13 @@ host administrator; do not promise end-to-end privacy from the server operator.
 
 Suggested first-release capabilities:
 
-| Capability | What it permits |
-| --- | --- |
-| `japanese.vocabulary.read` | Read the user's own words, categories and readings. |
-| `japanese.vocabulary.manage` | Add/edit/delete their own vocabulary, forms, categories and starred state. |
-| `japanese.practice` | Start/review/save their own practices and receive server-calculated rewards. |
-| `japanese.statistics.read` | Read their own graphs and aggregate progress. |
-| `japanese.history.read` | Read their own saved session/word breakdowns. |
+| Capability                   | What it permits                                                              |
+| ---------------------------- | ---------------------------------------------------------------------------- |
+| `japanese.vocabulary.read`   | Read the user's own words, categories and readings.                          |
+| `japanese.vocabulary.manage` | Add/edit/delete their own vocabulary, forms, categories and starred state.   |
+| `japanese.practice`          | Start/review/save their own practices and receive server-calculated rewards. |
+| `japanese.statistics.read`   | Read their own graphs and aggregate progress.                                |
+| `japanese.history.read`      | Read their own saved session/word breakdowns.                                |
 
 The default **Japanese learner** preset includes these capabilities. Define
 prerequisites centrally: managing/practicing needs vocabulary read access; history
@@ -176,14 +199,14 @@ notifications, Logs and weekly reports remain owner-only at launch. In particula
 Keep the existing `User` integer IDs and all domain records. Suggested additions
 and extensions, with final names chosen during implementation:
 
-| Entity | Purpose |
-| --- | --- |
-| `User` extensions | Role, active/suspended status, email verification data and last sign-in; retain timezone, XP/gold and all existing IDs. Allow absent provider email rather than inventing a fake address. |
-| Authentication account | Provider identity and internal user relation; unique provider/subject. Keep it distinct from `FinancialAccount`. |
-| Authentication session | Revocable opaque session token, user relation and expiry. Use the chosen adapter's required fields/types. |
-| `UserPermission` | Unique user/capability grants, grantor and timestamps; supported capabilities only. Missing grant means denied for members. |
-| `VocabularyPackVersion` | Immutable, owner-published starter content with version/size/status; no learner progress or private owner history. |
-| `JapaneseInitialization` | Unique per-user first-setup record: empty/pack/existing-owner choice, selected pack version, request identity, completion state/time. Authoritative source for onboarding completion. |
+| Entity                   | Purpose                                                                                                                                                                                   |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `User` extensions        | Role, active/suspended status, email verification data and last sign-in; retain timezone, XP/gold and all existing IDs. Allow absent provider email rather than inventing a fake address. |
+| Authentication account   | Provider identity and internal user relation; unique provider/subject. Keep it distinct from `FinancialAccount`.                                                                          |
+| Authentication session   | Revocable opaque session token, user relation and expiry. Use the chosen adapter's required fields/types.                                                                                 |
+| `UserPermission`         | Unique user/capability grants, grantor and timestamps; supported capabilities only. Missing grant means denied for members.                                                               |
+| `VocabularyPackVersion`  | Immutable, owner-published starter content with version/size/status; no learner progress or private owner history.                                                                        |
+| `JapaneseInitialization` | Unique per-user first-setup record: empty/pack/existing-owner choice, selected pack version, request identity, completion state/time. Authoritative source for onboarding completion.     |
 
 A verification-token model is needed only if email sign-in/verification is added.
 An invitation model is useful if invite-only registration is chosen; use hashed,
@@ -320,16 +343,16 @@ redacting tokens, email bodies, private contact values and practiced word lists.
 
 ## Safe migration and release sequence
 
-| Phase | Deliverable and release condition |
-| --- | --- |
-| 1. Ownership inventory | Map every route, action, query, child reference, worker and cache; back up and rehearse restoration. Identify orphan/ambiguous ownership before any constraint is enabled. Registration stays closed. |
-| 2. Identity foundation | Add auth account/session models and user state/permissions. Map your verified permanent GitHub subject to the existing User 1. Test adapter integer compatibility and owner login/recovery. Keep private routes owner-only. |
-| 3. Japanese isolation | Scope every Japanese endpoint/helper, categories, forms, progress, history, rewards and timezone; migrate child ownership/constraints and audit attribution. Test two independent users in a disposable database. |
-| 4. Member shell and administration | Build `/admin/users`, presets/revocation, authorized navigation/providers, own-account settings and safe landing redirects. Unsupported modules cannot be granted. |
-| 5. Setup and starter packs | Add reviewed/versioned content, empty/copy choice, atomic initialization and replay/concurrency protection. Preserve all existing owner content/IDs/timers. |
-| 6. Providers and pilot | Enable Google plus GitHub for a small invited group; verify real redirects, sign-out and phone/PWA account switching. Add Apple only after its requirements and lifecycle are confirmed. |
-| 7. Public registration, if desired | Enable open signup only after abuse limits, privacy/deletion policy, backups and isolation tests are ready. Retain a registration kill switch and suspension tools. |
-| 8. Additional modules later | Convert and verify one complete module at a time, then make its permission grantable. Reuse the same actor/ownership architecture. |
+| Phase                              | Deliverable and release condition                                                                                                                                                                                           |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Ownership inventory             | Map every route, action, query, child reference, worker and cache; back up and rehearse restoration. Identify orphan/ambiguous ownership before any constraint is enabled. Registration stays closed.                       |
+| 2. Identity foundation             | Add auth account/session models and user state/permissions. Map your verified permanent GitHub subject to the existing User 1. Test adapter integer compatibility and owner login/recovery. Keep private routes owner-only. |
+| 3. Japanese isolation              | Scope every Japanese endpoint/helper, categories, forms, progress, history, rewards and timezone; migrate child ownership/constraints and audit attribution. Test two independent users in a disposable database.           |
+| 4. Member shell and administration | Build `/admin/users`, presets/revocation, authorized navigation/providers, own-account settings and safe landing redirects. Unsupported modules cannot be granted.                                                          |
+| 5. Setup and starter packs         | Add reviewed/versioned content, empty/copy choice, atomic initialization and replay/concurrency protection. Preserve all existing owner content/IDs/timers.                                                                 |
+| 6. Providers and pilot             | Enable Google plus GitHub for a small invited group; verify real redirects, sign-out and phone/PWA account switching. Add Apple only after its requirements and lifecycle are confirmed.                                    |
+| 7. Public registration, if desired | Enable open signup only after abuse limits, privacy/deletion policy, backups and isolation tests are ready. Retain a registration kill switch and suspension tools.                                                         |
+| 8. Additional modules later        | Convert and verify one complete module at a time, then make its permission grantable. Reuse the same actor/ownership architecture.                                                                                          |
 
 Migrations must preserve owner IDs, task/calendar/financial records, current word
 IDs, verb forms, ratings, timers, practices and historical statistics. Backfill

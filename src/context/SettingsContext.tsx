@@ -1,6 +1,5 @@
 "use client";
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { createContext, useContext, type ReactNode } from "react";
 import { resolveLocalInstants } from "@/lib/local-time";
 import {
   localParts,
@@ -8,7 +7,7 @@ import {
   type StoredWorkDate,
 } from "@/lib/work-management/date-format";
 
-type Settings = { timeZone: string; saveTimeZone: (value: string) => Promise<void> };
+type Settings = { timeZone: string };
 const Context = createContext<Settings | null>(null);
 export function SettingsProvider({
   children,
@@ -17,21 +16,7 @@ export function SettingsProvider({
   children: ReactNode;
   initialTimeZone: string;
 }) {
-  const [timeZone, setTimeZone] = useState(initialTimeZone);
-  const router = useRouter();
-  useEffect(() => setTimeZone(initialTimeZone), [initialTimeZone]);
-  async function saveTimeZone(value: string) {
-    const response = await fetch("/api/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ timeZone: value }),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Unable to save settings.");
-    setTimeZone(data.timeZone);
-    router.refresh();
-  }
-  return <Context.Provider value={{ timeZone, saveTimeZone }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ timeZone: initialTimeZone }}>{children}</Context.Provider>;
 }
 export function useSettings() {
   const value = useContext(Context);

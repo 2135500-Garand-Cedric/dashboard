@@ -1,7 +1,9 @@
+import { categoryKind } from "@/lib/japanese/category-kind";
 import { auditedCommand } from "@/lib/audit/command";
 import { withUserTimeZone } from "@/lib/user-settings";
 import { validateReadings, VocabularyReadingError } from "@/lib/japanese/readings";
-import { requireOwner } from "@/lib/require-owner";
+import { requirePermission } from "@/lib/accounts/access";
+import { currentUserId } from "@/lib/accounts/context.mjs";
 // GET /api/japanese-practice/vocabulary/[id]
 // Fetches a specific vocabulary entry with verb forms and activity status
 import { NextResponse } from "next/server";
@@ -17,7 +19,7 @@ import {
 import { ActivityVocabStatus, type Prisma } from "@/generated/prisma";
 
 export async function GET(req: Request, context: { params: Promise<{ id: string }> }) {
-  const accessError = await requireOwner(req);
+  const accessError = await requirePermission("japanese.vocabulary.read", req);
   if (accessError) return accessError;
   return withUserTimeZone(async () => {
     try {
@@ -30,14 +32,14 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
         );
       }
 
-      const userId = 1; // TODO: replace with session logic
+      const userId = currentUserId();
 
       // fetch total activities once
       const activities = await prisma.activity.findMany({ select: { id: true } });
       const activityIds = activities.map((activity) => activity.id);
 
       const vocab = await prisma.vocabulary.findUnique({
-        where: { id: vocabId, userId: 1 },
+        where: { id: vocabId, userId: currentUserId() },
         include: {
           category: true,
           activityVocab: true,
@@ -58,7 +60,7 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
       }
 
       const kanjiVocabulary = await prisma.vocabulary.findMany({
-        where: { userId, category: { name: { equals: "kanji", mode: "insensitive" } } },
+        where: { userId, category: { kind: "KANJI" } },
         include: { category: true },
       });
       const knownKanji = getKnownKanji(kanjiVocabulary);
@@ -76,7 +78,7 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
         worst_status: string;
         percentage: string;
       }[] = [];
-      if (vocab.category?.name.toLowerCase() === "verb") {
+      if (categoryKind(vocab.category) === "VERB") {
         verbFormsResult = vocab.verbForms.map((vf) => {
           const { worstStatus: worst_status, percentage: percentage } = calculateActivityStats(
             vf.activityVocab,
@@ -110,11 +112,14 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
 
       return NextResponse.json({ success: true, vocabulary: result });
     } catch (error: unknown) {
-      console.error(error);
+      console.error("Japanese operation failed.");
       return NextResponse.json(
         {
           success: false,
-          error: error instanceof Error ? error.message : "An unexpected error occurred",
+          error:
+            error instanceof Error && !("code" in error)
+              ? error.message
+              : "An unexpected error occurred",
         },
         { status: 500 },
       );
@@ -124,7 +129,7 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
 
 // PATCH /api/japanese-practice/vocabulary/[id]
 export async function PATCH(req: Request, context: { params: Promise<{ id: string }> }) {
-  const accessError = await requireOwner(req);
+  const accessError = await requirePermission("japanese.vocabulary.manage", req);
   if (accessError) return accessError;
   return withUserTimeZone(async () => {
     try {
@@ -155,7 +160,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
           async () => {
             // 1️⃣ Get existing vocab
             const existing = await tx.vocabulary.findUnique({
-              where: { id: vocabId, userId: 1 },
+              where: { id: vocabId, userId: currentUserId() },
             });
 
             if (!existing) {
@@ -163,9 +168,9 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
             }
 
             const category = await tx.category.findUnique({
-              where: { id: categoryId ?? existing.categoryId ?? 0 },
+              where: { id: categoryId ?? existing.categoryId ?? 0, userId: currentUserId() },
             });
-            const isKanji = category?.name.trim().toLowerCase() === "kanji";
+            const isKanji = categoryKind(category) === "KANJI";
             const readingInput =
               body.readings !== undefined
                 ? body.readings
@@ -176,6 +181,8 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
                       ? existing.readings
                       : [existing.hiragana]
                     : [existing.hiragana];
+            if (!category && (categoryId !== undefined || existing.categoryId !== null))
+              throw new Error("Choose one of your categories.");
             const readings = validateReadings(readingInput, hiragana ?? existing.hiragana, isKanji);
             hiragana = readings[0];
             // 2️⃣ Detect changes
@@ -208,13 +215,12 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
 
             // 5️⃣ Update vocab ONLY if needed
             const updatedVocab = await tx.vocabulary.update({
-              where: { id: vocabId, userId: 1 },
+              where: { id: vocabId, userId: currentUserId() },
               data,
             });
 
             // 6️⃣ Determine if we need to regenerate verb forms
-            const isVerb =
-              (categoryId ?? existing.categoryId) === 1 && (verbType ?? existing.verbType);
+            const isVerb = categoryKind(category) === "VERB" && (verbType ?? existing.verbType);
 
             const baseChanged = changes.japanese || changes.hiragana || changes.verbType;
 
@@ -224,7 +230,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
               const type = verbType ?? existing.verbType;
 
               if (!base || !reading || !type) {
-                await recordJapaneseProgress(tx);
+                await recordJapaneseProgress(tx, currentUserId());
                 return updatedVocab;
               }
 
@@ -246,6 +252,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
               // 🔟 Insert new forms
               await tx.verbForm.createMany({
                 data: Object.entries(forms).map(([name, value]) => ({
+                  userId: currentUserId(),
                   baseVocabId: vocabId,
                   formTypeId: formTypeMap[name],
                   form: value.form,
@@ -268,6 +275,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
               await tx.activityVocab.createMany({
                 data: activities.flatMap((a) =>
                   createdVerbForms.map((vf) => ({
+                    userId: currentUserId(),
                     activityId: a.id,
                     verbFormId: vf.id,
                     status: ActivityVocabStatus.WEAK,
@@ -276,7 +284,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
               });
             }
 
-            await recordJapaneseProgress(tx);
+            await recordJapaneseProgress(tx, currentUserId());
             return updatedVocab;
           },
         );
@@ -287,11 +295,14 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
       if (error instanceof VerbConjugationError || error instanceof VocabularyReadingError) {
         return NextResponse.json({ success: false, error: error.message }, { status: 400 });
       }
-      console.error(error);
+      console.error("Japanese operation failed.");
       return NextResponse.json(
         {
           success: false,
-          error: error instanceof Error ? error.message : "An unexpected error occurred",
+          error:
+            error instanceof Error && !("code" in error)
+              ? error.message
+              : "An unexpected error occurred",
         },
         { status: 500 },
       );
@@ -301,7 +312,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
 
 // DELETE /api/japanese-practice/vocabulary/[id]
 export async function DELETE(req: Request, context: { params: Promise<{ id: string }> }) {
-  const accessError = await requireOwner(req);
+  const accessError = await requirePermission("japanese.vocabulary.manage", req);
   if (accessError) return accessError;
   return withUserTimeZone(async () => {
     try {
@@ -325,18 +336,21 @@ export async function DELETE(req: Request, context: { params: Promise<{ id: stri
             id: vocabId,
           },
           async () => {
-            await tx.vocabulary.delete({ where: { id: vocabId, userId: 1 } });
-            await recordJapaneseProgress(tx);
+            await tx.vocabulary.delete({ where: { id: vocabId, userId: currentUserId() } });
+            await recordJapaneseProgress(tx, currentUserId());
           },
         );
       });
       return NextResponse.json({ success: true });
     } catch (error: unknown) {
-      console.error(error);
+      console.error("Japanese operation failed.");
       return NextResponse.json(
         {
           success: false,
-          error: error instanceof Error ? error.message : "An unexpected error occurred",
+          error:
+            error instanceof Error && !("code" in error)
+              ? error.message
+              : "An unexpected error occurred",
         },
         { status: 500 },
       );

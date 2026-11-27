@@ -27,9 +27,20 @@ enum ActivityVocabStatus {
 
 model User {
   id        Int       @id @default(autoincrement())
-  email     String    @unique
+  email     String?   @unique
   auditStartedAt DateTime @default(now()) @db.Timestamptz(3)
   auditEvents AuditEvent[]
+  role String @default("MEMBER") @db.VarChar(10)
+  active Boolean @default(true)
+  emailVerified DateTime?
+  lastSignedInAt DateTime? @db.Timestamptz(3)
+  authAccounts AuthAccount[]
+  authSessions AuthSession[]
+  permissions UserPermission[]
+  initialization JapaneseInitialization?
+  japaneseCategories Category[]
+  practices Practice[]
+  progressSnapshots JapaneseProgressSnapshot[]
   name      String?
   timeZone  String? @db.VarChar(100)
   knowledgeTemplates KnowledgeTemplate[]
@@ -251,13 +262,13 @@ model Subtask {
 }
 
 model Event {
+  recurrenceException Boolean @default(false)
   recurrenceId Int?
   recurrenceDate String? @db.VarChar(10)
   recurrence RecurrenceSeries? @relation(fields: [recurrenceId, userId], references: [id, userId], onDelete: Restrict, onUpdate: NoAction)
   @@unique([recurrenceId, recurrenceDate])
   reminderMinutes Int?
   kind String @default("ORDINARY") @db.VarChar(30)
-  busy Boolean?
   timeZone String? @db.VarChar(100)
   allDayStart String? @db.VarChar(10)
   allDayEnd String? @db.VarChar(10)
@@ -319,6 +330,7 @@ model Activity {
 }
 
 model ActivityVocab {
+  userId Int @default(dbgenerated())
   id         Int                 @id @default(autoincrement())
   activityId Int
 
@@ -329,8 +341,8 @@ model ActivityVocab {
   lastPracticed DateTime? @db.Timestamptz(3)
 
   activity Activity     @relation(fields: [activityId], references: [id], onDelete: Cascade)
-  vocab    Vocabulary?  @relation(fields: [vocabId], references: [id], onDelete: Cascade)
-  verbForm VerbForm?    @relation(fields: [verbFormId], references: [id], onDelete: Cascade)
+  vocab    Vocabulary?  @relation(fields: [vocabId,userId], references: [id,userId], onDelete: Cascade, onUpdate:NoAction)
+  verbForm VerbForm?    @relation(fields: [verbFormId,userId], references: [id,userId], onDelete: Cascade, onUpdate:NoAction)
 
   @@unique([activityId, vocabId])
   @@unique([activityId, verbFormId])
@@ -344,8 +356,9 @@ model Practice {
   perfectCount  Int
   goodCount     Int
   weakCount     Int
-  userId        Int         @default(1)
-  sessionKey    String?     @unique
+  userId        Int
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  sessionKey    String?
   activityName  String?
   startedAt     DateTime?
   completedAt   DateTime?
@@ -361,13 +374,21 @@ model Practice {
   activity   Activity @relation(fields: [activityId], references: [id])
 
   @@index([userId, date])
+  @@unique([userId,sessionKey])
 }
 
 
 model Category {
+  isDefault Boolean @default(false)
   id         Int         @id @default(autoincrement())
-  name       String      @unique
+  name       String
+  normalizedName String
+  kind String @default("OTHER") @db.VarChar(10)
+  userId Int
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
   vocabulary Vocabulary[]
+  @@unique([userId,normalizedName])
+  @@unique([id,userId])
 }
 
 model Vocabulary {
@@ -384,11 +405,12 @@ model Vocabulary {
   lastPracticed DateTime?
   verbType      String?
 
-  user     User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  category Category?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category?  @relation(fields: [categoryId,userId], references: [id,userId], onDelete: NoAction, onUpdate:NoAction)
   activityVocab ActivityVocab[]
   verbForms VerbForm[]
 
+  @@unique([id,userId])
   @@unique([english, hiragana, userId])
 }
 
@@ -400,20 +422,23 @@ model VerbFormType {
 }
 
 model VerbForm {
+  userId Int @default(dbgenerated())
   id           Int        @id @default(autoincrement())
   baseVocabId  Int
   formTypeId   Int
   form         String      // e.g., 書いた, 書きます, 書かない
   reading      String
 
-  baseVocab    Vocabulary @relation(fields: [baseVocabId], references: [id], onDelete: Cascade)
+  baseVocab    Vocabulary @relation(fields: [baseVocabId,userId], references: [id,userId], onDelete: Cascade, onUpdate:NoAction)
   formType     VerbFormType @relation(fields: [formTypeId], references: [id])
   activityVocab ActivityVocab[]
 
+  @@unique([id,userId])
   @@unique([baseVocabId, formTypeId])
 }
 
 model JapaneseProgressSnapshot {
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
   id              Int      @id @default(autoincrement())
   userId          Int
   day             String
@@ -1211,6 +1236,7 @@ model NotificationSettings {
 }
 
 model PushSubscription {
+  sessionId String? @db.Uuid
   id String @id @default(uuid()) @db.Uuid
   userId Int
   user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -1550,6 +1576,7 @@ model EmailSettings {
 
 
 model AuditEvent {
+  actorUserId Int?
   id String @id @default(uuid()) @db.Uuid
   userId Int
   occurredAt DateTime @default(now()) @db.Timestamptz(3)
@@ -1573,4 +1600,65 @@ model AuditEvent {
   @@index([userId, occurredAt, id])
   @@index([userId, category, occurredAt, id])
   @@index([userId, entityType, entityId, occurredAt])
+}
+
+// Login identities are independent of financial accounts and directory contacts.
+model AuthAccount {
+  id String @id @default(uuid()) @db.Uuid
+  userId Int
+  provider String @db.VarChar(20)
+  providerAccountId String @db.VarChar(200)
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  @@unique([provider,providerAccountId])
+  @@unique([userId,provider])
+}
+model AuthSession {
+  id String @id @default(uuid()) @db.Uuid
+  tokenHash String @unique @db.VarChar(64)
+  userId Int
+  expires DateTime @db.Timestamptz(3)
+  authenticatedAt DateTime @default(now()) @db.Timestamptz(3)
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  @@index([userId,expires])
+}
+model UserPermission {
+  userId Int
+  capability String @db.VarChar(60)
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  @@id([userId,capability])
+}
+model UserInvitation {
+  id String @id @default(uuid()) @db.Uuid
+  tokenHash String @unique @db.VarChar(64)
+  label String @db.VarChar(100)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  expires DateTime @db.Timestamptz(3)
+  usedAt DateTime? @db.Timestamptz(3)
+  revokedAt DateTime? @db.Timestamptz(3)
+  usedById Int? @unique
+}
+model AuthLinkIntent {
+  tokenHash String @id @db.VarChar(64)
+  userId Int
+  sessionId String @db.Uuid
+  provider String @db.VarChar(20)
+  expires DateTime @db.Timestamptz(3)
+}
+model VocabularyPackVersion {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  content Json
+  wordCount Int
+}
+model JapaneseInitialization {
+  userId Int @id
+  choice String @db.VarChar(10)
+  packVersionId Int?
+  completedAt DateTime @default(now()) @db.Timestamptz(3)
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+}
+model AuthRequestBudget {
+  key String @id @db.VarChar(100)
+  count Int @default(1)
+  expires DateTime @db.Timestamptz(3)
 }

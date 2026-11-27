@@ -103,7 +103,21 @@ async function main() {
   ]) {
     const category =
       (await prisma.category.findUnique({ where: { id } })) ||
-      (await prisma.category.create({ data: { id, name } }));
+      (await prisma.category.create({
+        data: {
+          id,
+          name,
+          userId: 1,
+          normalizedName: name.trim().toLowerCase(),
+          isDefault: ["verb", "kanji"].includes(name.trim().toLowerCase()),
+          kind:
+            name.trim().toLowerCase() === "verb"
+              ? "VERB"
+              : name.trim().toLowerCase() === "kanji"
+                ? "KANJI"
+                : "OTHER",
+        },
+      }));
     categories[name] = category;
   }
 

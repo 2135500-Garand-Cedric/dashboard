@@ -1,4 +1,5 @@
 "use client";
+import { repeatLabels } from "@/components/recurrence/RepeatFields";
 import Link from "next/link";
 import { CalendarDaysIcon, ClockIcon, CheckIcon } from "@heroicons/react/24/outline";
 import { useSettings } from "@/context/SettingsContext";
@@ -36,6 +37,14 @@ export default function EventOverview({
           {event.type && (
             <span className="rounded-full border border-card-border px-3 py-1">{event.type}</span>
           )}
+          {event.recurrence && (
+            <span className="rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-1 text-sky-600 dark:text-sky-300">
+              ↻{" "}
+              {event.recurrence.active
+                ? repeatLabels[event.recurrence.frequency]
+                : "Repeat stopped"}
+            </span>
+          )}
           {event.completed && (
             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/10 px-3 py-1 text-emerald-600 dark:text-emerald-400">
               <CheckIcon className="h-3.5 w-3.5" />
@@ -44,7 +53,9 @@ export default function EventOverview({
           )}
         </div>
         <div className="flex flex-wrap items-start justify-between gap-5">
-          <h1 className="min-w-0 flex-1 basis-64 break-words text-3xl font-semibold tracking-tight sm:text-4xl">
+          <h1
+            className={`min-w-0 flex-1 basis-64 break-words text-3xl font-semibold tracking-tight sm:text-4xl ${event.completed ? "line-through opacity-70" : ""}`}
+          >
             {event.title}
           </h1>
           <button
@@ -58,17 +69,17 @@ export default function EventOverview({
             {event.completed ? "Mark incomplete" : "Mark completed"}
           </button>
         </div>
-        <p className="mt-3 text-sm">
-          {event.reminderMinutes === -1
-            ? "Notifications off for this event"
-            : event.reminderMinutes == null
-              ? "Reminder uses notification settings"
+        {event.reminderMinutes != null && (
+          <p className="mt-3 text-sm">
+            {event.reminderMinutes === -1
+              ? "Notifications off for this event"
               : event.reminderMinutes === 0
                 ? "Reminder at the scheduled time"
                 : event.reminderMinutes >= 1440
                   ? `Reminder ${event.reminderMinutes / 1440} day${event.reminderMinutes > 1440 ? "s" : ""} before`
                   : `Reminder ${event.reminderMinutes} minutes before`}
-        </p>
+          </p>
+        )}
         <section
           aria-label="Event schedule"
           className="mt-6 rounded-xl border border-blue-400/20 bg-background/50 p-4 sm:p-5"
@@ -164,10 +175,6 @@ export default function EventOverview({
         >
           <h2 className="font-semibold">Details</h2>
           <dl className="space-y-4 text-sm">
-            <div>
-              <dt className="mb-1 text-xs text-gray-500 dark:text-gray-400">Availability</dt>
-              <dd>{event.busy === null ? "Not specified" : event.busy ? "Busy" : "Free"}</dd>
-            </div>
             <div>
               <dt className="mb-1 text-xs text-gray-500 dark:text-gray-400">Status</dt>
               <dd className={event.completed ? "text-emerald-600 dark:text-emerald-400" : ""}>

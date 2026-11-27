@@ -1,7 +1,9 @@
+import { categoryKind } from "@/lib/japanese/category-kind";
 import { auditedCommand } from "@/lib/audit/command";
 import { withUserTimeZone } from "@/lib/user-settings";
 import { validateReadings, VocabularyReadingError } from "@/lib/japanese/readings";
-import { requireOwner } from "@/lib/require-owner";
+import { requirePermission } from "@/lib/accounts/access";
+import { currentUserId } from "@/lib/accounts/context.mjs";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { torontoDayRange } from "@/lib/japanese/dates";
@@ -11,7 +13,7 @@ import { conjugateVerb, VerbConjugationError } from "@/lib/japanese/conjugation"
 
 // POST /api/japanese-practice/vocabulary/add
 export async function POST(req: Request) {
-  const accessError = await requireOwner(req);
+  const accessError = await requirePermission("japanese.vocabulary.manage", req);
   if (accessError) return accessError;
   return withUserTimeZone(async () => {
     try {
@@ -19,7 +21,7 @@ export async function POST(req: Request) {
       const { english, japanese, categoryId, starred, verbType } = body;
       let { hiragana } = body;
 
-      const userId = 1;
+      const userId = currentUserId();
 
       if (!english || !japanese || !(hiragana || body.readings) || !categoryId) {
         return NextResponse.json(
@@ -39,11 +41,14 @@ export async function POST(req: Request) {
             resultId: (r) => r.id,
           },
           async () => {
-            const category = await tx.category.findUnique({ where: { id: categoryId } });
+            const category = await tx.category.findUnique({
+              where: { id: categoryId, userId: currentUserId() },
+            });
+            if (!category) throw new Error("Choose one of your categories.");
             const readings = validateReadings(
               body.readings,
               hiragana,
-              category?.name.trim().toLowerCase() === "kanji",
+              categoryKind(category) === "KANJI",
             );
             hiragana = readings[0];
             // 1️⃣ Create base vocab (dictionary form)
@@ -64,6 +69,7 @@ export async function POST(req: Request) {
             const activities = await tx.activity.findMany({ select: { id: true } });
             await tx.activityVocab.createMany({
               data: activities.map((a) => ({
+                userId: currentUserId(),
                 activityId: a.id,
                 vocabId: vocab.id,
                 status: ActivityVocabStatus.WEAK,
@@ -71,7 +77,7 @@ export async function POST(req: Request) {
             });
 
             // 3️⃣ If verb → generate forms
-            if (categoryId === 1 && verbType) {
+            if (categoryKind(category) === "VERB" && verbType) {
               const forms = conjugateVerb(japanese, hiragana, verbType);
 
               // get form types from DB
@@ -85,6 +91,7 @@ export async function POST(req: Request) {
               // Create the verb forms
               await tx.verbForm.createMany({
                 data: Object.entries(forms).map(([name, value]) => ({
+                  userId: currentUserId(),
                   baseVocabId: vocab.id,
                   formTypeId: formTypeMap[name],
                   form: value.form,
@@ -104,6 +111,7 @@ export async function POST(req: Request) {
               await tx.activityVocab.createMany({
                 data: activities.flatMap((a) =>
                   verbForms.map((vf) => ({
+                    userId: currentUserId(),
                     activityId: a.id,
                     verbFormId: vf.id,
                     status: ActivityVocabStatus.WEAK,
@@ -123,7 +131,7 @@ export async function POST(req: Request) {
       if (error instanceof VerbConjugationError || error instanceof VocabularyReadingError) {
         return NextResponse.json({ success: false, error: error.message }, { status: 400 });
       }
-      console.error(error);
+      console.error("Japanese operation failed.");
       const code = error && typeof error === "object" && "code" in error ? error.code : null;
       if (code === "P2002") {
         return NextResponse.json(
@@ -149,7 +157,7 @@ export async function POST(req: Request) {
         {
           success: false,
           error:
-            error instanceof Error && error.message
+            error instanceof Error && !("code" in error) && error.message
               ? error.message
               : "Unable to add vocabulary. Please try again.",
         },
@@ -161,11 +169,11 @@ export async function POST(req: Request) {
 
 // GET: number of vocabulary added today
 export async function GET() {
-  const accessError = await requireOwner();
+  const accessError = await requirePermission("japanese.vocabulary.read");
   if (accessError) return accessError;
   return withUserTimeZone(async () => {
     try {
-      const userId = 1; // TODO: replace with session logic
+      const userId = currentUserId();
 
       const { start, end } = torontoDayRange();
 
@@ -185,11 +193,14 @@ export async function GET() {
         count,
       });
     } catch (error: unknown) {
-      console.error(error);
+      console.error("Japanese operation failed.");
       return NextResponse.json(
         {
           success: false,
-          error: error instanceof Error ? error.message : "Unable to load vocabulary",
+          error:
+            error instanceof Error && !("code" in error)
+              ? error.message
+              : "Unable to load vocabulary",
         },
         { status: 500 },
       );

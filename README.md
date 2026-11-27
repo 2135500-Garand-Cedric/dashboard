@@ -167,7 +167,7 @@ Checks:
 ## Dashboard settings
 
 The Settings sidebar opens a tile menu with separate pages for
-[timezone](src/app/settings/timezone/page.tsx),
+[My account and timezone](src/app/settings/account/page.tsx),
 [calendar holidays](src/app/settings/holidays/page.tsx), and
 [notifications](src/app/settings/notifications/page.tsx),
 [birthdays](src/app/settings/birthdays/page.tsx), plus a link to Finance settings.
@@ -198,20 +198,37 @@ Tasks and projects use calendar activity types; the separate contexts manager an
 
 The full pre-cleanup development backup is under ignored `backups/module-cleanup/`. Production has not been changed. Deploy matching application code and migrations together; rolling back application code after dropped columns requires restoring the pre-cleanup database as well. The old phase-specific inventory comparisons describe those historical additive migrations, not the later retirement migration. `tests/module-cleanup-migration.integration.mjs` compares an untouched backup restore (`work_cleanup_baseline`) with its migrated copy (`work_cleanup_rehearsal`) on the disposable `work-db` host and verifies retained rows plus archived metadata.
 
-## Owner-only authentication
+## Authentication and invited Japanese learners
 
 Dashboard display settings and the current work/navigation flows are documented
 in [Display and navigation](docs/implemented/DISPLAY_AND_NAVIGATION.md). The Settings page
 stores a display timezone for all modules; existing timed records remain UTC
 instants and date-only records keep their calendar dates.
 
-The app is restricted to the permanent GitHub account ID `89470930` (`2135500-Garand-Cedric`). The allowlist is in `src/lib/owner-policy.ts`; matching an email address or username does not grant access. Other GitHub accounts are redirected to `/access-denied` and do not receive an authorized app session.
+The owner remains the verified GitHub identity `89470930` (`2135500-Garand-Cedric`),
+linked to existing database user 1. The owner can invite learners from **User management**
+(`/admin/users`). Invitations are single-use and expire after seven days. Registration
+without an invitation is closed. Members receive only their own Japanese workspace;
+Finance, Work, Calendar, Knowledge, search, notifications and administration remain
+owner-only. All private APIs check authorization before accessing records.
 
-Each private page branch uses `ProtectedLayout`, and all data API handlers call `requireOwner` before reading input, querying the database, or using external services. Anonymous API calls return 401; authenticated non-owners return 403. Mutation requests from other origins are rejected. The owner continues to use the existing database records under user ID 1; this is deliberately a single-owner app, not a multi-user application.
+First setup offers an independent copy of all published owner vocabulary or an empty
+list. Copies include readings and verb forms, with fresh progress and no owner history.
+The owner can suspend users, revoke sessions and change supported Japanese permissions.
+Google sign-in appears when both `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set;
+GitHub continues to use its existing credentials. Accounts are never merged by email.
 
-Deploy the updated image to apply these protections in production. Existing sessions need a fresh GitHub sign-in because older tokens lack the owner authorization claims. Keep `NEXTAUTH_SECRET` private and set `NEXTAUTH_URL` to the canonical HTTPS production URL.
+Authentication uses revocable database sessions with hashed opaque tokens. Deploy code
+and migrations together, keeping `NEXTAUTH_SECRET` private and `NEXTAUTH_URL` set to the
+canonical HTTPS URL. Existing users must sign in again after this migration; the owner
+must also enable push notifications again to bind devices to a new session.
 
-Authentication coverage: `node --test tests/auth-security.test.mjs`. Live checks run in the development container with `RUN_AUTH_HTTP_TEST=1 node tests/auth-security.integration.mjs`; they use short-lived locally signed test cookies, never print credentials, and perform no data mutations.
+See [Multi-user maintenance](docs/implemented/MULTI_USER_MAINTENANCE.md) for provider
+setup, invitations, privacy, recovery and verification. Unit checks include
+`node --test tests/auth-security.test.mjs`. The opt-in live authorization test
+`RUN_AUTH_HTTP_TEST=1 node --test tests/auth-security.integration.mjs` runs only in local
+development, creates temporary sessions/member records and removes them afterward.
+It must never target production.
 
 The simplified finance UI no longer exposes general **Matches & corrections** controls. Historical allocations and audit records remain preserved internally. Statement corrections use the row's matching selector and Save matches; they unlink the old association and confirm the replacement atomically without changing monetary records. `FinancialImport.status = COMPLETED` now means **saved** for matching-only statements, rather than that every row is matched. `completedAt` is the first-save time. A saved statement stays saved if its matches are later removed; remaining counts express its actual matching coverage. Historical general-format imports retain their prior read-only completion behavior.
 
@@ -229,11 +246,11 @@ The dashboard is an installable PWA. Its manifest, icons and push-only service w
 
 All application services can run on your NAS:
 
-| Compose service | Role |
-| --- | --- |
-| `dashboard` | Website, GitHub authentication and notification settings/APIs |
-| `dashboard-db` | Calendar data, registered devices and durable delivery state |
-| `notification-worker` | Checks reminders every 30 seconds and sends Web Push |
+| Compose service       | Role                                                          |
+| --------------------- | ------------------------------------------------------------- |
+| `dashboard`           | Website, GitHub authentication and notification settings/APIs |
+| `dashboard-db`        | Calendar data, registered devices and durable delivery state  |
+| `notification-worker` | Checks reminders every 30 seconds and sends Web Push          |
 
 Both Compose files include the worker. In production, it pulls the same GHCR image as the app; development builds locally. It needs no exposed port or upload volume, waits for the app healthcheck (after migrations), and restarts automatically. No Redis, Firebase account, separate notification SaaS or Apple Developer membership is required. Delivery still travels through the browser vendor's push service—Apple's service for iPhones—so outbound HTTPS is required. The phone must be able to reach your dashboard URL to open reminders.
 
@@ -262,6 +279,7 @@ Both Compose files include the worker. In production, it pulls the same GHCR ima
    ```
 
    The app and worker read the same `.env`. Keep the private key secret and preserve both keys across rebuilds/backups. The public key is safe for the browser. `npm run notifications:keys` also works in a local checkout with dependencies installed. These keys are separate from GitHub and NextAuth credentials.
+
 4. After reviewing backups and migration status as described in the deployment guide, deploy:
 
    ```sh
@@ -299,7 +317,6 @@ work selections, and inline image uploads before the first save. See [Knowledge 
 for usage, backup requirements, limits, and tests. The original
 [architecture plan](docs/implemented/KNOWLEDGE_BASE_PLAN.md) records the design.
 
-
 ### Persistent notification inbox
 
 The navigation bell and [Notifications](/notifications) keep event, work-session,
@@ -314,7 +331,6 @@ verification, known older regression failures, and coordinated app/worker rollou
 Stop the old worker before the generation-aware migration; do not run an older
 worker against the new queue constraint.
 
-
 ### Dashboard Quick add
 
 The Quick add button beside **My Dashboard** starts a task, event, expense,
@@ -325,7 +341,6 @@ existing editor in a centered modal and refreshes the calendar tile.
 
 See [Dashboard Quick add plan and implementation notes](docs/implemented/GLOBAL_QUICK_ADD_PLAN.md)
 for the action list, guarded exits, validated return marker, and verification.
-
 
 ### Weekly report
 

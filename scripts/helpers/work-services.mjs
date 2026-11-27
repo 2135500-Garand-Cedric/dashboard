@@ -9,6 +9,7 @@ export function loadWorkServices(db) {
     cache = new Map();
   function load(filename) {
     const file = path.resolve(root, filename);
+    if (file === path.join(root, "src/lib/prisma.ts")) return { prisma: db };
     if (cache.has(file)) return cache.get(file).exports;
     const unit = { exports: {} };
     cache.set(file, unit);

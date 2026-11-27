@@ -1,5 +1,6 @@
 import { withUserTimeZone } from "@/lib/user-settings";
-import { requireOwner } from "@/lib/require-owner";
+import { requirePermission } from "@/lib/accounts/access";
+import { currentUserId } from "@/lib/accounts/context.mjs";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
@@ -11,12 +12,12 @@ import { torontoMidnight, shiftDateKey } from "@/lib/japanese/dates";
 import type { PracticeSessionSummary } from "@/lib/japanese/practice-session-types";
 
 export async function POST(request: Request) {
-  const accessError = await requireOwner(request);
+  const accessError = await requirePermission("japanese.practice", request);
   if (accessError) return accessError;
   return withUserTimeZone(async () => {
     try {
       const input = parsePracticeSession(await request.json());
-      const review = await savePracticeSession(input);
+      const review = await savePracticeSession(input, currentUserId());
       return NextResponse.json({ success: true, review });
     } catch (error) {
       console.error("Unable to save practice session.");
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const accessError = await requireOwner(request);
+  const accessError = await requirePermission("japanese.history.read", request);
   if (accessError) return accessError;
   return withUserTimeZone(async () => {
     const params = new URL(request.url).searchParams;
@@ -61,7 +62,7 @@ export async function GET(request: Request) {
       const end = range === "month" ? nextMonth.toISOString().slice(0, 10) : shiftDateKey(date, 1);
       const practices = await prisma.practice.findMany({
         where: {
-          userId: 1,
+          userId: currentUserId(),
           activityId: kind === "kanji" ? 5 : { not: 5 },
           date: { gte: torontoMidnight(start), lt: torontoMidnight(end) },
         },
@@ -105,8 +106,8 @@ export async function GET(request: Request) {
         hasDetails: practice.sessionKey !== null,
       }));
       return NextResponse.json({ sessions }, { headers: { "Cache-Control": "no-store" } });
-    } catch (error) {
-      console.error("Unable to load practice history", error);
+    } catch {
+      console.error("Unable to load practice history");
       return NextResponse.json(
         { error: "Unable to load practice history. Please try again." },
         { status: 500 },

@@ -1,19 +1,17 @@
-import { getServerSession } from "next-auth/next";
 import { NextResponse } from "next/server";
-import { authOptions } from "./auth";
-import { isOwnerSession } from "./owner-policy";
+import { getActor } from "./accounts/access";
 
 // Check inside each handler, before reading input, accessing data, or fetching
 // external services. Page layouts alone do not protect API endpoints.
 export async function requireOwner(request?: Request): Promise<NextResponse | null> {
-  const session = await getServerSession(authOptions);
+  const session = await getActor();
   if (!session) {
     return NextResponse.json(
       { error: "Authentication required." },
       { status: 401, headers: { "Cache-Control": "no-store" } },
     );
   }
-  if (!isOwnerSession(session)) {
+  if (session.role !== "OWNER" || session.id !== 1) {
     return NextResponse.json(
       { error: "You cannot use this app." },
       { status: 403, headers: { "Cache-Control": "no-store" } },

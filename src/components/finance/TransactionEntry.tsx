@@ -204,7 +204,7 @@ function EntryForm({
           ? { expectedUpdatedAt: existing.updatedAt }
           : { requestKey: requestKey.current }),
       };
-      await financeRequest(
+      const result = await financeRequest<{ transaction: FinanceTransaction }>(
         existing ? `/api/finance/transactions/${existing.id}` : "/api/finance/transactions",
         {
           method: existing ? "PATCH" : "POST",
@@ -215,7 +215,9 @@ function EntryForm({
       showMessage(
         existing ? "Transaction updated successfully." : "Transaction saved successfully.",
       );
-      router.push(historyPath);
+      router.push(
+        refundOnly && !existing ? activityHref(result.transaction.id, "REFUND") : historyPath,
+      );
     } catch (error) {
       const result =
         error instanceof FinanceRequestError
@@ -460,6 +462,34 @@ function EntryForm({
                   />
                 </label>
               )}
+              {draft.type === "TRANSFER" && (
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium">To account</span>
+                  <select
+                    aria-label="To account"
+                    required
+                    className={fieldClass}
+                    value={draft.destinationAccountId}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        destinationAccountId: event.target.value,
+                        destinationAmount: "",
+                      })
+                    }
+                  >
+                    <option value="">Choose a destination</option>
+                    {availableAccounts
+                      .filter((item) => String(item.id) !== draft.accountId)
+                      .map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name} · {item.currency}
+                          {item.active ? "" : " (inactive)"}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              )}
               <label className="block space-y-2">
                 <span className="text-sm font-medium">
                   {draft.type === "TRANSFER" ? "Amount sent" : "Amount"}
@@ -516,34 +546,6 @@ function EntryForm({
                         {item.active ? "" : " (inactive)"}
                       </option>
                     ))}
-                  </select>
-                </label>
-              )}
-              {draft.type === "TRANSFER" && (
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium">To account</span>
-                  <select
-                    aria-label="To account"
-                    required
-                    className={fieldClass}
-                    value={draft.destinationAccountId}
-                    onChange={(event) =>
-                      setDraft({
-                        ...draft,
-                        destinationAccountId: event.target.value,
-                        destinationAmount: "",
-                      })
-                    }
-                  >
-                    <option value="">Choose a destination</option>
-                    {availableAccounts
-                      .filter((item) => String(item.id) !== draft.accountId)
-                      .map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name} · {item.currency}
-                          {item.active ? "" : " (inactive)"}
-                        </option>
-                      ))}
                   </select>
                 </label>
               )}

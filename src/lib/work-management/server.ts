@@ -1,3 +1,4 @@
+import { saveRecurrenceInTransaction } from "./recurrence-server";
 import { recordSaveFailure } from "@/lib/audit/failure";
 import { prepareWorkAudit, finishWorkAudit } from "@/lib/audit/work";
 import { articleRow as knowledgeArticleRow } from "@/lib/knowledge/core";
@@ -709,15 +710,24 @@ export async function createEvent(value: unknown, command: WorkCommand) {
   });
 }
 export async function patchEvent(id: number, value: unknown, command: WorkCommand) {
-  const body = workBody(value, EVENT_FIELDS),
+  const body = workBody(value, [...EVENT_FIELDS, "scope", "seriesRevision"]),
     data = parseEventFields(body);
-  if (body.recurrence !== undefined)
-    throw new WorkValidationError("Use the repeating schedule controls to change recurrence.");
+  const scope = body.scope ?? "CURRENT";
+  if (!["CURRENT", "SERIES"].includes(String(scope)))
+    throw new WorkValidationError("Choose this event or the entire series.");
+  if (scope === "SERIES" && body.completed !== undefined)
+    throw new WorkValidationError("Complete each occurrence individually.");
   if (body.linkedTodoId !== undefined && body.links !== undefined)
     throw new WorkValidationError("Send only one task-link representation.");
   return mutation(`event:${id}:patch`, body, command, async (db) => {
     const row = await eventRow(db, id);
     version(row, command);
+    if (scope === "SERIES" && !row.recurrence)
+      throw new WorkValidationError("This event does not belong to a series.");
+    if (row.recurrence && (body.seriesRevision !== undefined || scope === "SERIES"))
+      version(row.recurrence, { ...command, revision: workId(body.seriesRevision) });
+    if (row.recurrence && body.recurrence !== undefined && scope !== "SERIES")
+      throw new WorkValidationError("Choose the entire series to change the repeating schedule.");
     if (row.conversions.some((item) => item.mode === "PLACEHOLDER") && body.kind === "WORK_SESSION")
       throw new WorkValidationError(
         "Undo the placeholder conversion before turning this event into a session.",
@@ -726,7 +736,13 @@ export async function patchEvent(id: number, value: unknown, command: WorkComman
     checkEventTimes({ ...row, ...data });
     const updated = await db.event.update({
       where: { id, userId: WORK_USER_ID },
-      data: { ...data, revision: { increment: 1 } },
+      data: {
+        ...data,
+        ...(row.recurrenceId
+          ? { recurrenceException: scope === "CURRENT" || row.recurrenceException }
+          : {}),
+        revision: { increment: 1 },
+      },
       include: eventInclude,
     });
     checkEventTimes(updated);
@@ -772,6 +788,100 @@ export async function patchEvent(id: number, value: unknown, command: WorkComman
             },
           },
         });
+    if (!row.recurrence && body.recurrence != null) {
+      await attachRecurrence(db, "EVENT", id, body.recurrence);
+    } else if (row.recurrence && scope === "SERIES") {
+      const series = await db.recurrenceSeries.findFirstOrThrow({
+        where: { id: row.recurrence.id, userId: WORK_USER_ID },
+      });
+      const scheduleChanged =
+        body.timing !== undefined ||
+        body.date !== undefined ||
+        body.endDate !== undefined ||
+        body.recurrence !== undefined;
+      const shared: Record<string, unknown> = {};
+      for (const key of ["title", "description", "type", "kind", "reminderMinutes"] as const)
+        if (data[key] !== undefined) shared[key] = data[key];
+      if (scheduleChanged) {
+        const rule =
+          body.recurrence === undefined
+            ? { frequency: series.frequency, until: series.until, active: series.active }
+            : workBody(body.recurrence, ["frequency", "until"]);
+        await saveRecurrenceInTransaction(
+          db,
+          "EVENT",
+          id,
+          {
+            ...rule,
+            ...(rule.frequency === "" ? { active: false } : {}),
+            sourceRevision: updated.revision,
+          },
+          { ...command, revision: series.revision },
+        );
+      } else {
+        const template = series.template as Prisma.InputJsonObject;
+        const templateData = template.data as Prisma.InputJsonObject;
+        await db.recurrenceSeries.update({
+          where: { id: series.id },
+          data: {
+            revision: { increment: 1 },
+            template: {
+              ...template,
+              data: { ...templateData, ...shared },
+              ...(body.links !== undefined
+                ? {
+                    links: parseEventLinks(body.links).map(({ todoId, role }) => ({
+                      todoId,
+                      role,
+                    })),
+                  }
+                : {}),
+            } as Prisma.InputJsonObject,
+          },
+        });
+      }
+      const copies = await db.event.findMany({
+        where: { userId: WORK_USER_ID, recurrenceId: series.id, id: { not: id } },
+        include: eventInclude,
+      });
+      for (const copy of copies) {
+        const changes = Object.fromEntries(
+          Object.entries(shared).filter(
+            ([key, value]) => (copy as unknown as Record<string, unknown>)[key] !== value,
+          ),
+        );
+        const links =
+          body.links === undefined
+            ? null
+            : parseEventLinks(body.links).map(({ todoId, role }) => ({ todoId, role }));
+        const changedLinks =
+          links !== null &&
+          JSON.stringify(links.slice().sort((a, b) => a.todoId - b.todoId)) !==
+            JSON.stringify(
+              copy.taskLinks
+                .map(({ todoId, role }) => ({ todoId, role }))
+                .sort((a, b) => a.todoId - b.todoId),
+            );
+        if (!Object.keys(changes).length && !changedLinks) continue;
+        checkEventTimes({ ...copy, ...changes });
+        await db.event.update({
+          where: { id: copy.id },
+          data: { ...changes, revision: { increment: 1 } },
+        });
+        if (changedLinks)
+          await writeEventLinks(db, copy.id, links!, String(shared.kind ?? copy.kind));
+        else if (changes.kind !== undefined)
+          await writeEventLinks(
+            db,
+            copy.id,
+            copy.taskLinks.map(({ todoId, role }) => ({ todoId, role })),
+            String(changes.kind),
+          );
+        await appendEventActivity(db, copy.id, "SERIES_UPDATED", {
+          event: { before: eventDTO(copy), after: eventDTO(await eventRow(db, copy.id)) },
+        });
+      }
+    }
     return eventDTO(await eventRow(db, id));
   });
 }

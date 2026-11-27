@@ -445,6 +445,123 @@ test(
           assert.throws(() => holidays.holidayChoices("INVALID"), /valid holiday country/);
         },
       );
+      await t.test("event editor saves one occurrence or an entire series atomically", async () => {
+        const first = await server.createEvent(
+          {
+            title: `Series editor ${randomUUID()}`,
+            timing: { kind: "ALL_DAY", startDate: today, endExclusive: shiftDate(today, 1) },
+            recurrence: { frequency: "MONTHLY" },
+          },
+          command(),
+        );
+        const original = await db.event.findMany({
+          where: { recurrenceId: first.recurrenceId },
+          orderBy: { recurrenceDate: "asc" },
+        });
+        assert.ok(original.length >= 4);
+        const exception = await server.patchEvent(
+          original[1].id,
+          { title: "Individual exception" },
+          command(original[1].revision),
+        );
+        assert.equal(exception.recurrenceException, true);
+        const complete = await server.patchEvent(
+          original[2].id,
+          { completed: true },
+          command(original[2].revision),
+        );
+        const initial = await server.getEvent(first.id);
+        const shared = await server.patchEvent(
+          first.id,
+          {
+            scope: "SERIES",
+            seriesRevision: initial.recurrence.revision,
+            title: "Shared series title",
+          },
+          command(initial.revision),
+        );
+        const copies = await db.event.findMany({ where: { recurrenceId: first.recurrenceId } });
+        assert.equal(copies.length, original.length);
+        assert.ok(copies.every((copy) => copy.title === "Shared series title"));
+        assert.equal((await db.event.findUnique({ where: { id: complete.id } })).completed, true);
+        const request = command(shared.revision);
+        const changes = {
+          scope: "SERIES",
+          seriesRevision: shared.recurrence.revision,
+          recurrence: { frequency: "WEEKLY", until: null },
+          timing: {
+            kind: "ALL_DAY",
+            startDate: shiftDate(today, 2),
+            endExclusive: shiftDate(today, 3),
+          },
+        };
+        const moved = await server.patchEvent(first.id, changes, request);
+        assert.equal(moved.recurrence.frequency, "WEEKLY");
+        assert.equal(moved.allDayStart, shiftDate(today, 2));
+        assert.equal(
+          (await server.patchEvent(first.id, changes, request)).recurrence.revision,
+          moved.recurrence.revision,
+        );
+        assert.ok(await db.event.findUnique({ where: { id: exception.id } }));
+        assert.ok((await db.event.findUnique({ where: { id: complete.id } })).completed);
+        const before = await db.event.findMany({
+          where: { recurrenceId: first.recurrenceId },
+          orderBy: { id: "asc" },
+        });
+        await assert.rejects(
+          () =>
+            server.patchEvent(
+              first.id,
+              {
+                scope: "SERIES",
+                seriesRevision: moved.recurrence.revision,
+                title: "Should roll back",
+                recurrence: { frequency: "MONTHLY", until: "2000-01-01" },
+              },
+              command(moved.revision),
+            ),
+          /precede/,
+        );
+        assert.deepEqual(
+          await db.event.findMany({
+            where: { recurrenceId: first.recurrenceId },
+            orderBy: { id: "asc" },
+          }),
+          before,
+        );
+        await assert.rejects(
+          () =>
+            server.patchEvent(
+              first.id,
+              { scope: "SERIES", seriesRevision: initial.recurrence.revision, title: "Stale" },
+              command(moved.revision),
+            ),
+          /another window/,
+        );
+        const single = await server.createEvent(
+          {
+            title: "Previously standalone",
+            timing: { kind: "ALL_DAY", startDate: today, endExclusive: shiftDate(today, 1) },
+          },
+          command(),
+        );
+        const attached = await server.patchEvent(
+          single.id,
+          { recurrence: { frequency: "YEARLY", until: null } },
+          command(single.revision),
+        );
+        assert.equal(attached.recurrence.frequency, "YEARLY");
+        const stopped = await server.patchEvent(
+          first.id,
+          {
+            scope: "SERIES",
+            seriesRevision: moved.recurrence.revision,
+            recurrence: { frequency: "", until: null },
+          },
+          command(moved.revision),
+        );
+        assert.equal(stopped.recurrence.active, false);
+      });
     } finally {
       await db.$disconnect();
     }

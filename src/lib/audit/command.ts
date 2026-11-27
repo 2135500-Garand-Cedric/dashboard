@@ -1,3 +1,4 @@
+import { currentActor } from "@/lib/accounts/context.mjs";
 import type { Prisma } from "@/generated/prisma";
 import { OWNER_DATABASE_USER_ID as owner } from "@/lib/owner-policy";
 import { withinAuditCommand } from "./writer.mjs";
@@ -23,6 +24,7 @@ export async function auditedCommand<T>(
   spec: AuditCommand<T>,
   command: () => Promise<T>,
 ): Promise<T> {
+  const subject = currentActor()?.id ?? owner;
   const table = (db as unknown as Record<string, Delegate>)[spec.model];
   if (!table?.findFirst) throw new Error("Unknown audit command model.");
   const read = async (id: Identity) => {
@@ -67,7 +69,7 @@ export async function auditedCommand<T>(
     const row = await table.findFirst({
       where: {
         id,
-        ...(["user", "category", "activityType"].includes(spec.model) ? {} : { userId: owner }),
+        ...(["user", "activityType"].includes(spec.model) ? {} : { userId: subject }),
       },
       ...(include ? { include } : {}),
     });

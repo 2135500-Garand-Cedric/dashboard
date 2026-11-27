@@ -18,11 +18,21 @@ export const EVENT_FIELDS = [
   "completed",
   "linkedTodoId",
   "kind",
-  "busy",
   "timing",
   "links",
 ];
 export const eventInclude = {
+  recurrence: {
+    select: {
+      id: true,
+      revision: true,
+      frequency: true,
+      until: true,
+      active: true,
+      anchor: true,
+      timeZone: true,
+    },
+  },
   taskLinks: {
     include: {
       todo: {
@@ -80,7 +90,6 @@ type EventData = {
   endDate?: Date | null;
   completed?: boolean;
   kind?: string;
-  busy?: boolean | null;
   timeZone?: string | null;
   allDayStart?: string | null;
   allDayEnd?: string | null;
@@ -104,7 +113,7 @@ export function parseEventFields(body: Record<string, unknown>) {
       throw new WorkValidationError("Choose an event, informational event or work session.");
     data.kind = String(body.kind);
   }
-  for (const key of ["completed", "busy"] as const)
+  for (const key of ["completed"] as const)
     if (body[key] !== undefined) {
       if (
         (body[key] !== null && typeof body[key] !== "boolean") ||

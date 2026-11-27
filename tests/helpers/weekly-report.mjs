@@ -23,14 +23,27 @@ export function weeklyModules(db, overrides = {}) {
       },
     }).outputText;
     new Function("exports", "require", compiled)(exports, (name) => {
-      const audit = auditTestDependency(name, {"@/lib/prisma": {prisma:db}});
+      const audit = auditTestDependency(name, { "@/lib/prisma": { prisma: db } });
       if (audit) return audit;
       if (Object.hasOwn(overrides, name)) return overrides[name];
+      if (name === "./accounts/access")
+        return {
+          getActor: async () => ({
+            id: 1,
+            role: "OWNER",
+            initialized: true,
+            permissions: [],
+            timeZone: (await db.user.findUnique({ where: { id: 1 }, select: { timeZone: true } }))
+              ?.timeZone,
+          }),
+        };
       if (name === "@/lib/prisma") return { prisma: db };
       if (name === "@/generated/prisma")
         return native(path.join(root, "src/generated/prisma/index.js"));
-      if (name.startsWith("@/")) return load(`src/${name.slice(2)}.ts`);
-      if (name.startsWith(".")) return load(path.resolve(path.dirname(file), `${name}.ts`));
+      if (name.startsWith("@/"))
+        return load(`src/${name.slice(2)}${path.extname(name) ? "" : ".ts"}`);
+      if (name.startsWith("."))
+        return load(path.resolve(path.dirname(file), `${name}${path.extname(name) ? "" : ".ts"}`));
       return native(name);
     });
     return exports;

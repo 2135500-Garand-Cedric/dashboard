@@ -8,7 +8,7 @@ export function isOwnerGithubId(id: unknown): boolean {
 }
 
 export function isOwnerSession(
-  session: { ownerAccess?: boolean; githubId?: string } | null | undefined,
+  session: { ownerAccess?: boolean; authUserId?: number; role?: string } | null | undefined,
 ): boolean {
-  return session?.ownerAccess === true && isOwnerGithubId(session.githubId);
+  return session?.ownerAccess === true && session.authUserId === 1 && session.role === "OWNER";
 }

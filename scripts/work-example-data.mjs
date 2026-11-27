@@ -82,7 +82,7 @@ export async function seedWorkExamples(db, now = new Date()) {
           title: `[Example] ${name}`,
           description: "Synthetic development calendar example.",
           kind: "ORDINARY",
-          busy: true,
+
           ...body,
         },
         command,
@@ -268,7 +268,6 @@ export async function seedWorkExamples(db, now = new Date()) {
           description:
             "Synthetic development calendar example, upgraded for work-management distinctions.",
           kind: session ? "WORK_SESSION" : informational ? "INFORMATIONAL" : "ORDINARY",
-          busy: !informational,
         };
         if (informational) body.title = `${name} availability`;
         if (session) {
@@ -330,12 +329,11 @@ export async function seedWorkExamples(db, now = new Date()) {
   const tomorrow = (day) =>
     new Date(Date.parse(`${d(day)}T12:00:00Z`) + 86400000).toISOString().slice(0, 10);
   await event("Birthday gathering", {
-    busy: false,
     timing: { kind: "ALL_DAY", startDate: d(22), endExclusive: tomorrow(22) },
   });
   await event("Reading week", {
     kind: "INFORMATIONAL",
-    busy: false,
+
     timing: { kind: "ALL_DAY", startDate: d(24), endExclusive: tomorrow(27) },
   });
   await event("Language exchange meetup (time TBD)", {

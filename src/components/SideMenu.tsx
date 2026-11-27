@@ -21,7 +21,8 @@ import {
   ClockIcon,
 } from "@heroicons/react/24/solid";
 
-export default function SideMenu() {
+export default function SideMenu({ memberPermissions }: { memberPermissions?: readonly string[] }) {
+  const ownerNavigation = memberPermissions === undefined;
   const [isOpen, setIsOpen] = useState(false);
 
   const menuItems = [
@@ -39,6 +40,26 @@ export default function SideMenu() {
     { name: "Logs", href: "/logs", icon: ClockIcon },
     { name: "Settings", href: "/settings", icon: Cog6ToothIcon },
   ];
+
+  const visibleItems = menuItems.filter((item) => {
+    if (ownerNavigation || item.href === "/settings") return true;
+    if (item.href === "/japanese/practice") return memberPermissions.includes("japanese.practice");
+    if (item.href === "/japanese/statistics")
+      return memberPermissions.includes("japanese.statistics.read");
+    return false;
+  });
+  // Vocabulary-only members still need an entry point when practice is not granted.
+  if (
+    !ownerNavigation &&
+    !memberPermissions.includes("japanese.practice") &&
+    memberPermissions.includes("japanese.vocabulary.read")
+  ) {
+    visibleItems.splice(visibleItems.length - 1, 0, {
+      name: "Vocabulary",
+      href: "/japanese/vocabulary",
+      icon: LanguageIcon,
+    });
+  }
 
   const onMenuClick = () => {
     setIsOpen(false);
@@ -72,7 +93,7 @@ export default function SideMenu() {
             <h1 className="text-lg font-bold" style={{ color: "var(--color-foreground)" }}>
               Dashboard Menu
             </h1>
-            <NotificationBell />
+            {ownerNavigation && <NotificationBell />}
             <button
               aria-label="Close navigation"
               className="md:hidden"
@@ -83,11 +104,17 @@ export default function SideMenu() {
             </button>
           </div>
 
-          <div className="hidden px-4 pt-4 md:block">
-            <SearchTrigger onOpen={() => setIsOpen(false)} />
-          </div>
-          <nav className="p-4 space-y-2">
-            {menuItems.map((item) => {
+          {ownerNavigation && (
+            <div className="hidden px-4 pt-4 md:block">
+              <SearchTrigger onOpen={() => setIsOpen(false)} />
+            </div>
+          )}
+          <nav
+            id="dashboard-navigation"
+            aria-label="Dashboard navigation"
+            className="p-4 space-y-2"
+          >
+            {visibleItems.map((item) => {
               const Icon = item.icon;
               return (
                 <Link
@@ -108,11 +135,15 @@ export default function SideMenu() {
         </div>
       </div>
 
-      <MobileQuickActions navigationOpen={isOpen} closeNavigation={() => setIsOpen(false)} />
+      {ownerNavigation && (
+        <MobileQuickActions navigationOpen={isOpen} closeNavigation={() => setIsOpen(false)} />
+      )}
       {/* Mobile hamburger button */}
       {!isOpen && (
         <button
           aria-label="Open navigation"
+          aria-expanded={isOpen}
+          aria-controls="dashboard-navigation"
           className="fixed top-[calc(var(--shell-top,0px)+1rem+env(safe-area-inset-top,0px))] left-4 z-40 min-h-11 min-w-11 p-2 rounded shadow md:hidden"
           style={{
             backgroundColor: "var(--color-card-bg)",

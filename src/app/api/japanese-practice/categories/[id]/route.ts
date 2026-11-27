@@ -1,13 +1,16 @@
 import { auditedCommand } from "@/lib/audit/command";
 import { withUserTimeZone } from "@/lib/user-settings";
-import { requireOwner } from "@/lib/require-owner";
+import { requirePermission } from "@/lib/accounts/access";
+import { currentUserId } from "@/lib/accounts/context.mjs";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { recordJapaneseProgress } from "@/lib/japanese/progress-history";
 
+class DefaultCategoryError extends Error {}
+
 // ✅ PATCH /api/categories/[id] — Update category name
 export async function PATCH(req: Request, context: { params: Promise<{ id: string }> }) {
-  const accessError = await requireOwner(req);
+  const accessError = await requirePermission("japanese.vocabulary.manage", req);
   if (accessError) return accessError;
   return withUserTimeZone(async () => {
     try {
@@ -37,11 +40,17 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
             id: categoryId,
           },
           async () => {
-            const category = await tx.category.update({
-              where: { id: categoryId },
-              data: { name: name.trim() },
+            const existing = await tx.category.findFirst({
+              where: { id: categoryId, userId: currentUserId() },
             });
-            await recordJapaneseProgress(tx);
+            if (!existing) throw new Error("Category not found.");
+            if (existing.isDefault)
+              throw new DefaultCategoryError("Default categories cannot be edited.");
+            const category = await tx.category.update({
+              where: { id: categoryId, userId: currentUserId() },
+              data: { name: name.trim(), normalizedName: name.trim().toLowerCase() },
+            });
+            await recordJapaneseProgress(tx, currentUserId());
             return category;
           },
         );
@@ -49,13 +58,16 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
 
       return NextResponse.json({ success: true, category: updatedCategory });
     } catch (error: unknown) {
-      console.error("PATCH /api/categories/[id] error:", error);
+      console.error("PATCH /api/categories/[id] error:");
       return NextResponse.json(
         {
           success: false,
-          error: error instanceof Error ? error.message : "Unable to update category",
+          error:
+            error instanceof Error && !("code" in error)
+              ? error.message
+              : "Unable to update category",
         },
-        { status: 500 },
+        { status: error instanceof DefaultCategoryError ? 403 : 500 },
       );
     }
   });
@@ -63,7 +75,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
 
 // ✅ DELETE /api/categories/[id] — Delete category only if no vocab is linked
 export async function DELETE(req: Request, context: { params: Promise<{ id: string }> }) {
-  const accessError = await requireOwner(req);
+  const accessError = await requirePermission("japanese.vocabulary.manage", req);
   if (accessError) return accessError;
   return withUserTimeZone(async () => {
     try {
@@ -76,7 +88,7 @@ export async function DELETE(req: Request, context: { params: Promise<{ id: stri
 
       // 🔍 Check if any vocabulary is linked to this category
       const linkedVocabCount = await prisma.vocabulary.count({
-        where: { categoryId },
+        where: { categoryId, userId: currentUserId() },
       });
 
       if (linkedVocabCount > 0) {
@@ -101,10 +113,15 @@ export async function DELETE(req: Request, context: { params: Promise<{ id: stri
               label: "Vocabulary category",
               id: categoryId,
             },
-            async () =>
-              db.category.delete({
-                where: { id: categoryId },
-              }),
+            async () => {
+              const category = await db.category.findFirst({
+                where: { id: categoryId, userId: currentUserId() },
+              });
+              if (!category) throw new Error("Category not found.");
+              if (category.isDefault)
+                throw new DefaultCategoryError("Default categories cannot be deleted.");
+              return db.category.delete({ where: { id: categoryId, userId: currentUserId() } });
+            },
           ),
         { isolationLevel: "Serializable" },
       );
@@ -114,13 +131,16 @@ export async function DELETE(req: Request, context: { params: Promise<{ id: stri
         message: "Category deleted successfully",
       });
     } catch (error: unknown) {
-      console.error("DELETE /api/categories/[id] error:", error);
+      console.error("DELETE /api/categories/[id] error:");
       return NextResponse.json(
         {
           success: false,
-          error: error instanceof Error ? error.message : "Unable to update category",
+          error:
+            error instanceof Error && !("code" in error)
+              ? error.message
+              : "Unable to update category",
         },
-        { status: 500 },
+        { status: error instanceof DefaultCategoryError ? 403 : 500 },
       );
     }
   });

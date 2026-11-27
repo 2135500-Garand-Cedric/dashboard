@@ -1,11 +1,9 @@
-import { getServerSession } from "next-auth/next";
+import { getActor } from "@/lib/accounts/access";
 import { redirect } from "next/navigation";
-import { authOptions } from "@/lib/auth";
-import { isOwnerSession } from "@/lib/owner-policy";
 
 export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
-  const session = await getServerSession(authOptions);
+  const session = await getActor();
   if (!session) redirect("/api/auth/signin");
-  if (!isOwnerSession(session)) redirect("/access-denied");
+  if (session.role !== "OWNER" || session.id !== 1) redirect("/access-denied");
   return <>{children}</>;
 }

@@ -1,6 +1,12 @@
+import {
+  practiceCategorySelection,
+  VERB_DICTIONARY_CATEGORY,
+} from "@/lib/japanese/practice-categories";
+import { categoryKind } from "@/lib/japanese/category-kind";
 import { auditRecordChange } from "@/lib/audit/server";
 import { withUserTimeZone } from "@/lib/user-settings";
-import { requireOwner } from "@/lib/require-owner";
+import { requirePermission } from "@/lib/accounts/access";
+import { currentUserId } from "@/lib/accounts/context.mjs";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getKnownKanji, isKanjiWritingEligible } from "@/lib/japanese/kanji-writing";
@@ -10,10 +16,10 @@ import { recordJapaneseProgress } from "@/lib/japanese/progress-history";
 
 // Get all the vocabulary for a user
 export async function GET() {
-  const accessError = await requireOwner();
+  const accessError = await requirePermission("japanese.vocabulary.read");
   if (accessError) return accessError;
   return withUserTimeZone(async () => {
-    const userId = "1"; // Replace with actual user session ID
+    const userId = currentUserId();
 
     // Get total activities count for percentage calculation
     const activities = await prisma.activity.findMany({ select: { id: true } });
@@ -63,7 +69,7 @@ type UpdateRequestBody = {
 
 // Update the status of the vocabulary after a practice session
 export async function PATCH(req: Request) {
-  const accessError = await requireOwner(req);
+  const accessError = await requirePermission("japanese.practice", req);
   if (accessError) return accessError;
   return withUserTimeZone(async () => {
     try {
@@ -108,7 +114,10 @@ export async function PATCH(req: Request) {
             where: {
               id: item.activityVocabId,
               activityId,
-              OR: [{ vocab: { userId: 1 } }, { verbForm: { baseVocab: { userId: 1 } } }],
+              OR: [
+                { vocab: { userId: currentUserId() } },
+                { verbForm: { baseVocab: { userId: currentUserId() } } },
+              ],
             },
             data: { status: item.status },
             include: {
@@ -143,6 +152,7 @@ export async function PATCH(req: Request) {
 
         await tx.activityVocab.updateMany({
           where: {
+            userId: currentUserId(),
             activityId,
             id: { in: data.updates.map((item) => item.activityVocabId) },
             OR: [{ lastPracticed: null }, { lastPracticed: { lt: practicedAt } }],
@@ -153,6 +163,7 @@ export async function PATCH(req: Request) {
         // 4. Create practice summary
         const practice = await tx.practice.create({
           data: {
+            userId: currentUserId(),
             activityId: Number(activityId),
             wordCount: counts.wordCount,
             perfectCount: counts.perfectCount,
@@ -160,7 +171,7 @@ export async function PATCH(req: Request) {
             weakCount: counts.weakCount,
           },
         });
-        await recordJapaneseProgress(tx);
+        await recordJapaneseProgress(tx, currentUserId());
         await auditRecordChange(
           tx,
           {
@@ -182,11 +193,14 @@ export async function PATCH(req: Request) {
         message: "Statuses updated successfully",
       });
     } catch (error: unknown) {
-      console.error(error);
+      console.error("Japanese operation failed.");
       return NextResponse.json(
         {
           success: false,
-          error: error instanceof Error ? error.message : "An unexpected error occurred",
+          error:
+            error instanceof Error && !("code" in error)
+              ? error.message
+              : "An unexpected error occurred",
         },
         { status: 500 },
       );
@@ -196,17 +210,39 @@ export async function PATCH(req: Request) {
 
 // Get the words for a practice session
 export async function POST(req: Request) {
-  const accessError = await requireOwner(req);
+  const accessError = await requirePermission("japanese.practice", req);
   if (accessError) return accessError;
   return withUserTimeZone(async () => {
     try {
       const body = await req.json();
-      const userId = 1; // TODO: Replace with session logic (NextAuth/JWT)
+      const userId = currentUserId();
       const categories: number[] = body.categories || [];
       const nbWords: number = body.nbWords || 10;
       const activityId: number = body.activity || 1;
       const starredOnly: boolean = body.starredOnly || false;
 
+      if (
+        !Array.isArray(categories) ||
+        categories.some(
+          (id) => !Number.isInteger(id) || (id < 1 && id !== VERB_DICTIONARY_CATEGORY),
+        )
+      )
+        return NextResponse.json(
+          { success: false, error: "Choose valid practice categories." },
+          { status: 400 },
+        );
+      const verb = categories.includes(VERB_DICTIONARY_CATEGORY)
+        ? await prisma.category.findFirst({
+            where: { userId, isDefault: true, kind: "VERB" },
+            select: { id: true },
+          })
+        : null;
+      if (categories.includes(VERB_DICTIONARY_CATEGORY) && !verb)
+        return NextResponse.json(
+          { success: false, error: "The default Verb category is unavailable." },
+          { status: 400 },
+        );
+      const selection = practiceCategorySelection(categories, verb?.id ?? null);
       let eligibleIds: number[] | undefined;
       if (activityId === 5) {
         const vocabulary = await prisma.vocabulary.findMany({
@@ -217,8 +253,8 @@ export async function POST(req: Request) {
         eligibleIds = vocabulary
           .filter(
             (word) =>
-              (!categories.length ||
-                (word.categoryId !== null && categories.includes(word.categoryId))) &&
+              (!selection.filtered ||
+                (word.categoryId !== null && selection.baseIds.includes(word.categoryId))) &&
               (!starredOnly || word.starred) &&
               isKanjiWritingEligible(word.japanese, knownKanji),
           )
@@ -226,7 +262,12 @@ export async function POST(req: Request) {
         // Older vocabulary may lack a writing link; add only missing records.
         if (eligibleIds.length)
           await prisma.activityVocab.createMany({
-            data: eligibleIds.map((vocabId) => ({ activityId, vocabId, status: "WEAK" })),
+            data: eligibleIds.map((vocabId) => ({
+              userId: currentUserId(),
+              activityId,
+              vocabId,
+              status: "WEAK",
+            })),
             skipDuplicates: true,
           });
       }
@@ -240,7 +281,7 @@ export async function POST(req: Request) {
             {
               vocab: {
                 userId,
-                ...(categories.length ? { categoryId: { in: categories } } : {}),
+                ...(selection.filtered ? { categoryId: { in: selection.baseIds } } : {}),
                 ...(starredOnly ? { starred: true } : {}),
               },
             },
@@ -248,7 +289,7 @@ export async function POST(req: Request) {
               verbForm: {
                 baseVocab: {
                   userId,
-                  ...(categories.length ? { categoryId: { in: categories } } : {}),
+                  ...(selection.filtered ? { categoryId: { in: selection.formIds } } : {}),
                   ...(starredOnly ? { starred: true } : {}),
                 },
               },
@@ -300,7 +341,7 @@ export async function POST(req: Request) {
             };
           } else if (av.vocab) {
             let english = av.vocab.english;
-            if (av.vocab.category?.name.toLowerCase() === "verb") {
+            if (categoryKind(av.vocab.category) === "VERB") {
               english += " (dictionary form)";
             }
             return {
@@ -324,11 +365,14 @@ export async function POST(req: Request) {
 
       return NextResponse.json({ success: true, words: selectedWords });
     } catch (error: unknown) {
-      console.error(error);
+      console.error("Japanese operation failed.");
       return NextResponse.json(
         {
           success: false,
-          error: error instanceof Error ? error.message : "An unexpected error occurred",
+          error:
+            error instanceof Error && !("code" in error)
+              ? error.message
+              : "An unexpected error occurred",
         },
         { status: 500 },
       );

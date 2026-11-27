@@ -200,7 +200,7 @@ test(
           assert.equal(ordinaryItem.extendedProps.plainTitle, ordinary.title);
           assert.equal(ordinaryItem.backgroundColor, "#3b82f6");
           assert.equal(marker.display, "list-item");
-          assert.equal(marker.extendedProps.busy, false);
+          assert.equal("busy" in marker.extendedProps, false);
           assert.ok(marker.extendedProps.href.startsWith(`/todos/${row.id}`));
           const deadlines = await feed({ layers: "deadlines", activityType: String(school.id) });
           assert.ok(deadlines.items.every((item) => item.id.startsWith("deadline:")));
@@ -223,7 +223,7 @@ test(
         async () => {
           const allDay = await event({
             kind: "INFORMATIONAL",
-            busy: false,
+
             timing: { kind: "ALL_DAY", startDate: "2026-11-24", endExclusive: "2026-11-28" },
           });
           assert.equal(allDay.date, null);

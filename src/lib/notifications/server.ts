@@ -1,3 +1,4 @@
+import { getActor } from "@/lib/accounts/access";
 import { auditRecordChange } from "@/lib/audit/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -137,6 +138,8 @@ export async function saveNotificationSettings(value: unknown) {
   return notificationOverview();
 }
 export async function registerDevice(value: unknown) {
+  const actor = await getActor();
+  if (!actor?.sessionId) throw new NotificationError("Sign in again.", 401);
   const config = pushConfiguration();
   if (!config)
     throw new NotificationError("Push notifications are not configured on the server yet.", 503);
@@ -159,9 +162,10 @@ export async function registerDevice(value: unknown) {
     await db.notificationSettings.upsert({ where: { userId }, create: { userId }, update: {} });
     const device = await db.pushSubscription.upsert({
       where: { endpoint: input.endpoint },
-      create: { ...input, userId, vapidPublicKey: config.publicKey },
+      create: { ...input, userId, sessionId: actor.sessionId, vapidPublicKey: config.publicKey },
       update: {
         ...input,
+        sessionId: actor.sessionId,
         active: true,
         vapidPublicKey: config.publicKey,
         ...(!existing?.active || existing.vapidPublicKey !== config.publicKey

@@ -1,3 +1,4 @@
+import { requireOwnerPage } from "@/lib/accounts/owner-page";
 import SettingsSection from "@/components/settings/SettingsSection";
 import PeopleManager from "@/components/settings/PeopleManager";
 
@@ -6,6 +7,7 @@ export default async function Page({
 }: {
   searchParams: Promise<{ person?: string | string[] }>;
 }) {
+  await requireOwnerPage();
   const params = await searchParams;
   return (
     <SettingsSection title="People">

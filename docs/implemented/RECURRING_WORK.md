@@ -193,3 +193,19 @@ Checks: `tests/calendar-occasions.test.mjs`,
 `RUN_CALENDAR_OCCASIONS_DB_TEST=1 node --test tests/calendar-occasions.integration.mjs`
 against the disposable database, and `RUN_CALENDAR_OCCASIONS_BROWSER_TEST=1`
 with `tests/calendar-occasions.browser.mjs` against the disposable app on port 3002.
+
+## Unified event editing
+
+Event details show the current frequency beside the activity label and event kind.
+The event editor now includes Repeat/Repeat until and an explicit This event only /
+Entire series choice; new events use the same repeat fields. Saving event details
+and the series template is one transaction with event and series version checks
+and a retry receipt. There is no separate event recurrence/reload button. The task
+recurrence control remains available for tasks.
+
+Entire-series edits apply changed shared details and selected task links throughout
+the series. Schedule changes replace only untouched upcoming copies. Completed
+events and individual exceptions retain their identity/history and timing.
+`Event.recurrenceException` distinguishes individual edits from inherited series
+updates; the migration marks previously edited occurrences conservatively.
+Stopping repetition removes untouched future copies and preserves history.

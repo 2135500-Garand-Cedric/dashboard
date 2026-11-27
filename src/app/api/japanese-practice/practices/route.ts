@@ -1,12 +1,13 @@
 import { withUserTimeZone } from "@/lib/user-settings";
-import { requireOwner } from "@/lib/require-owner";
+import { requirePermission } from "@/lib/accounts/access";
+import { currentUserId } from "@/lib/accounts/context.mjs";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { torontoDayRange } from "@/lib/japanese/dates";
 
 // GET: fetch today's practice records
 export async function GET() {
-  const accessError = await requireOwner();
+  const accessError = await requirePermission("japanese.statistics.read");
   if (accessError) return accessError;
   return withUserTimeZone(async () => {
     try {
@@ -15,6 +16,7 @@ export async function GET() {
       // 2️⃣ Fetch only today's practices
       const practices = await prisma.practice.findMany({
         where: {
+          userId: currentUserId(),
           date: {
             gte: start,
             lt: end,
@@ -40,11 +42,14 @@ export async function GET() {
 
       return NextResponse.json({ success: true, practices: result });
     } catch (error: unknown) {
-      console.error(error);
+      console.error("Japanese operation failed.");
       return NextResponse.json(
         {
           success: false,
-          error: error instanceof Error ? error.message : "Unable to load practices",
+          error:
+            error instanceof Error && !("code" in error)
+              ? error.message
+              : "Unable to load practices",
         },
         { status: 500 },
       );

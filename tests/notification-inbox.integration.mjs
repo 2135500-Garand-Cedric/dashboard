@@ -28,6 +28,14 @@ async function fixture(run) {
             data: { email: `${randomUUID()}@invalid.test`, timeZone: "UTC" },
           });
           const userId = user.id;
+          await tx.authSession.create({
+            data: {
+              userId,
+              tokenHash: randomBytes(32).toString("hex"),
+              authenticatedAt: new Date(now.getTime() - DAY_MS),
+              expires: new Date(now.getTime() + 365 * DAY_MS),
+            },
+          });
           await tx.notificationSettings.create({
             data: {
               userId,
@@ -284,6 +292,7 @@ test(
         await tx.pushSubscription.create({
           data: {
             userId,
+            sessionId: (await tx.authSession.findFirst({ where: { userId } })).id,
             label,
             endpoint: `https://web.push.apple.com/${randomUUID()}`,
             p256dh: "fake",
@@ -495,7 +504,7 @@ test(
         await db.userNotification.deleteMany({ where: { userId } });
         await db.event.deleteMany({ where: { userId } });
         await db.notificationSettings.deleteMany({ where: { userId } });
-        await db.auditEvent.deleteMany({where:{userId}});
+        await db.auditEvent.deleteMany({ where: { userId } });
         await db.user.delete({ where: { id: userId } });
       }
       await db.$disconnect();
@@ -516,6 +525,7 @@ test(
       const device = await tx.pushSubscription.create({
         data: {
           userId,
+          sessionId: (await tx.authSession.findFirst({ where: { userId } })).id,
           label: "Legacy device",
           endpoint: `https://web.push.apple.com/${randomUUID()}`,
           p256dh: "fake",

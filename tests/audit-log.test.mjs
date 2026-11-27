@@ -117,9 +117,7 @@ test("authentication audits are bounded, renewal is not a sign-in, and outages d
   let denied = 20;
   const saved = [];
   const db = {
-    $executeRaw: async () => {
-
-    },
+    $executeRaw: async () => {},
     auditEvent: {
       count: async () => denied,
       createMany: async ({ data }) => {
@@ -140,25 +138,36 @@ test("authentication audits are bounded, renewal is not a sign-in, and outages d
   assert.equal(saved[0].actorKind, "ANONYMOUS");
   await auditAuthentication("signed-in");
   assert.equal(saved[1].actorKind, "OWNER");
-  const policy = loadWorkModule("src/lib/owner-policy.ts");
+  const { accountModules } = await import("./helpers/accounts.mjs");
   const observed = [];
-  const { authOptions } = loadWorkModule("src/lib/auth.ts", {
-    "next-auth/providers/github": () => ({}),
-    "./owner-policy": policy,
-    "./audit/auth": { auditAuthentication: async (action) => observed.push(action) },
-  });
-  const token = { githubId: "89470930", provider: "github", ownerAuthVersion: 1 };
-  await authOptions.callbacks.session({ session: {}, token });
-  await authOptions.callbacks.jwt({ token });
-  assert.deepEqual(observed, []);
-  await authOptions.events.signIn({
-    account: { provider: "github", providerAccountId: "89470930" },
-  });
-  await authOptions.events.signOut({ token });
-  assert.deepEqual(observed, ["signed-in", "signed-out"]);
+  const { authOptions } = accountModules(
+    {},
+    {
+      "./accounts/adapter": { dashboardAdapter: {} },
+      "./accounts/identity": {
+        identityAudit: async (_db, _subject, actor, action) => observed.push([actor, action]),
+        authorizeIdentity: async () => false,
+      },
+      "./audit/auth": { auditAuthentication: async () => {} },
+    },
+  ).load("src/lib/auth.ts");
+  assert.equal(authOptions.session.strategy, "database");
+  assert.equal(
+    authOptions.callbacks.jwt,
+    undefined,
+    "session renewal must not be logged as a login",
+  );
+  await authOptions.events.signIn({ user: { id: "2" } });
+  assert.deepEqual(observed, [[2, "auth.signed-in"]]);
   const unavailable = loadWorkModule("src/lib/audit/auth.ts", {
-    "@/lib/prisma": {prisma: {$transaction: async () => {throw new Error("SECRET_DATABASE_DIAGNOSTIC");}}},
-    "@/lib/owner-policy": {OWNER_DATABASE_USER_ID:1,OWNER_GITHUB_ID:"89470930"},
+    "@/lib/prisma": {
+      prisma: {
+        $transaction: async () => {
+          throw new Error("SECRET_DATABASE_DIAGNOSTIC");
+        },
+      },
+    },
+    "@/lib/owner-policy": { OWNER_DATABASE_USER_ID: 1, OWNER_GITHUB_ID: "89470930" },
     "./writer.mjs": writer,
   });
   const diagnostic = [];
@@ -166,8 +175,9 @@ test("authentication audits are bounded, renewal is not a sign-in, and outages d
   console.error = (message) => diagnostic.push(message);
   try {
     await assert.doesNotReject(unavailable.auditAuthentication("signed-in"));
-    assert.equal(diagnostic.length,1);
-    assert.doesNotMatch(diagnostic[0],/SECRET_DATABASE_DIAGNOSTIC/);
-  } finally { console.error = previous; }
-
+    assert.equal(diagnostic.length, 1);
+    assert.doesNotMatch(diagnostic[0], /SECRET_DATABASE_DIAGNOSTIC/);
+  } finally {
+    console.error = previous;
+  }
 });

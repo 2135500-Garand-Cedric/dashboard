@@ -91,7 +91,7 @@ export function snapshotTemplate(kind, row, zone) {
         "nextAction",
         "system",
       ]
-    : ["title", "description", "type", "kind", "busy", "reminderMinutes"];
+    : ["title", "description", "type", "kind", "reminderMinutes"];
   const data = Object.fromEntries(fields.map((key) => [key, row[key] ?? null]));
   return {
     anchor,

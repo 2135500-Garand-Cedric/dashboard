@@ -1,6 +1,15 @@
 import type { GraphTaskStub } from "./types";
 import { describeWorkDate } from "./date-format";
 export interface CalendarEvent {
+  recurrence?: {
+    id: number;
+    revision: number;
+    frequency: string;
+    until: string | null;
+    active: boolean;
+    anchor: string;
+    timeZone: string;
+  } | null;
   reminderMinutes?: number | null;
   id: number;
   revision: number;
@@ -13,7 +22,6 @@ export interface CalendarEvent {
   endDate: string | null;
   completed: boolean;
   kind: string;
-  busy: boolean | null;
   timeZone: string | null;
   allDayStart: string | null;
   allDayEnd: string | null;
@@ -69,7 +77,6 @@ export interface CalendarFeed {
       completed?: boolean;
       marker?: boolean;
       actionable?: boolean;
-      busy?: boolean;
     };
   }[];
   timeZone: string;

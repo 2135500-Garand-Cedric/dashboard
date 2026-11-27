@@ -1,3 +1,6 @@
+import { practiceCategorySelection, VERB_DICTIONARY_CATEGORY } from "./practice-categories";
+import { categoryKind } from "./category-kind";
+import { currentUserId } from "@/lib/accounts/context.mjs";
 import { auditRecordChange } from "@/lib/audit/server";
 import type { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
@@ -32,7 +35,9 @@ export function parsePracticeSession(value: unknown): PracticeSessionInput {
     throw new PracticeSessionError("Choose a valid activity.");
   if (
     !Array.isArray(data.categories) ||
-    data.categories.some((id) => !Number.isInteger(id) || id < 1)
+    data.categories.some(
+      (id) => !Number.isInteger(id) || (id < 1 && id !== VERB_DICTIONARY_CATEGORY),
+    )
   )
     throw new PracticeSessionError("Invalid selected categories.");
   if (typeof data.starredOnly !== "boolean")
@@ -74,7 +79,7 @@ export function practiceRewards(wordCount: number, goodCount: number, perfectCou
 export async function buildPracticeReview(
   db: Prisma.TransactionClient,
   input: PracticeSessionInput,
-  userId = 1,
+  userId = currentUserId(),
 ): Promise<PracticeSessionReview> {
   const [vocabulary, activities, categories] = await Promise.all([
     db.vocabulary.findMany({
@@ -87,18 +92,35 @@ export async function buildPracticeReview(
     }),
     db.activity.findMany({ select: { id: true, activity: true } }),
     db.category.findMany({
-      where: { id: { in: input.categories } },
+      where: { userId, id: { in: input.categories.filter((id) => id > 0) } },
       select: { id: true, name: true },
     }),
   ]);
   const activity = activities.find((item) => item.id === input.activity);
   if (!activity) throw new PracticeSessionError("This activity no longer exists.");
-  if (categories.length !== input.categories.length)
+  if (categories.length !== input.categories.filter((id) => id > 0).length)
     throw new PracticeSessionError(
       "A selected category no longer exists. Please refresh the page.",
     );
+  const dictSelected = input.categories.includes(VERB_DICTIONARY_CATEGORY);
+  const verb = dictSelected
+    ? await db.category.findFirst({
+        where: { userId, isDefault: true, kind: "VERB" },
+        select: { id: true },
+      })
+    : null;
+  if (dictSelected && !verb)
+    throw new PracticeSessionError("The default Verb category is unavailable.");
+  const selection = practiceCategorySelection(input.categories, verb?.id ?? null);
+  if (dictSelected) categories.push({ id: VERB_DICTIONARY_CATEGORY, name: "Verb (dict only)" });
   const available = new Map<number, Omit<PracticeWordResult, "status">>();
   for (const word of vocabulary) {
+    const categoryId = word.categoryId ?? word.category?.id ?? null;
+    const allowedBase =
+      !selection.filtered || (categoryId != null && selection.baseIds.includes(categoryId));
+    const allowedForms =
+      !selection.filtered || (categoryId != null && selection.formIds.includes(categoryId));
+    if (!allowedBase) continue;
     const base = {
       vocabId: word.id,
       english: word.english,
@@ -111,14 +133,14 @@ export async function buildPracticeReview(
       available.set(link.id, {
         ...base,
         english:
-          word.category?.name.trim().toLowerCase() === "verb"
+          categoryKind(word.category) === "VERB"
             ? `${word.english} (dictionary form)`
             : word.english,
         activityVocabId: link.id,
         previousStatus: link.status,
       });
     }
-    if (input.activity !== 5)
+    if (input.activity !== 5 && allowedForms)
       for (const form of word.verbForms) {
         for (const link of form.activityVocab.filter(
           (link) => link.activityId === input.activity,
@@ -214,7 +236,7 @@ function errorCode(error: unknown) {
   return error && typeof error === "object" && "code" in error ? error.code : null;
 }
 
-export async function savePracticeSession(input: PracticeSessionInput, userId = 1) {
+export async function savePracticeSession(input: PracticeSessionInput, userId = currentUserId()) {
   // Serializable retries protect the before/after average from concurrent saves.
   // The session key makes a retry after a lost response safe as well.
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -222,7 +244,7 @@ export async function savePracticeSession(input: PracticeSessionInput, userId = 
       return await prisma.$transaction(
         async (tx) => {
           const existing = await tx.practice.findUnique({
-            where: { sessionKey: input.sessionKey },
+            where: { userId_sessionKey: { userId, sessionKey: input.sessionKey } },
             include: { activity: true },
           });
           if (existing) {

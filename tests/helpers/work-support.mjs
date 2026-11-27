@@ -74,11 +74,21 @@ export function supportModules(db) {
     ...deps,
     "@/lib/work-management/validation": validation,
   });
+  const recurrenceServer = {};
+  deps["./recurrence-server"] = recurrenceServer;
   const server = loadWorkModule("src/lib/work-management/server.ts", deps),
     noteInput = loadWorkModule("src/lib/work-management/note-input.ts", {
       "./validation": validation,
       "./types": loadWorkModule("src/lib/work-management/types.ts"),
     });
+  Object.assign(
+    recurrenceServer,
+    loadWorkModule("src/lib/work-management/recurrence-server.ts", {
+      ...deps,
+      "./server": server,
+      "@/lib/recurrence/rules.mjs": recurrenceRules,
+    }),
+  );
   const supportingDeps = {
     ...deps,
     "./server": server,

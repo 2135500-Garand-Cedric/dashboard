@@ -1,6 +1,7 @@
+import JapaneseAccess from "@/components/JapaneseAccess";
 import PracticeHistory from "@/components/PracticeHistory";
 
-export default async function PracticeHistoryPage({
+async function PracticeHistoryPage({
   searchParams,
 }: {
   searchParams: Promise<{ date?: string; kind?: string; range?: string }>;
@@ -12,5 +13,15 @@ export default async function PracticeHistoryPage({
       kind={params.kind ?? "vocab"}
       range={params.range ?? "day"}
     />
+  );
+}
+
+export default function Page(props: {
+  searchParams: Promise<{ date?: string; kind?: string; range?: string }>;
+}) {
+  return (
+    <JapaneseAccess capability="japanese.history.read">
+      <PracticeHistoryPage {...props} />
+    </JapaneseAccess>
   );
 }

@@ -16,6 +16,16 @@ test("saved timezone scopes survive awaits without leaking between concurrent re
   const settings = loadWorkModule("src/lib/user-settings.ts", {
     "@/lib/prisma": { prisma: { user: { findUnique: async () => ({ timeZone: preference }) } } },
     "@/lib/owner-policy": { OWNER_DATABASE_USER_ID: 1 },
+    "./accounts/access": {
+      getActor: async () => ({
+        id: 1,
+        role: "OWNER",
+        permissions: [],
+        initialized: true,
+        timeZone: preference,
+      }),
+    },
+    "./accounts/context.mjs": { runAsActor: (_actor, action) => action() },
     "./app-time-zone": { APP_TIME_ZONE: "UTC" },
     "./time-zone-context": scope,
   });
@@ -77,49 +87,43 @@ test("wall-time input uses the selected zone and preserves DST gaps and both fol
   );
 });
 
-test("settings authenticate first and validate timezone without changing date records", async () => {
-  let denied = Response.json({ error: "Authentication required." }, { status: 401 });
-  let reads = 0;
+test("account timezone writes target only the connected user and reject invalid zones", async () => {
+  const { accountModules } = await import("./helpers/accounts.mjs");
+  let actor = null;
   const writes = [];
-  const route = loadWorkModule("src/app/api/settings/route.ts", {
-    "next/server": { NextResponse: { json: (value, options) => Response.json(value, options) } },
-    "@/lib/require-owner": { requireOwner: async () => denied },
-    "@/lib/prisma": {
-      prisma: {
-        $transaction: async (action) => action({
-          user: {findFirst: async () => ({timeZone:"UTC"}), update: async (args) => {writes.push(args);return {timeZone:args.data.timeZone};}},
-          auditEvent: {createMany: async () => ({count:1})},
-        }),
+  const db = {
+    $transaction: async (action) =>
+      action({
         user: {
           update: async (args) => {
             writes.push(args);
+            return args.data;
           },
         },
-      },
-    },
-    "@/lib/owner-policy": { OWNER_DATABASE_USER_ID: 1 },
-    "@/lib/user-settings": {
-      readUserSettings: async () => {
-        reads++;
-        return { timeZone: "UTC" };
-      },
-    },
-  });
-  const request = (body) =>
-    new Request("http://localhost/api/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      }),
+  };
+  const route = accountModules(db, {
+    "@/lib/accounts/access": { getActor: async () => actor },
+    "@/lib/accounts/identity": { identityAudit: async () => null },
+    "next/headers": { cookies: async () => ({}) },
+  }).load("src/app/api/account/route.ts");
+  const request = (timeZone) =>
+    new Request("http://localhost/api/account", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "profile",
+        name: "Learner",
+        timeZone,
+        userId: 1,
+        role: "OWNER",
+      }),
     });
-  assert.equal((await route.GET(new Request("http://localhost/api/settings"))).status, 401);
-  assert.equal((await route.PATCH(request({ timeZone: "Asia/Tokyo" }))).status, 401);
-  assert.equal(reads, 0);
+  assert.equal((await route.POST(request("Asia/Tokyo"))).status, 401);
+  actor = { id: 7, role: "MEMBER" };
+  assert.equal((await route.POST(request("Invalid/Timezone"))).status, 400);
   assert.equal(writes.length, 0);
-  denied = null;
-  assert.equal((await route.PATCH(request({ timeZone: "Invalid/Timezone" }))).status, 400);
-  assert.equal((await route.PATCH(request({ timeZone: "UTC", userId: 2 }))).status, 400);
-  const response = await route.PATCH(request({ timeZone: "Asia/Tokyo" }));
-  assert.equal(response.status, 200);
-  assert.match(response.headers.get("cache-control"), /no-store/);
-  assert.deepEqual(writes, [{ where: { id: 1 }, data: { timeZone: "Asia/Tokyo" } }]);
+  assert.equal((await route.POST(request("Asia/Tokyo"))).status, 200);
+  assert.deepEqual(writes, [
+    { where: { id: 7 }, data: { name: "Learner", timeZone: "Asia/Tokyo" } },
+  ]);
 });

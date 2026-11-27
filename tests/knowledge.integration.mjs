@@ -136,16 +136,19 @@ test(
         await assert.rejects(
           () =>
             services.server.createTodo(
-              { title: "Invalid procedure task", knowledgeArticleId: 2147483647 },
+              { title: `Invalid procedure task ${title}`, knowledgeArticleId: 2147483647 },
               cmd(),
             ),
           /not found/,
         );
         assert.equal(
-          await db.todo.count({ where: { userId: 1, title: "Invalid procedure task" } }),
+          await db.todo.count({ where: { userId: 1, title: `Invalid procedure task ${title}` } }),
           0,
         );
-        assert.equal((await api.listArticles(new URLSearchParams({ q: "' OR 1=1 --" }))).total, 0);
+        assert.equal(
+          (await api.listArticles(new URLSearchParams({ q: `' OR 1=1 -- ${randomUUID()}` }))).total,
+          0,
+        );
       });
       await t.test(
         "missing/wrong-owner links roll back and database FKs enforce owners",
@@ -253,6 +256,66 @@ test(
           await assert.rejects(
             () => services.supporting.readAttachment(task.id, file.id),
             /not found/,
+          );
+          const storedBefore = await db.workAttachment.findUnique({ where: { id: file.id } });
+          const renameCommand = cmd(file.revision);
+          const renamed = await services.supporting.renameAttachment(
+            { knowledgeArticleId: article.id },
+            file.id,
+            { name: "VPN troubleshooting.png" },
+            renameCommand,
+          );
+          assert.equal(
+            (
+              await services.supporting.renameAttachment(
+                { knowledgeArticleId: article.id },
+                file.id,
+                { name: "VPN troubleshooting.png" },
+                renameCommand,
+              )
+            ).revision,
+            renamed.revision,
+            "rename retry must not create another revision",
+          );
+          await assert.rejects(
+            () =>
+              services.supporting.renameAttachment(
+                { knowledgeArticleId: article.id },
+                file.id,
+                { name: "Old version.png" },
+                cmd(file.revision),
+              ),
+            /changed|version|Reload/i,
+          );
+          file = renamed;
+          const storedAfter = await db.workAttachment.findUnique({ where: { id: file.id } });
+          assert.equal(storedAfter.storageKey, storedBefore.storageKey);
+          assert.equal(storedAfter.contentHash, storedBefore.contentHash);
+          assert.equal(file.originalName, "VPN troubleshooting.png");
+          assert.deepEqual(
+            (await services.supporting.readAttachment({ knowledgeArticleId: article.id }, file.id))
+              .buffer,
+            samplePng,
+          );
+          await assert.rejects(
+            () =>
+              services.supporting.renameAttachment(
+                task.id,
+                file.id,
+                { name: "Wrong parent.png" },
+                cmd(file.revision),
+              ),
+            /not found/,
+          );
+          await assert.rejects(
+            () =>
+              services.supporting.renameAttachment(
+                { knowledgeArticleId: article.id },
+                file.id,
+                { name: "../bad.png" },
+                cmd(file.revision),
+              ),
+            /slashes/,
           );
           const bytes = await services.knowledgeExport.exportKnowledge();
           const files = unzipSync(bytes),

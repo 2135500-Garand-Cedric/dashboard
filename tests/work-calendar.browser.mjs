@@ -205,7 +205,7 @@ test(
         eventIds.push(allDayRow.id);
         assert.equal(allDayRow.allDayEnd, "2026-11-28");
         assert.equal(allDayRow.date, null);
-        assert.equal(allDayRow.busy, false);
+        assert.equal("busy" in allDayRow, false);
         await allDay.waitFor({ state: "hidden" });
         const currentRoot = await read(`/api/todos/${root.id}`);
         await page

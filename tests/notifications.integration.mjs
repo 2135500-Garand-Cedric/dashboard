@@ -48,10 +48,19 @@ test(
                 enabledAt: previous,
               },
             });
+            const login = await tx.authSession.create({
+              data: {
+                userId,
+                tokenHash: randomBytes(32).toString("hex"),
+                authenticatedAt: previous,
+                expires: new Date(now.getTime() + 86400000),
+              },
+            });
             const device = (label, fields = {}) =>
               tx.pushSubscription.create({
                 data: {
                   userId,
+                  sessionId: login.id,
                   label,
                   endpoint: `https://web.push.apple.com/${randomUUID()}`,
                   p256dh: keys.publicKey,
@@ -272,6 +281,13 @@ test(
             const server = loadWorkModule("src/lib/notifications/server.ts", {
               "@/lib/prisma": { prisma: db },
               "@/lib/owner-policy": { OWNER_DATABASE_USER_ID: 1 },
+              "@/lib/accounts/access": {
+                getActor: async () => ({
+                  id: 1,
+                  role: "OWNER",
+                  sessionId: "27ae879a-9097-49e6-8fb4-e2533f9c05a6",
+                }),
+              },
               "./rules.mjs": rules,
               "./inbox.mjs": await import("../src/lib/notifications/inbox.mjs"),
               "./engine.mjs": {
@@ -410,10 +426,19 @@ test(
           const userId = owner.id;
           const now = new Date("2026-11-20T14:00:10Z"),
             before = new Date("2026-11-20T13:00:00Z");
+          const login = await tx.authSession.create({
+            data: {
+              userId,
+              tokenHash: randomBytes(32).toString("hex"),
+              authenticatedAt: before,
+              expires: new Date(now.getTime() + 86400000),
+            },
+          });
           await tx.notificationSettings.create({ data: { userId, enabledAt: before } });
           await tx.pushSubscription.create({
             data: {
               userId,
+              sessionId: login.id,
               label: "Test",
               endpoint: `https://web.push.apple.com/${randomUUID()}`,
               p256dh: keys.publicKey,

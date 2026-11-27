@@ -1,11 +1,11 @@
 import { withUserTimeZone } from "@/lib/user-settings";
-import { requireOwner } from "@/lib/require-owner";
+import { requirePermission } from "@/lib/accounts/access";
 import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 
 export async function GET() {
-  const accessError = await requireOwner();
+  const accessError = await requirePermission("japanese.practice");
   if (accessError) return accessError;
   return withUserTimeZone(async () => {
     try {
@@ -20,9 +20,12 @@ export async function GET() {
 
       return NextResponse.json({ success: true, kanji: files });
     } catch (err) {
-      console.error(err);
+      console.error("Japanese operation failed.");
       return NextResponse.json(
-        { success: false, error: err instanceof Error ? err.message : "Unable to load kanji." },
+        {
+          success: false,
+          error: err instanceof Error && !("code" in err) ? err.message : "Unable to load kanji.",
+        },
         { status: 500 },
       );
     }

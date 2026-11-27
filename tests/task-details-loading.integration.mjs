@@ -90,7 +90,7 @@ test(
           title: prefix,
           kind: "WORK_SESSION",
           timeZone: "UTC",
-          busy: true,
+
           taskLinks: { create: { todoId: task.id, role: "SESSION_TARGET" } },
           date: new Date("2030-01-04T10:00:00Z"),
           endDate: new Date("2030-01-04T11:00:00Z"),

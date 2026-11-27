@@ -28,7 +28,7 @@ export async function sendPush({ subscription, payload, config, ttl = 3600 }) {
 /** @param {import('../../generated/prisma/index.js').PrismaClient} db */
 export async function reminderState(db, userId) {
   const [user, saved] = await Promise.all([
-    db.user.findUnique({ where: { id: userId }, select: { timeZone: true } }),
+    db.user.findUnique({ where: { id: userId, active: true }, select: { timeZone: true } }),
     db.notificationSettings.findUnique({ where: { userId } }),
   ]);
   if (!user) return null;
@@ -63,8 +63,27 @@ export async function runReminderPass(
   });
   if (!config || !state?.settings.enabled) return { sent: 0 };
   const { settings, zone } = state;
+  const sessions = await db.authSession.findMany({
+    where: { userId, expires: { gt: now }, user: { active: true } },
+    select: { id: true },
+  });
+  const sessionIds = sessions.map((session) => session.id);
+  await db.pushSubscription.updateMany({
+    where: {
+      userId,
+      active: true,
+      OR: [{ sessionId: null }, { sessionId: { notIn: sessionIds } }],
+    },
+    data: { active: false },
+  });
+
   const devices = await db.pushSubscription.findMany({
-    where: { userId, active: true, vapidPublicKey: config.publicKey },
+    where: {
+      userId,
+      active: true,
+      sessionId: { in: sessionIds },
+      vapidPublicKey: config.publicKey,
+    },
   });
   if (!devices.length) return { sent: 0 };
   const pending = await db.pushDelivery.findMany({
@@ -187,7 +206,13 @@ export async function runReminderPass(
     // Re-read current state after claiming, so edits/deletion/completion revoke jobs.
     const current = await reminderState(db, userId);
     const device = await db.pushSubscription.findFirst({
-      where: { id: job.subscriptionId, userId, active: true, vapidPublicKey: config.publicKey },
+      where: {
+        id: job.subscriptionId,
+        userId,
+        active: true,
+        sessionId: { in: sessionIds },
+        vapidPublicKey: config.publicKey,
+      },
     });
     const resolved =
       current?.settings.enabled && device

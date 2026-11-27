@@ -352,7 +352,9 @@ export default function AuditLog() {
                       ? "You"
                       : entry.actorKind === "SYSTEM"
                         ? "System"
-                        : "Unauthenticated attempt"}
+                        : entry.actorKind === "USER"
+                          ? "Member"
+                          : "Unauthenticated attempt"}
                   </span>
                 </span>
                 <span className="shrink-0 rounded-full border border-card-border px-2 py-1 text-xs">

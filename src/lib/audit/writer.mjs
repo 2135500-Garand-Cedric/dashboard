@@ -1,4 +1,4 @@
-import { OWNER_GITHUB_ID, OWNER_DATABASE_USER_ID } from "../owner-identity.mjs";
+import { OWNER_GITHUB_ID } from "../owner-identity.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 const operation = new AsyncLocalStorage();
@@ -197,7 +197,7 @@ export async function appendAudit(db, event) {
     (event.actorKind === "OWNER" && event.actorGithubId !== OWNER_GITHUB_ID) ||
     !AUDIT_CATEGORIES.includes(event.category) ||
     !AUDIT_OUTCOMES.includes(event.outcome ?? "SUCCESS") ||
-    !["OWNER", "SYSTEM", "ANONYMOUS"].includes(event.actorKind)
+    !["OWNER", "USER", "SYSTEM", "ANONYMOUS"].includes(event.actorKind)
   )
     throw new Error("Invalid audit event.");
   if (
@@ -235,6 +235,7 @@ export async function appendAudit(db, event) {
     userId: event.userId,
     occurredAt: event.occurredAt ?? new Date(),
     actorKind: event.actorKind,
+    actorUserId: event.actorUserId ?? null,
     actorGithubId: event.actorKind === "OWNER" ? event.actorGithubId : null,
     category: event.category,
     action: event.action,
@@ -258,7 +259,6 @@ export async function pruneAudit(db, now = new Date(), limit = 500) {
     denied = new Date(now.getTime() - 30 * 86400000);
   const rows = await db.auditEvent.findMany({
     where: {
-      userId: OWNER_DATABASE_USER_ID,
       OR: [
         { occurredAt: { lt: old } },
         { category: "AUTH", outcome: "DENIED", occurredAt: { lt: denied } },

@@ -1,10 +1,11 @@
+import { currentUserId } from "@/lib/accounts/context.mjs";
 import type { Prisma } from "@/generated/prisma";
 import { vocabularyProgress } from "./vocabulary-progress";
 import { torontoDateKey } from "./dates";
 
 export async function recordJapaneseProgress(
   db: Prisma.TransactionClient,
-  userId = 1,
+  userId = currentUserId(),
   now = new Date(),
 ) {
   const [vocabulary, activities] = await Promise.all([

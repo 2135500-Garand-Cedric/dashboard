@@ -1,14 +1,15 @@
 import { withUserTimeZone } from "@/lib/user-settings";
-import { requireOwner } from "@/lib/require-owner";
+import { requirePermission } from "@/lib/accounts/access";
+import { currentUserId } from "@/lib/accounts/context.mjs";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getKnownKanji, isKanjiWritingEligible } from "@/lib/japanese/kanji-writing";
 
 export async function GET() {
-  const accessError = await requireOwner();
+  const accessError = await requirePermission("japanese.statistics.read");
   if (accessError) return accessError;
   return withUserTimeZone(async () => {
-    const userId = 1;
+    const userId = currentUserId();
     try {
       const [activities, vocabulary] = await Promise.all([
         prisma.activity.findMany(),
@@ -56,8 +57,8 @@ export async function GET() {
       });
       const overallPercentage = (globalCount ? (globalScore / globalCount) * 100 : 0).toFixed(2);
       return NextResponse.json({ success: true, stats, overallPercentage });
-    } catch (error) {
-      console.error(error);
+    } catch {
+      console.error("Japanese operation failed.");
       return NextResponse.json({ error: "Failed to fetch activity progress" }, { status: 500 });
     }
   });

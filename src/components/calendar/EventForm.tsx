@@ -1,7 +1,6 @@
 "use client";
 import RepeatFields from "@/components/recurrence/RepeatFields";
 import RepeatedTimeChoice from "@/components/shared/RepeatedTimeChoice";
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { createWorkWriter, workRead } from "@/lib/work-management/client";
 import { localParts } from "@/lib/work-management/date-format";
@@ -31,20 +30,17 @@ export default function EventForm({
   onBusyChange?: (busy: boolean) => void;
   embedded?: boolean;
 }) {
-  const [frequency, setFrequency] = useState("");
-  const [until, setUntil] = useState("");
-  const [reminder, setReminder] = useState(
-    event?.reminderMinutes == null ? "" : String(event.reminderMinutes),
+  const [frequency, setFrequency] = useState(
+    event?.recurrence?.active ? event.recurrence.frequency : "",
   );
+  const [until, setUntil] = useState(event?.recurrence?.until ?? "");
+  const [scope, setScope] = useState("CURRENT");
   const [title, setTitle] = useState(
       event?.title ?? (initialTask ? `Work on ${initialTask.title}` : ""),
     ),
     [description, setDescription] = useState(event?.description ?? ""),
     [type, setType] = useState(event?.type ?? "");
-  const [kind, setKind] = useState(event?.kind ?? (initialTask ? "WORK_SESSION" : "ORDINARY")),
-    [busy, setBusy] = useState(
-      event?.busy === false ? "FREE" : event?.busy === true ? "BUSY" : "UNKNOWN",
-    );
+  const kind = event?.kind ?? (initialTask ? "WORK_SESSION" : "ORDINARY");
   const [timing, setTiming] = useState(
       event?.allDayStart ? "ALL_DAY" : event?.date || initialTask ? "TIMED" : "TBD",
     ),
@@ -80,8 +76,7 @@ export default function EventForm({
           ]
         : []),
   );
-  const [q, setQ] = useState(""),
-    [choices, setChoices] = useState<WorkTodo[]>([]),
+  const [choices, setChoices] = useState<WorkTodo[]>([]),
     [catalog, setCatalog] = useState<{ id: number; name: string; active: boolean }[]>([]),
     [error, setError] = useState(""),
     [saving, setSaving] = useState(false);
@@ -103,12 +98,11 @@ export default function EventForm({
   const fingerprint = JSON.stringify({
     frequency,
     until,
-    reminder,
+    scope,
     title,
     description,
     type,
     kind,
-    busy,
     timing,
     zone,
     start,
@@ -119,6 +113,10 @@ export default function EventForm({
     startOccurrence,
     endOccurrence,
   });
+  const recurrenceChanged = event?.recurrence
+    ? frequency !== (event.recurrence.active ? event.recurrence.frequency : "") ||
+      until !== (event.recurrence.until ?? "")
+    : Boolean(frequency);
   if (!baseline.current) baseline.current = fingerprint;
   const confirmLeave = useWorkDraftGuard(
     () => !clean.current && fingerprint !== baseline.current,
@@ -133,26 +131,38 @@ export default function EventForm({
   }, []);
   useEffect(() => {
     let active = true;
-    const timer = setTimeout(() => {
-      void workRead<WorkResults>(`/api/work-items?view=all&q=${encodeURIComponent(q)}`)
-        .then((data) => {
-          if (active) setChoices(data.items);
-        })
-        .catch((error) => {
-          if (active) setError(error.message);
-        });
-    }, 200);
+    async function loadTasks() {
+      try {
+        const first = await workRead<WorkResults>("/api/work-items?view=all");
+        const items = [...first.items];
+        for (let page = 2; active && (page - 1) * first.pageSize < first.total; page++) {
+          const next = await workRead<WorkResults>(`/api/work-items?view=all&page=${page}`);
+          items.push(...next.items);
+        }
+        if (active) setChoices(items);
+      } catch (error) {
+        if (active) setError(error instanceof Error ? error.message : "Unable to load tasks.");
+      }
+    }
+    void loadTasks();
     return () => {
       active = false;
-      clearTimeout(timer);
     };
-  }, [q]);
+  }, []);
   async function submit() {
     if (lock.current) return;
     lock.current = true;
     setSaving(true);
     setError("");
     try {
+      if (
+        frequency &&
+        timing === "TBD" &&
+        (!event?.recurrence ||
+          (scope === "SERIES" &&
+            (recurrenceChanged || originalTiming.current !== timingFingerprint)))
+      )
+        throw new Error("Choose a date before making this event recur.");
       if (
         kind === "WORK_SESSION" &&
         (timing !== "TIMED" ||
@@ -176,32 +186,35 @@ export default function EventForm({
                 start: instant(start, startOccurrence),
                 end: end ? instant(end, endOccurrence) : null,
               };
-      const availability = busy === "UNKNOWN" ? null : busy === "BUSY",
-        sameLinks =
-          event &&
+      const sameLinks =
+        event &&
+        JSON.stringify(
+          links.map(({ todoId, role }) => ({ todoId, role })).sort((a, b) => a.todoId - b.todoId),
+        ) ===
           JSON.stringify(
-            links.map(({ todoId, role }) => ({ todoId, role })).sort((a, b) => a.todoId - b.todoId),
-          ) ===
-            JSON.stringify(
-              event.taskLinks
-                .map(({ todoId, role }) => ({ todoId, role }))
-                .sort((a, b) => a.todoId - b.todoId),
-            );
-      const reminderMinutes = reminder === "" ? null : Number(reminder);
+            event.taskLinks
+              .map(({ todoId, role }) => ({ todoId, role }))
+              .sort((a, b) => a.todoId - b.todoId),
+          );
       const fields = {
-        ...(!event && frequency && timing !== "TBD"
-          ? { recurrence: { frequency, until: until || null } }
+        ...(!event && frequency ? { recurrence: { frequency, until: until || null } } : {}),
+        ...(event
+          ? {
+              scope,
+              ...(event.recurrence ? { seriesRevision: event.recurrence.revision } : {}),
+              ...((!event.recurrence && frequency) ||
+              (event.recurrence && scope === "SERIES" && recurrenceChanged)
+                ? { recurrence: { frequency, until: until || null } }
+                : {}),
+            }
           : {}),
-        ...(!event || reminderMinutes !== (event.reminderMinutes ?? null)
-          ? { reminderMinutes }
-          : {}),
+        reminderMinutes: null,
         ...(!event || title !== event.title ? { title } : {}),
         ...(!event || description !== (event.description ?? "")
           ? { description: description || null }
           : {}),
         ...(!event || type !== (event.type ?? "") ? { type: type || null } : {}),
         ...(!event || kind !== event.kind ? { kind } : {}),
-        ...(!event || availability !== event.busy ? { busy: availability } : {}),
         ...(event &&
         originalTiming.current === timingFingerprint &&
         !(kind === "WORK_SESSION" && event.kind !== "WORK_SESSION")
@@ -248,11 +261,7 @@ export default function EventForm({
           : "min-w-0 space-y-4 rounded-xl border border-card-border bg-card-bg p-4"
       }
     >
-      {!embedded && (
-        <h2 className="text-lg font-semibold">
-          {event ? "Edit event" : "New event or work session"}
-        </h2>
-      )}
+      {!embedded && <h2 className="text-lg font-semibold">{event ? "Edit event" : "New event"}</h2>}
       {error && (
         <p role="alert" className="break-words text-sm text-rose-500">
           {error}
@@ -282,41 +291,6 @@ export default function EventForm({
           className={input}
         />
       </label>
-      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-        <label className="block text-sm">
-          Event kind
-          <select
-            aria-label="Event kind"
-            value={kind}
-            disabled={saving}
-            onChange={(e) => {
-              setKind(e.target.value);
-              if (e.target.value !== "WORK_SESSION")
-                setLinks(links.map((link) => ({ ...link, role: "RELATED" })));
-              else setTiming("TIMED");
-            }}
-            className={input}
-          >
-            <option value="ORDINARY">Ordinary event</option>
-            <option value="INFORMATIONAL">Informational event</option>
-            <option value="WORK_SESSION">Scheduled work session</option>
-          </select>
-        </label>
-        <label className="block text-sm">
-          Availability
-          <select
-            aria-label="Event availability"
-            value={busy}
-            disabled={saving}
-            onChange={(e) => setBusy(e.target.value)}
-            className={input}
-          >
-            <option value="UNKNOWN">Not specified</option>
-            <option value="BUSY">Busy / reserves time</option>
-            <option value="FREE">Free / informational</option>
-          </select>
-        </label>
-      </div>
       <label className="block text-sm">
         Activity label
         <select
@@ -425,131 +399,86 @@ export default function EventForm({
           </div>
         </>
       )}
-      {!event && timing !== "TBD" && (
-        <RepeatFields
-          frequency={frequency}
-          until={until}
-          onFrequency={setFrequency}
-          onUntil={setUntil}
-          disabled={saving}
-          start={first || start}
-        />
+      {event?.recurrence && (
+        <label className="block space-y-1 text-sm">
+          Apply changes to
+          <select
+            aria-label="Apply changes to"
+            className={input}
+            value={scope}
+            disabled={saving}
+            onChange={(e) => {
+              setScope(e.target.value);
+              if (e.target.value === "CURRENT") {
+                setFrequency(event.recurrence?.active ? event.recurrence.frequency : "");
+                setUntil(event.recurrence?.until ?? "");
+              }
+            }}
+          >
+            <option value="CURRENT">This event only</option>
+            <option value="SERIES">Entire series</option>
+          </select>
+        </label>
       )}
-      {event && (
-        <p className="text-sm text-muted">
-          Changes apply to this occurrence. Use “Edit repeating schedule” on the event to update
-          future copies.
+      <RepeatFields
+        frequency={frequency}
+        until={until}
+        onFrequency={setFrequency}
+        onUntil={setUntil}
+        disabled={saving || (!!event?.recurrence && scope === "CURRENT")}
+        start={first || start}
+      />
+      {event?.recurrence && scope === "CURRENT" && (
+        <p className="text-xs text-gray-400">
+          Choose Entire series to change the repeating schedule.
         </p>
       )}
-      <fieldset className="min-w-0 space-y-3 rounded-lg border border-card-border p-3">
-        <legend className="px-1 text-sm font-medium">Linked tasks</legend>
-        <ul className="space-y-2">
-          {links.map((link) => (
-            <li
-              key={link.todoId}
-              className="min-w-0 space-y-2 rounded border border-card-border p-2"
-            >
-              <p className="break-words text-sm">
-                TASK-{String(link.todoId).padStart(4, "0")} · {link.title}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <select
-                  aria-label={`Task role ${link.todoId}`}
-                  value={link.role}
-                  disabled={saving}
-                  onChange={(e) =>
-                    setLinks(
-                      links.map((item) => ({
-                        ...item,
-                        role:
-                          item.todoId === link.todoId
-                            ? e.target.value
-                            : e.target.value === "SESSION_TARGET"
-                              ? "RELATED"
-                              : item.role,
-                      })),
-                    )
-                  }
-                  className={input}
-                >
-                  <option value="RELATED">Related task</option>
-                  {kind === "WORK_SESSION" && (
-                    <option value="SESSION_TARGET">Task this session works on</option>
-                  )}
-                </select>
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => setLinks(links.filter((item) => item.todoId !== link.todoId))}
-                  className={button}
-                >
-                  Remove task link
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
-        <label className="block text-sm">
-          Find task
-          <input
-            aria-label="Find event task"
-            maxLength={500}
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            className={input}
-          />
-        </label>
+      {event?.recurrence && scope === "SERIES" && (
+        <p className="text-xs text-gray-400">
+          Shared details apply throughout the series. Schedule changes replace untouched upcoming
+          copies; completed events and individual exceptions are preserved.
+        </p>
+      )}
+      <label className="block space-y-1 text-sm">
+        Linked task
         <select
-          aria-label="Add event task"
-          value=""
-          disabled={saving || links.length >= 30}
+          aria-label="Choose a task to link"
+          value={
+            links.find((link) => link.role === "SESSION_TARGET")?.todoId ?? links[0]?.todoId ?? ""
+          }
+          disabled={saving}
           onChange={(e) => {
-            const item = choices.find((item) => item.id === Number(e.target.value));
-            if (item)
-              setLinks([
-                ...links,
-                { todoId: item.id, title: item.title, role: "RELATED", revision: item.revision },
-              ]);
+            const selected = choices.find((item) => item.id === Number(e.target.value));
+            setLinks(
+              selected
+                ? [
+                    {
+                      todoId: selected.id,
+                      title: selected.title,
+                      role: kind === "WORK_SESSION" ? "SESSION_TARGET" : "RELATED",
+                      revision: selected.revision,
+                    },
+                  ]
+                : [],
+            );
           }}
           className={input}
         >
           <option value="">Choose a task to link</option>
-          {choices
-            .filter((item) => !links.some((link) => link.todoId === item.id))
-            .map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.reference} · {item.title}
+          {links
+            .filter((link) => !choices.some((item) => item.id === link.todoId))
+            .map((link) => (
+              <option key={link.todoId} value={link.todoId}>
+                TASK-{String(link.todoId).padStart(4, "0")} · {link.title}
               </option>
             ))}
-        </select>
-        <p className="text-xs text-gray-500">
-          Search by TASK reference for a specific task. A session needs one explicitly selected
-          session task; other links are related.
-        </p>
-      </fieldset>
-      <label className="block text-sm">
-        Reminder
-        <select
-          aria-label="Event reminder"
-          className={input}
-          value={reminder}
-          disabled={saving}
-          onChange={(event) => setReminder(event.target.value)}
-        >
-          <option value="">Use notification settings</option>
-          <option value="-1">No reminder</option>
-          <option value="0">At the scheduled time</option>
-          <option value="5">5 minutes before</option>
-          <option value="15">15 minutes before</option>
-          <option value="30">30 minutes before</option>
-          <option value="60">1 hour before</option>
-          <option value="1440">1 day before</option>
-          <option value="10080">1 week before</option>
+          {choices.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.reference} · {item.title}
+            </option>
+          ))}
         </select>
       </label>
-      <Link href="/settings/notifications" className="inline-block text-sm text-blue-400 underline">
-        Manage phone notifications
-      </Link>
       <div className="flex flex-wrap gap-2">
         <button type="submit" disabled={saving} className={`${button} bg-blue-600 text-white`}>
           {saving ? "Saving…" : "Save event"}

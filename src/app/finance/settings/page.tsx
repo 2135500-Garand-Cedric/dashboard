@@ -1,3 +1,4 @@
+import { requireOwnerPage } from "@/lib/accounts/owner-page";
 import Link from "next/link";
 import {
   BanknotesIcon,
@@ -47,7 +48,8 @@ const sections = [
   },
 ];
 
-export default function FinanceSettingsPage() {
+export default async function FinanceSettingsPage() {
+  await requireOwnerPage();
   return (
     <section className="space-y-5">
       <h2 className="text-2xl font-semibold">Finance settings</h2>

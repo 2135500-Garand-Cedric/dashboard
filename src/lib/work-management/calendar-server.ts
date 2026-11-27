@@ -543,7 +543,7 @@ export async function calendarFeed(params: URLSearchParams) {
               eventId: row.id,
               revision: row.revision,
               completed: row.completed,
-              busy: row.busy,
+
               kind: row.kind,
               sessionTaskStatus: target?.task.status ?? null,
             },
@@ -587,7 +587,7 @@ export async function calendarFeed(params: URLSearchParams) {
             href: `/todos/${task.id}#task-dates`,
             taskId: task.id,
             actionable: !closed,
-            busy: false,
+
             marker: true,
           },
         });
@@ -649,7 +649,6 @@ export async function calendarFeed(params: URLSearchParams) {
                 projectId: target.id,
                 marker: true,
                 actionable: false,
-                busy: false,
               },
             });
         }
@@ -700,7 +699,6 @@ export async function calendarFeed(params: URLSearchParams) {
                 projectId: row.projectId,
                 marker: true,
                 actionable: false,
-                busy: false,
               },
             });
       }

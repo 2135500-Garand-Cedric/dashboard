@@ -1,253 +1,118 @@
-import { timeZoneTestDependency } from "./helpers/time-zone.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
+import ts from "typescript";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
-import * as jsxRuntime from "react/jsx-runtime";
-
+import { accountModules } from "./helpers/accounts.mjs";
 const root = new URL("../", import.meta.url);
-function load(file, dependencies) {
-  const code = ts.transpileModule(fs.readFileSync(new URL(file, root), "utf8"), {
-    compilerOptions: {
-      module: ts.ModuleKind.CommonJS,
-      target: ts.ScriptTarget.ES2017,
-      jsx: ts.JsxEmit.ReactJSX,
-    },
-  }).outputText;
-  const exports = {};
-  new Function("exports", "require", code)(exports, (name) => {
-    assert.ok(
-      name in dependencies || timeZoneTestDependency(name, dependencies),
-      `Missing dependency ${name} for ${file}`,
-    );
-    return dependencies[name] ?? timeZoneTestDependency(name, dependencies);
-  });
-  return exports;
-}
-const policy = load("src/lib/owner-policy.ts", {});
-const { authOptions } = load("src/lib/auth.ts", {
-  "next-auth/providers/github": { default: (options) => options },
-  "./owner-policy": policy,
-});
-const json = { json: (data, options) => Response.json(data, options) };
-const owner = { githubId: policy.OWNER_GITHUB_ID, ownerAccess: true };
-let session;
-const { requireOwner } = load("src/lib/require-owner.ts", {
-  "next-auth/next": { getServerSession: async () => session },
-  "next/server": { NextResponse: json },
-  "./auth": { authOptions },
-  "./owner-policy": policy,
-});
-
-test("only the pinned GitHub identity is allowed, regardless of email or username", async () => {
-  const account = { provider: "github", providerAccountId: policy.OWNER_GITHUB_ID };
-  const profile = { id: Number(policy.OWNER_GITHUB_ID), login: "renamed-owner" };
-  assert.equal(await authOptions.callbacks.signIn({ account, profile }), true);
-  for (const attempt of [
-    {
-      account: { ...account, providerAccountId: "123" },
-      profile: { id: 123, email: "cedricgarand@hotmail.com", login: "2135500-Garand-Cedric" },
-    },
-    { account, profile: { id: 123 } },
-    { account: { ...account, provider: "credentials" }, profile },
-    { account: null, profile },
+const modules = accountModules({});
+const policy = modules.load("src/lib/owner-policy.ts");
+test("owner identity is a mapped internal account, not client provider/email claims", () => {
+  assert.equal(policy.isOwnerGithubId("89470930"), true);
+  assert.equal(policy.isOwnerSession({ authUserId: 1, role: "OWNER", ownerAccess: true }), true);
+  for (const session of [
+    null,
+    { githubId: "89470930", ownerAccess: true },
+    { authUserId: 2, role: "OWNER", ownerAccess: true },
+    { authUserId: 1, role: "MEMBER", ownerAccess: true },
   ])
-    assert.equal(await authOptions.callbacks.signIn(attempt), "/access-denied");
+    assert.equal(policy.isOwnerSession(session), false);
 });
-
-test("owner session requires current server-issued GitHub claims; legacy and forged update data grant no access", async () => {
-  const callbacks = authOptions.callbacks;
-  const token = await callbacks.jwt({
-    token: {},
-    account: { provider: "github", providerAccountId: policy.OWNER_GITHUB_ID },
-  });
-  const allowed = await callbacks.session({ session: {}, token });
-  assert.equal(policy.isOwnerSession(allowed), true);
-  for (const invalid of [
-    { email: "cedricgarand@hotmail.com" },
-    { ...token, githubId: "123" },
-    { ...token, provider: "credentials" },
-    { ...token, ownerAuthVersion: 0 },
-  ]) {
-    const updated = await callbacks.jwt({ token: invalid, trigger: "update", session: owner });
-    assert.equal(
-      policy.isOwnerSession(await callbacks.session({ session: {}, token: updated })),
-      false,
-    );
-  }
-});
-
-test("API authorization denies anonymous/non-owner sessions and cross-site writes", async () => {
-  session = null;
+test("owner guards deny anonymous/members and cross-site writes before domain access", async () => {
+  let actor = null;
+  const { requireOwner } = accountModules(
+    {},
+    { "./accounts/access": { getActor: async () => actor } },
+  ).load("src/lib/require-owner.ts");
   assert.equal((await requireOwner()).status, 401);
-  session = { githubId: "123", ownerAccess: true };
+  actor = { id: 2, role: "MEMBER" };
   assert.equal((await requireOwner()).status, 403);
-  session = { githubId: policy.OWNER_GITHUB_ID, ownerAccess: false };
-  assert.equal((await requireOwner()).status, 403);
-  session = owner;
+  actor = { id: 1, role: "OWNER" };
   assert.equal(await requireOwner(), null);
-  const previous = process.env.NEXTAUTH_URL;
-  process.env.NEXTAUTH_URL = "https://dashboard.example";
-  try {
-    assert.equal(
-      (
-        await requireOwner(
-          new Request("https://dashboard.example/api/events", {
-            method: "POST",
-            headers: { origin: "https://other.example" },
-          }),
-        )
-      ).status,
-      403,
-    );
-    assert.equal(
+  assert.equal(
+    (
       await requireOwner(
-        new Request("https://dashboard.example/api/events", {
+        new Request("http://localhost/api/test", {
           method: "POST",
-          headers: { origin: "https://dashboard.example" },
+          headers: { origin: "https://other.example" },
         }),
-      ),
-      null,
-    );
-  } finally {
-    if (previous === undefined) delete process.env.NEXTAUTH_URL;
-    else process.env.NEXTAUTH_URL = previous;
-  }
+      )
+    ).status,
+    403,
+  );
 });
-
-function files(directory) {
-  if (directory instanceof URL) directory = fileURLToPath(directory);
+function files(dir) {
   return fs
-    .readdirSync(directory, { withFileTypes: true })
-    .flatMap((item) =>
-      item.isDirectory()
-        ? files(path.join(directory, item.name))
-        : [path.join(directory, item.name)],
-    );
+    .readdirSync(dir, { withFileTypes: true })
+    .flatMap((e) => (e.isDirectory() ? files(path.join(dir, e.name)) : [path.join(dir, e.name)]));
 }
-
-test("every data API handler denies access before executing database or external-service work", async () => {
-  const apiRoot = new URL("src/app/api", root);
-  let handlers = 0;
-  for (const file of files(apiRoot).filter(
-    (file) => file.endsWith("/route.ts") && !file.includes("/api/auth/"),
+test("all private API methods deny access before input parsing or data/external calls", async () => {
+  const publicPaths = ["/api/auth/", "/api/registration/invite/"];
+  let checked = 0;
+  for (const file of files(fileURLToPath(new URL("src/app/api", root))).filter(
+    (f) => f.endsWith("/route.ts") && !publicPaths.some((p) => f.includes(p)),
   )) {
     const source = fs.readFileSync(file, "utf8");
-    if (file.endsWith("/api/email/process/route.ts")) {
-      assert.match(source, /if \(!authorizedEmailWorker\(request\)\)/);
-      continue; // Separate worker-token endpoint, covered by weekly-email tests.
-    }
     const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
-    const methods = ast.statements.filter(
-      (node) =>
-        ts.isFunctionDeclaration(node) &&
-        ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"].includes(node.name?.text),
-    );
-    for (const method of methods) {
+    for (const fn of ast.statements.filter(
+      (n) =>
+        ts.isFunctionDeclaration(n) &&
+        ["GET", "POST", "PATCH", "PUT", "DELETE"].includes(n.name?.text),
+    )) {
+      if (file.endsWith("/api/email/process/route.ts")) {
+        assert.match(fn.body.statements[0].getText(ast), /authorizedEmailWorker/);
+        continue;
+      }
       assert.match(
-        method.body.statements[0].getText(ast),
-        /await requireOwner\(/,
-        `${file} ${method.name.text} must authenticate first`,
+        fn.body.statements[0].getText(ast),
+        /await (requireOwner|requirePermission|getActor)\(/,
+        `${file} ${fn.name.text}`,
       );
-      const context = { params: Promise.resolve({ id: "1", subtaskId: "1" }) };
       for (const status of [401, 403]) {
-        const code = ts.transpileModule(source, {
+        const result = {};
+        const compiled = ts.transpileModule(source, {
           compilerOptions: { module: ts.ModuleKind.CommonJS },
         }).outputText;
-        const exported = {};
-        new Function("exports", "require", code)(exported, (name) => {
+        new Function("exports", "require", compiled)(result, (name) => {
           if (name === "@/lib/require-owner")
             return { requireOwner: async () => Response.json({ error: "denied" }, { status }) };
-          if (name === "next/server") return { NextResponse: json };
+          if (name === "@/lib/accounts/access")
+            return {
+              getActor: async () => null,
+              requirePermission: async () => Response.json({ error: "denied" }, { status }),
+            };
           if (name === "@/generated/prisma") return { PrismaClient: class {} };
+          if (name === "next/server")
+            return { NextResponse: { json: (value, options) => Response.json(value, options) } };
           return {};
         });
-        const response = await exported[method.name.text](
-          new Request("http://localhost/api/test", { method: method.name.text }),
-          context,
+        const response = await result[fn.name.text](
+          new Request("http://localhost/api/test", { method: fn.name.text }),
+          { params: Promise.resolve({ id: "1", subtaskId: "1" }) },
         );
-        assert.equal(response.status, status, `${file} ${method.name.text}`);
+        assert.equal(
+          response.status,
+          source.includes("await getActor(") ? 401 : status,
+          `${file} ${fn.name.text}`,
+        );
       }
-      handlers += 1;
+      checked++;
     }
   }
-  assert.ok(handlers >= 43);
+  assert.ok(checked > 100);
 });
-
-test("all private page branches use the protected shell; the denial page does not fetch private data", () => {
-  const appRoot = new URL("src/app", root);
-  for (const file of files(appRoot).filter(
-    (file) => file.endsWith("/page.tsx") && !file.endsWith("/access-denied/page.tsx"),
-  )) {
-    if (file.endsWith("/notifications/open/page.tsx")) {
-      // This page only redirects; it preserves the safe destination through login.
-      const source = fs.readFileSync(file, "utf8");
-      assert.match(source, /getServerSession/);
-      assert.match(source, /isOwnerSession/);
-      assert.doesNotMatch(source, /prisma|fetch\(/);
-      continue;
-    }
-    let current = path.dirname(file);
-    let protectedPage = fs.readFileSync(file, "utf8").includes("ProtectedLayout");
-    while (!protectedPage && current !== path.dirname(new URL(appRoot).pathname)) {
-      const layout = path.join(current, "layout.tsx");
-      if (fs.existsSync(layout))
-        protectedPage = fs.readFileSync(layout, "utf8").includes("ProtectedLayout");
-      current = path.dirname(current);
-    }
-    assert.equal(protectedPage, true, file);
-  }
-  const denied = fs.readFileSync(new URL("src/app/access-denied/page.tsx", root), "utf8");
-  assert.match(denied, /You cannot use this app/);
-  assert.doesNotMatch(denied, /fetch\(|prisma|MusicPlayerProvider/);
-});
-
-test("the persistent root shell is rendered only for the owner", async () => {
-  function AppShell() {}
-  const { default: RootLayout } = load("src/app/layout.tsx", {
-    "react/jsx-runtime": jsxRuntime,
-    "next/font/google": {
-      Geist: () => ({ variable: "sans" }),
-      Geist_Mono: () => ({ variable: "mono" }),
-    },
-    "next-auth/next": { getServerSession: async () => session },
-    "@/components/AppShell": { default: AppShell },
-    "@/lib/auth": { authOptions },
-    "@/lib/owner-policy": policy,
-    "./globals.css": {},
-  });
-  const children = "page content";
-  for (const deniedSession of [null, { githubId: "123", ownerAccess: true }]) {
-    session = deniedSession;
-    const layout = await RootLayout({ children });
-    assert.equal(
-      layout.props.children.props.children,
-      children,
-      "public pages must not mount providers that fetch private data",
-    );
-  }
-  session = owner;
-  const layout = await RootLayout({ children });
-  const shell = layout.props.children.props.children;
-  assert.equal(shell.type, AppShell);
-  assert.equal(shell.props.children, children);
-  // Section gates still authenticate on navigation, without recreating the shell.
-  const { default: ProtectedLayout } = load("src/components/ProtectedLayout.tsx", {
-    "react/jsx-runtime": jsxRuntime,
-    "next-auth/next": { getServerSession: async () => session },
-    "next/navigation": {
-      redirect: (path) => {
-        throw new Error(path);
-      },
-    },
-    "@/lib/auth": { authOptions },
-    "@/lib/owner-policy": policy,
-  });
-  assert.equal((await ProtectedLayout({ children })).type, jsxRuntime.Fragment);
-  session = null;
-  await assert.rejects(ProtectedLayout({ children }), /\/api\/auth\/signin/);
-  session = { githubId: "123", ownerAccess: true };
-  await assert.rejects(ProtectedLayout({ children }), /\/access-denied/);
+test("member pages are guarded and owner pages do not mount a member shell with owner providers", () => {
+  const layout = fs.readFileSync(new URL("../src/app/layout.tsx", import.meta.url), "utf8");
+  assert.match(layout, /actor\?\.role === "OWNER"/);
+  assert.match(layout, /<MemberShell/);
+  const member = fs.readFileSync(
+    new URL("../src/components/MemberShell.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(member, /InboxProvider|SearchProvider|MusicPlayerProvider|QuickAdd/);
+  assert.match(
+    fs.readFileSync(new URL("../src/app/japanese/layout.tsx", import.meta.url), "utf8"),
+    /JapaneseAccess/,
+  );
 });

@@ -12,7 +12,7 @@ import {
   WORK_USER_ID,
   patchTodoInTransaction,
 } from "./server";
-import { workId, WorkValidationError, type WorkCommand } from "./validation";
+import { workId, workBody, workText, WorkValidationError, type WorkCommand } from "./validation";
 import { noteInput } from "./note-input";
 import { documentHash, fileOperation, workFileStore, type PreparedDocument } from "./files";
 import {
@@ -593,6 +593,37 @@ export async function uploadAttachment(
     }
     throw error;
   }
+}
+export async function renameAttachment(
+  parent: AttachmentParent,
+  id: number,
+  value: unknown,
+  command: WorkCommand,
+) {
+  const body = workBody(value, ["name"]);
+  const name = workText(body.name, "attachment name", 200)!;
+  if (/[\\/\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/.test(name))
+    throw new WorkValidationError("Use an attachment name without slashes or control characters.");
+  return mutation(
+    `${supportIdentity(parent)}:attachment:${id}:rename`,
+    { name },
+    command,
+    async (db) => {
+      await parentRow(db, parent);
+      const row = await attachmentRow(db, parent, id);
+      version(row, command);
+      if (row.removedAt) throw new WorkValidationError("This attachment was removed.", 409);
+      if (row.originalName === name) return attachmentDTO(row);
+      const updated = await db.workAttachment.update({
+        where: { id },
+        data: { originalName: name, revision: { increment: 1 } },
+      });
+      await appendParentActivity(db, parent, "ATTACHMENT_RENAMED", {
+        attachment: { before: { id, name: row.originalName }, after: { id, name } },
+      });
+      return attachmentDTO(updated);
+    },
+  );
 }
 export async function removeAttachment(
   parent: AttachmentParent,

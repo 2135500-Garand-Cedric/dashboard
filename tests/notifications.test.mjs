@@ -235,9 +235,9 @@ test("notification click redirect preserves a safe target through login and reje
     await destination("https://evil.example"),
     "/api/auth/signin?callbackUrl=%2Fnotifications%2Fopen%3Ftarget%3D%252Fsettings",
   );
-  session = { githubId: "123", ownerAccess: true };
+  session = { authUserId: 2, role: "MEMBER", ownerAccess: false };
   assert.equal(await destination("/todos/1"), "/access-denied");
-  session = { githubId: "89470930", ownerAccess: true };
+  session = { authUserId: 1, role: "OWNER", ownerAccess: true };
   assert.equal(await destination("/todos/1"), "/todos/1");
   assert.equal(await destination("//evil.example/path"), "/settings");
 });

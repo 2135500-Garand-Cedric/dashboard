@@ -65,7 +65,7 @@ export async function listLogs(value: unknown) {
     zone = getAppTimeZone();
   const rows = await prisma.auditEvent.findMany({
     where: {
-      userId: owner,
+      OR: [{ userId: owner }, { category: "AUTH" }],
       occurredAt: logDateRange(f.from, f.to, zone)!,
       ...(f.category ? { category: f.category } : {}),
       ...(f.action ? { action: f.action } : {}),
@@ -130,9 +130,14 @@ export async function listLogs(value: unknown) {
 }
 export async function logDetail(id: string) {
   if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id)) return null;
-  const event = await prisma.auditEvent.findFirst({ where: { id, userId: owner } });
+  const event = await prisma.auditEvent.findFirst({
+    where: { id, OR: [{ userId: owner }, { category: "AUTH" }] },
+  });
   if (!event) return null;
-  const source = await resolveSource(event.entityType, event.entityId);
+  const source =
+    event.category === "AUTH" && event.userId !== owner
+      ? { href: "/admin/users", sourceState: "available" }
+      : await resolveSource(event.entityType, event.entityId);
   const related = (event.changes as { related?: { type: string; id: string }[] }).related ?? [];
   const links = await Promise.all(
     related

@@ -1,5 +1,7 @@
+import { requireOwnerPage } from "@/lib/accounts/owner-page";
 import NewActivity from "@/components/finance/NewActivity";
 import { CURRENCIES } from "@/lib/finance/validation";
-export default function RefundPage() {
+export default async function RefundPage() {
+  await requireOwnerPage();
   return <NewActivity kind="refunds" currencies={CURRENCIES} />;
 }

@@ -359,7 +359,7 @@ test(
           let projected = await feed();
           const marker = projected.items.find((item) => item.id === `milestone:${row.id}`);
           assert.equal(marker.extendedProps.href, `/projects/${a.id}#project-milestones`);
-          assert.equal(marker.extendedProps.busy, false);
+          assert.equal("busy" in marker.extendedProps, false);
           const eventsBefore = await db.event.count();
           await milestone(a, {
             action: "edit",

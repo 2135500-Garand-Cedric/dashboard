@@ -19,7 +19,7 @@ It does not reconstruct earlier sign-ins, edits or deleted records.
   `failure.ts`: best-effort recording after failed Work/Finance mutations.
 - `delivery.mjs`: terminal push/email state transitions. Savepoints isolate optional
   audit insert failures from externally accepted delivery state.
-- `query.ts`, `dates.mjs`: owner-scoped queries, timezone-aware day boundaries,
+- `query.ts`, `dates.mjs`: owner domain history plus all-user AUTH security queries, timezone-aware day boundaries,
   cursor validation and canonical source links.
 - `/api/logs` accepts read-only POST filters; `/api/logs/[id]` returns a detail.
   Neither exposes a mutation, export, editing, deletion or undo operation.
@@ -28,16 +28,16 @@ It does not reconstruct earlier sign-ins, edits or deleted records.
 
 ## Command coverage
 
-| Area | Recorded command boundaries |
-| --- | --- |
-| Authentication | NextAuth successful owner sign-in and explicitly observed owner sign-out; denied sign-in decisions, capped at 20 per hour |
-| Work and People | Shared Work mutation commands: task/project lifecycle, directory contacts, checklist items, relationships, membership, stages, milestones, notes, attachments, deadlines, follow-ups and focus |
-| Calendar | Event changes/conversions/links; recurrence settings and grouped generated batches; selected holiday/birthday changes and task links |
-| Finance | Transaction/transfer saves and deletes; expense/receipt and income/deposit saves, notes and documents; statement creation/review/commit/removal; reimbursement plans, allocations and unlinking; account corrections; accounts, categories, income sources/types and deductions |
-| Knowledge | Committed article, folder, template and Work-link changes; attached files and committed inline-image operations |
-| Japanese | Vocabulary/readings/starring/category edits, grouped generated verb forms, legacy status-save endpoint and durable practice sessions with result/reward totals |
-| Preferences | Display timezone; notification categories, timing/privacy settings and device registration/disable; email permission and recipient-change markers |
-| Inbox and workers | Created reminders and weekly-report availability; read/unread/dismiss/undo/snooze/read-all; queued email; selected terminal push/email delivery transitions; recurrence generation batches |
+| Area              | Recorded command boundaries                                                                                                                                                                                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Authentication    | NextAuth successful account sign-in and explicitly observed sign-out; invitations, linking, setup and member access changes; denied sign-in decisions, capped at 20 per hour                                                                                                    |
+| Work and People   | Shared Work mutation commands: task/project lifecycle, directory contacts, checklist items, relationships, membership, stages, milestones, notes, attachments, deadlines, follow-ups and focus                                                                                  |
+| Calendar          | Event changes/conversions/links; recurrence settings and grouped generated batches; selected holiday/birthday changes and task links                                                                                                                                            |
+| Finance           | Transaction/transfer saves and deletes; expense/receipt and income/deposit saves, notes and documents; statement creation/review/commit/removal; reimbursement plans, allocations and unlinking; account corrections; accounts, categories, income sources/types and deductions |
+| Knowledge         | Committed article, folder, template and Work-link changes; attached files and committed inline-image operations                                                                                                                                                                 |
+| Japanese          | Vocabulary/readings/starring/category edits, grouped generated verb forms, legacy status-save endpoint and durable practice sessions with result/reward totals                                                                                                                  |
+| Preferences       | Display timezone; notification categories, timing/privacy settings and device registration/disable; email permission and recipient-change markers                                                                                                                               |
+| Inbox and workers | Created reminders and weekly-report availability; read/unread/dismiss/undo/snooze/read-all; queued email; selected terminal push/email delivery transitions; recurrence generation batches                                                                                      |
 
 A canonical income/expense save logs its outer record once, including a link to its
 bank movement. A transfer keeps two ledger legs and produces one entry. A practice
@@ -94,7 +94,7 @@ history. Migrate before running the updated web app and worker. No new environme
 variables, service, container, document volume or external provider is needed.
 The runtime image includes the shared audit and owner-identity modules.
 
-The existing notification worker prunes up to 500 eligible owner audit rows once
+The existing notification worker prunes up to 500 eligible audit rows across all users once
 per hour. Ordinary entries expire after 180 days; denied authentication attempts
 after 30 days. A backlog drains over successive passes. Retention does not touch
 Work notes/revisions, financial matches/checkpoints, source records, files,
@@ -112,8 +112,11 @@ audit row and the Japanese, Finance and Work tables; production data was not use
 
 Audit rows are append-only through app APIs, not tamper-proof against a database
 administrator. The application retains the existing permanent owner mapping to
-GitHub ID 89470930 / database user 1. Multi-user deployment would require an
-explicit ownership/authorization redesign, including retention and source links.
+GitHub ID 89470930 / database user 1. Invited Japanese members use their own subject user ID and the USER actor kind; owner
+administration records identify the affected member and owner actor. Only the owner
+can read Logs, including AUTH security events across users. Member security source links
+lead to User management; private domain records remain owner-scoped. See
+[Multi-user maintenance](MULTI_USER_MAINTENANCE.md).
 
 ## Verification
 

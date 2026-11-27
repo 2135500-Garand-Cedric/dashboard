@@ -1,11 +1,12 @@
 import { withUserTimeZone } from "@/lib/user-settings";
-import { requireOwner } from "@/lib/require-owner";
+import { requirePermission } from "@/lib/accounts/access";
+import { currentUserId } from "@/lib/accounts/context.mjs";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { serializePractice } from "@/lib/japanese/practice-sessions";
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
-  const accessError = await requireOwner(request);
+  const accessError = await requirePermission("japanese.history.read", request);
   if (accessError) return accessError;
   return withUserTimeZone(async () => {
     try {
@@ -13,7 +14,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       if (!/^\d+$/.test(id) || !Number.isSafeInteger(Number(id)))
         return NextResponse.json({ error: "Invalid practice session." }, { status: 400 });
       const practice = await prisma.practice.findFirst({
-        where: { id: Number(id), userId: 1 },
+        where: { id: Number(id), userId: currentUserId() },
         include: { activity: true },
       });
       if (!practice)
@@ -25,8 +26,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         { review: serializePractice(practice) },
         { headers: { "Cache-Control": "no-store" } },
       );
-    } catch (error) {
-      console.error("Unable to load practice session", error);
+    } catch {
+      console.error("Unable to load practice session");
       return NextResponse.json(
         { error: "Unable to load this practice session. Please try again." },
         { status: 500 },

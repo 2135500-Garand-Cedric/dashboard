@@ -1,10 +1,11 @@
+import { categoryKind } from "./category-kind";
 import { getKnownKanji, isKanjiWritingEligible, getApplicableActivityIds } from "./kanji-writing";
 import { calculateActivityStats } from "./utils";
 
 type Links = { activityId: number; status: string }[];
 export type ProgressVocabulary = {
   japanese: string | null;
-  category: { name: string } | null;
+  category: { name: string; kind?: string } | null;
   activityVocab: Links;
   verbForms: { activityVocab: Links }[];
 };
@@ -18,7 +19,7 @@ export function vocabularyProgress(vocabulary: ProgressVocabulary[], activityIds
       getApplicableActivityIds(activityIds, isKanjiWritingEligible(word.japanese, knownKanji)),
     );
     const stats = [base];
-    if (word.category?.name.trim().toLowerCase() === "verb") {
+    if (categoryKind(word.category) === "VERB") {
       stats.push(
         ...word.verbForms.map((form) =>
           calculateActivityStats(

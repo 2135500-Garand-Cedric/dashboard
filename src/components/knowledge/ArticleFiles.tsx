@@ -21,6 +21,8 @@ export default function ArticleFiles({ id, onChanged }: { id: number; onChanged:
     [file, setFile] = useState<File | null>(null),
     [replace, setReplace] = useState<Attachment | null>(null),
     [view, setView] = useState<Attachment | null>(null),
+    [renaming, setRenaming] = useState<Attachment | null>(null),
+    [name, setName] = useState(""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const writer = useRef(createWorkWriter());
@@ -156,6 +158,17 @@ export default function ArticleFiles({ id, onChanged }: { id: number; onChanged:
                         className={button}
                         disabled={busy}
                         onClick={() => {
+                          setRenaming(item);
+                          setName(item.originalName);
+                          setError("");
+                        }}
+                      >
+                        Rename
+                      </button>
+                      <button
+                        className={button}
+                        disabled={busy}
+                        onClick={() => {
                           setReplace(item);
                           setFile(null);
                         }}
@@ -214,6 +227,54 @@ export default function ArticleFiles({ id, onChanged }: { id: number; onChanged:
           <Paging {...data} onPage={setPage} />
         </>
       )}
+      <TaskModal
+        open={!!renaming}
+        title="Rename attachment"
+        busy={busy}
+        onClose={() => setRenaming(null)}
+      >
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!renaming) return;
+            void run(async () => {
+              await writer.current(`${base}/${renaming.id}`, "PATCH", { name }, renaming.revision);
+              setRenaming(null);
+            }, true);
+          }}
+        >
+          <label className="block space-y-2 text-sm">
+            Attachment name
+            <input
+              className={input}
+              value={name}
+              required
+              maxLength={200}
+              disabled={busy}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </label>
+          {error && (
+            <p role="alert" className="text-rose-400">
+              {error}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <button className={primary} type="submit" disabled={busy}>
+              {busy ? "Saving…" : "Save name"}
+            </button>
+            <button
+              className={button}
+              type="button"
+              disabled={busy}
+              onClick={() => setRenaming(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </TaskModal>
       <TaskModal
         open={!!view}
         title={view?.originalName || "Original file"}
