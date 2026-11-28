@@ -10,7 +10,7 @@ import { currentUserId } from "@/lib/accounts/context.mjs";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getKnownKanji, isKanjiWritingEligible } from "@/lib/japanese/kanji-writing";
-import { vocabularyProgress } from "@/lib/japanese/vocabulary-progress";
+import { vocabularyProgress, readJapaneseVocabulary } from "@/lib/japanese/vocabulary-progress";
 import { selectPracticeWords } from "@/lib/japanese/practice-selection";
 import { recordJapaneseProgress } from "@/lib/japanese/progress-history";
 
@@ -26,19 +26,7 @@ export async function GET() {
     const activityIds = activities.map((activity) => activity.id);
 
     // Fetch all vocabulary for the user with category and activity info
-    const vocab = await prisma.vocabulary.findMany({
-      where: { userId: Number(userId) },
-      include: {
-        category: true,
-        activityVocab: true,
-        verbForms: {
-          include: {
-            activityVocab: true,
-          },
-        },
-      },
-      orderBy: { english: "asc" },
-    });
+    const vocab = await readJapaneseVocabulary(prisma, userId);
 
     const progress = vocabularyProgress(vocab, activityIds);
     const result = vocab.map((v, index) => ({

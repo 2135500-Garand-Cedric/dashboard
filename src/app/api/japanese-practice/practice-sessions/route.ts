@@ -1,3 +1,5 @@
+import { japaneseRequestError } from "@/lib/japanese/request-error";
+
 import { withUserTimeZone } from "@/lib/user-settings";
 import { requirePermission } from "@/lib/accounts/access";
 import { currentUserId } from "@/lib/accounts/context.mjs";
@@ -15,21 +17,31 @@ export async function POST(request: Request) {
   const accessError = await requirePermission("japanese.practice", request);
   if (accessError) return accessError;
   return withUserTimeZone(async () => {
+    const startedAt = Date.now();
     try {
       const input = parsePracticeSession(await request.json());
       const review = await savePracticeSession(input, currentUserId());
       return NextResponse.json({ success: true, review });
     } catch (error) {
-      console.error("Unable to save practice session.");
+      const failure =
+        error instanceof PracticeSessionError
+          ? null
+          : japaneseRequestError(error, "save practice", startedAt);
       return NextResponse.json(
         {
           success: false,
           error:
             error instanceof PracticeSessionError
               ? error.message
-              : "Unable to save this practice. Your results are still available; please try again.",
+              : failure!.error,
+          ...(failure ? { code: failure.code } : {}),
         },
-        { status: error instanceof PracticeSessionError ? error.status : 500 },
+        {
+          status:
+            error instanceof PracticeSessionError
+              ? error.status
+              : failure!.status,
+        },
       );
     }
   });
@@ -59,7 +71,10 @@ export async function GET(request: Request) {
       const start = range === "month" ? `${date.slice(0, 7)}-01` : date;
       const nextMonth = new Date(`${start}T12:00:00Z`);
       nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
-      const end = range === "month" ? nextMonth.toISOString().slice(0, 10) : shiftDateKey(date, 1);
+      const end =
+        range === "month"
+          ? nextMonth.toISOString().slice(0, 10)
+          : shiftDateKey(date, 1);
       const practices = await prisma.practice.findMany({
         where: {
           userId: currentUserId(),
@@ -105,7 +120,10 @@ export async function GET(request: Request) {
         goldEarned: practice.goldEarned,
         hasDetails: practice.sessionKey !== null,
       }));
-      return NextResponse.json({ sessions }, { headers: { "Cache-Control": "no-store" } });
+      return NextResponse.json(
+        { sessions },
+        { headers: { "Cache-Control": "no-store" } },
+      );
     } catch {
       console.error("Unable to load practice history");
       return NextResponse.json(

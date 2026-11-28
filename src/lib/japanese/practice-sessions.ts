@@ -1,10 +1,17 @@
-import { practiceCategorySelection, VERB_DICTIONARY_CATEGORY } from "./practice-categories";
+import {
+  practiceCategorySelection,
+  VERB_DICTIONARY_CATEGORY,
+} from "./practice-categories";
 import { categoryKind } from "./category-kind";
 import { currentUserId } from "@/lib/accounts/context.mjs";
+
 import { auditRecordChange } from "@/lib/audit/server";
 import type { Prisma } from "@/generated/prisma";
 import { prisma } from "@/lib/prisma";
-import { vocabularyProgress } from "./vocabulary-progress";
+import {
+  vocabularyProgress,
+  readJapaneseVocabulary,
+} from "./vocabulary-progress";
 import { recordJapaneseProgress } from "./progress-history";
 import type {
   PracticeSessionInput,
@@ -28,22 +35,32 @@ export function parsePracticeSession(value: unknown): PracticeSessionInput {
   const data = value as PracticeSessionInput;
   if (
     typeof data.sessionKey !== "string" ||
-    !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(data.sessionKey)
+    !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(
+      data.sessionKey,
+    )
   )
-    throw new PracticeSessionError("Invalid session identifier. Please start a new practice.");
+    throw new PracticeSessionError(
+      "Invalid session identifier. Please start a new practice.",
+    );
   if (!Number.isInteger(data.activity) || data.activity < 1)
     throw new PracticeSessionError("Choose a valid activity.");
   if (
     !Array.isArray(data.categories) ||
     data.categories.some(
-      (id) => !Number.isInteger(id) || (id < 1 && id !== VERB_DICTIONARY_CATEGORY),
+      (id) =>
+        !Number.isInteger(id) || (id < 1 && id !== VERB_DICTIONARY_CATEGORY),
     )
   )
     throw new PracticeSessionError("Invalid selected categories.");
   if (typeof data.starredOnly !== "boolean")
     throw new PracticeSessionError("Invalid starred-word filter.");
-  if (typeof data.startedAt !== "string" || typeof data.completedAt !== "string")
-    throw new PracticeSessionError("Practice start and finish times are required.");
+  if (
+    typeof data.startedAt !== "string" ||
+    typeof data.completedAt !== "string"
+  )
+    throw new PracticeSessionError(
+      "Practice start and finish times are required.",
+    );
   const start = Date.parse(data.startedAt),
     finish = Date.parse(data.completedAt);
   if (
@@ -53,7 +70,11 @@ export function parsePracticeSession(value: unknown): PracticeSessionInput {
     (finish - start) / 1000 > 2147483647
   )
     throw new PracticeSessionError("Invalid practice start or finish time.");
-  if (!Array.isArray(data.updates) || !data.updates.length || data.updates.length > 1000)
+  if (
+    !Array.isArray(data.updates) ||
+    !data.updates.length ||
+    data.updates.length > 1000
+  )
     throw new PracticeSessionError("The practice must include rated words.");
   const ids = new Set<number>();
   for (const item of data.updates) {
@@ -72,8 +93,15 @@ export function parsePracticeSession(value: unknown): PracticeSessionInput {
   return { ...data, categories: [...new Set(data.categories)] };
 }
 
-export function practiceRewards(wordCount: number, goodCount: number, perfectCount: number) {
-  return { xpEarned: goodCount + 2 * perfectCount, goldEarned: Math.floor(wordCount / 5) };
+export function practiceRewards(
+  wordCount: number,
+  goodCount: number,
+  perfectCount: number,
+) {
+  return {
+    xpEarned: goodCount + 2 * perfectCount,
+    goldEarned: Math.floor(wordCount / 5),
+  };
 }
 
 export async function buildPracticeReview(
@@ -82,14 +110,7 @@ export async function buildPracticeReview(
   userId = currentUserId(),
 ): Promise<PracticeSessionReview> {
   const [vocabulary, activities, categories] = await Promise.all([
-    db.vocabulary.findMany({
-      where: { userId },
-      include: {
-        category: true,
-        activityVocab: true,
-        verbForms: { include: { formType: true, activityVocab: true } },
-      },
-    }),
+    readJapaneseVocabulary(db, userId),
     db.activity.findMany({ select: { id: true, activity: true } }),
     db.category.findMany({
       where: { userId, id: { in: input.categories.filter((id) => id > 0) } },
@@ -97,7 +118,8 @@ export async function buildPracticeReview(
     }),
   ]);
   const activity = activities.find((item) => item.id === input.activity);
-  if (!activity) throw new PracticeSessionError("This activity no longer exists.");
+  if (!activity)
+    throw new PracticeSessionError("This activity no longer exists.");
   if (categories.length !== input.categories.filter((id) => id > 0).length)
     throw new PracticeSessionError(
       "A selected category no longer exists. Please refresh the page.",
@@ -111,15 +133,21 @@ export async function buildPracticeReview(
     : null;
   if (dictSelected && !verb)
     throw new PracticeSessionError("The default Verb category is unavailable.");
-  const selection = practiceCategorySelection(input.categories, verb?.id ?? null);
-  if (dictSelected) categories.push({ id: VERB_DICTIONARY_CATEGORY, name: "Verb (dict only)" });
+  const selection = practiceCategorySelection(
+    input.categories,
+    verb?.id ?? null,
+  );
+  if (dictSelected)
+    categories.push({ id: VERB_DICTIONARY_CATEGORY, name: "Verb (dict only)" });
   const available = new Map<number, Omit<PracticeWordResult, "status">>();
   for (const word of vocabulary) {
     const categoryId = word.categoryId ?? word.category?.id ?? null;
     const allowedBase =
-      !selection.filtered || (categoryId != null && selection.baseIds.includes(categoryId));
+      !selection.filtered ||
+      (categoryId != null && selection.baseIds.includes(categoryId));
     const allowedForms =
-      !selection.filtered || (categoryId != null && selection.formIds.includes(categoryId));
+      !selection.filtered ||
+      (categoryId != null && selection.formIds.includes(categoryId));
     if (!allowedBase) continue;
     const base = {
       vocabId: word.id,
@@ -129,7 +157,9 @@ export async function buildPracticeReview(
       readings: word.readings?.length ? word.readings : [word.hiragana],
       categoryName: word.category?.name ?? null,
     };
-    for (const link of word.activityVocab.filter((link) => link.activityId === input.activity)) {
+    for (const link of word.activityVocab.filter(
+      (link) => link.activityId === input.activity,
+    )) {
       available.set(link.id, {
         ...base,
         english:
@@ -165,9 +195,16 @@ export async function buildPracticeReview(
       );
     return { ...word, status: item.status };
   });
-  const updates = new Map(input.updates.map((item) => [item.activityVocabId, item.status]));
-  const updateLinks = <T extends { id: number; status: PracticeStatus }>(links: T[]) =>
-    links.map((link) => ({ ...link, status: updates.get(link.id) ?? link.status }));
+  const updates = new Map(
+    input.updates.map((item) => [item.activityVocabId, item.status]),
+  );
+  const updateLinks = <T extends { id: number; status: PracticeStatus }>(
+    links: T[],
+  ) =>
+    links.map((link) => ({
+      ...link,
+      status: updates.get(link.id) ?? link.status,
+    }));
   const projected = vocabulary.map((word) => ({
     ...word,
     activityVocab: updateLinks(word.activityVocab),
@@ -178,7 +215,9 @@ export async function buildPracticeReview(
   }));
   const ids = activities.map((item) => item.id);
   const average = (values: ReturnType<typeof vocabularyProgress>) =>
-    values.length ? values.reduce((sum, word) => sum + word.percentage, 0) / values.length : 0;
+    values.length
+      ? values.reduce((sum, word) => sum + word.percentage, 0) / values.length
+      : 0;
   return {
     id: null,
     activityId: activity.id,
@@ -207,8 +246,12 @@ export async function buildPracticeReview(
   };
 }
 
-type StoredPractice = Prisma.PracticeGetPayload<{ include: { activity: true } }>;
-export function serializePractice(practice: StoredPractice): PracticeSessionReview {
+type StoredPractice = Prisma.PracticeGetPayload<{
+  include: { activity: true };
+}>;
+export function serializePractice(
+  practice: StoredPractice,
+): PracticeSessionReview {
   return {
     id: practice.id,
     activityId: practice.activityId,
@@ -226,17 +269,25 @@ export function serializePractice(practice: StoredPractice): PracticeSessionRevi
     xpEarned: practice.xpEarned ?? null,
     goldEarned: practice.goldEarned ?? null,
     hasDetails: practice.words !== null,
-    selectedCategories: practice.selectedCategories as PracticeSessionReview["selectedCategories"],
+    selectedCategories:
+      practice.selectedCategories as PracticeSessionReview["selectedCategories"],
     starredOnly: practice.starredOnly,
     words: practice.words as unknown as PracticeWordResult[] | null,
   };
 }
 
 function errorCode(error: unknown) {
-  return error && typeof error === "object" && "code" in error ? error.code : null;
+  return error && typeof error === "object" && "code" in error
+    ? error.code
+    : null;
 }
 
-export async function savePracticeSession(input: PracticeSessionInput, userId = currentUserId()) {
+export async function savePracticeSession(
+  input: PracticeSessionInput,
+  userId = currentUserId(),
+) {
+  if (userId !== currentUserId())
+    throw new PracticeSessionError("Practice belongs to another account.", 403);
   // Serializable retries protect the before/after average from concurrent saves.
   // The session key makes a retry after a lost response safe as well.
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -244,7 +295,9 @@ export async function savePracticeSession(input: PracticeSessionInput, userId = 
       return await prisma.$transaction(
         async (tx) => {
           const existing = await tx.practice.findUnique({
-            where: { userId_sessionKey: { userId, sessionKey: input.sessionKey } },
+            where: {
+              userId_sessionKey: { userId, sessionKey: input.sessionKey },
+            },
             include: { activity: true },
           });
           if (existing) {
@@ -252,20 +305,30 @@ export async function savePracticeSession(input: PracticeSessionInput, userId = 
               existing.userId !== userId ||
               existing.activityId !== input.activity ||
               existing.startedAt?.getTime() !== Date.parse(input.startedAt) ||
-              existing.completedAt?.getTime() !== Date.parse(input.completedAt) ||
+              existing.completedAt?.getTime() !==
+                Date.parse(input.completedAt) ||
               existing.starredOnly !== input.starredOnly ||
               JSON.stringify(
                 ((existing.selectedCategories as { id: number }[] | null) ?? [])
                   .map((category) => category.id)
                   .sort((a, b) => a - b),
-              ) !== JSON.stringify([...input.categories].sort((a, b) => a - b)) ||
+              ) !==
+                JSON.stringify([...input.categories].sort((a, b) => a - b)) ||
               JSON.stringify(
-                ((existing.words as { activityVocabId: number; status: string }[] | null) ?? [])
-                  .map(({ activityVocabId, status }) => ({ activityVocabId, status }))
+                (
+                  (existing.words as
+                    { activityVocabId: number; status: string }[] | null) ?? []
+                )
+                  .map(({ activityVocabId, status }) => ({
+                    activityVocabId,
+                    status,
+                  }))
                   .sort((a, b) => a.activityVocabId - b.activityVocabId),
               ) !==
                 JSON.stringify(
-                  [...input.updates].sort((a, b) => a.activityVocabId - b.activityVocabId),
+                  [...input.updates].sort(
+                    (a, b) => a.activityVocabId - b.activityVocabId,
+                  ),
                 )
             )
               throw new PracticeSessionError(
@@ -275,21 +338,35 @@ export async function savePracticeSession(input: PracticeSessionInput, userId = 
             return serializePractice(existing);
           }
           const review = await buildPracticeReview(tx, input, userId);
-          for (const item of input.updates)
-            await tx.activityVocab.update({
-              where: { id: item.activityVocabId },
-              data: { status: item.status },
-            });
+          // At most three writes, even for a 1,000-word session. Every supplied
+          // link was validated against this user's activity by the review above.
+          for (const status of ["WEAK", "GOOD", "PERFECT"] as const) {
+            const ids = input.updates
+              .filter((item) => item.status === status)
+              .map((item) => item.activityVocabId);
+            if (ids.length)
+              await tx.activityVocab.updateMany({
+                where: { userId, activityId: input.activity, id: { in: ids } },
+                data: { status },
+              });
+          }
           await tx.activityVocab.updateMany({
             where: {
               id: { in: input.updates.map((item) => item.activityVocabId) },
               activityId: input.activity,
-              OR: [{ lastPracticed: null }, { lastPracticed: { lt: new Date(input.completedAt) } }],
+              userId,
+              OR: [
+                { lastPracticed: null },
+                { lastPracticed: { lt: new Date(input.completedAt) } },
+              ],
             },
             data: { lastPracticed: new Date(input.completedAt) },
           });
           await tx.vocabulary.updateMany({
-            where: { userId, id: { in: review.words!.map((word) => word.vocabId) } },
+            where: {
+              userId,
+              id: { in: review.words!.map((word) => word.vocabId) },
+            },
             data: { lastPracticed: new Date(input.completedAt) },
           });
           const saved = await tx.practice.create({
@@ -310,7 +387,9 @@ export async function savePracticeSession(input: PracticeSessionInput, userId = 
               goldEarned: review.goldEarned,
               averageBefore: review.averageBefore,
               averageAfter: review.averageAfter,
-              selectedCategories: review.selectedCategories!.map((category) => ({ ...category })),
+              selectedCategories: review.selectedCategories!.map(
+                (category) => ({ ...category }),
+              ),
               starredOnly: input.starredOnly,
               words: review.words!.map((word) => ({ ...word })),
             },
@@ -325,7 +404,10 @@ export async function savePracticeSession(input: PracticeSessionInput, userId = 
               },
               select: { id: true },
             });
-          await recordJapaneseProgress(tx, userId);
+          await recordJapaneseProgress(tx, userId, new Date(), {
+            average: review.averageAfter!,
+            vocabularyCount: await tx.vocabulary.count({ where: { userId } }),
+          });
           await auditRecordChange(
             tx,
             {
@@ -353,9 +435,13 @@ export async function savePracticeSession(input: PracticeSessionInput, userId = 
         { isolationLevel: "Serializable", timeout: 20000 },
       );
     } catch (error) {
-      if (attempt < 2 && ["P2034", "P2002"].includes(String(errorCode(error)))) continue;
+      if (attempt < 2 && ["P2034", "P2002"].includes(String(errorCode(error))))
+        continue;
       throw error;
     }
   }
-  throw new PracticeSessionError("Unable to save practice. Please try again.", 503);
+  throw new PracticeSessionError(
+    "Unable to save practice. Please try again.",
+    503,
+  );
 }

@@ -5,12 +5,21 @@ import test from "node:test";
 import ts from "typescript";
 
 function load(file, dependencies = {}) {
-  const compiled = ts.transpileModule(fs.readFileSync(new URL(file, import.meta.url), "utf8"), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2017 },
-  }).outputText;
+  const compiled = ts.transpileModule(
+    fs.readFileSync(new URL(file, import.meta.url), "utf8"),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2017,
+      },
+    },
+  ).outputText;
   const exports = {};
   new Function("exports", "require", compiled)(exports, (name) => {
-    assert.ok(name in dependencies || timeZoneTestDependency(name, dependencies), `Missing ${name}`);
+    assert.ok(
+      name in dependencies || timeZoneTestDependency(name, dependencies),
+      `Missing ${name}`,
+    );
     return dependencies[name] ?? timeZoneTestDependency(name, dependencies);
   });
   return exports;
@@ -26,7 +35,8 @@ const sessions = load("../src/lib/japanese/practice-sessions.ts", {
   "./vocabulary-progress": progress,
   "./progress-history": {},
 });
-const { parsePracticeSession, buildPracticeReview, serializePractice } = sessions;
+const { parsePracticeSession, buildPracticeReview, serializePractice } =
+  sessions;
 const input = () => ({
   sessionKey: "12345678-1234-4234-8234-123456789abc",
   activity: 1,
@@ -51,11 +61,18 @@ test("session validation rejects missing timing, repeated words, invalid ratings
     { ...input(), categories: ["1"] },
     { ...input(), starredOnly: "true" },
   ])
-    assert.throws(() => parsePracticeSession(invalid), sessions.PracticeSessionError);
+    assert.throws(
+      () => parsePracticeSession(invalid),
+      sessions.PracticeSessionError,
+    );
 });
 
 function fixture() {
-  const link = (id, activityId, status = "WEAK") => ({ id, activityId, status });
+  const link = (id, activityId, status = "WEAK") => ({
+    id,
+    activityId,
+    status,
+  });
   const vocabulary = [
     {
       id: 1,
@@ -88,8 +105,36 @@ function fixture() {
     vocabulary,
     db: {
       vocabulary: { findMany: async () => vocabulary },
+      verbForm: {
+        findMany: async () =>
+          vocabulary.flatMap((word) =>
+            word.verbForms.map((form, index) => ({
+              ...form,
+              id: word.id * 100 + index,
+              baseVocabId: word.id,
+            })),
+          ),
+      },
+      activityVocab: {
+        findMany: async () =>
+          vocabulary.flatMap((word) => [
+            ...word.activityVocab.map((link) => ({
+              ...link,
+              vocabId: word.id,
+              verbFormId: null,
+            })),
+            ...word.verbForms.flatMap((form, index) =>
+              form.activityVocab.map((link) => ({
+                ...link,
+                vocabId: null,
+                verbFormId: word.id * 100 + index,
+              })),
+            ),
+          ]),
+      },
       activity: {
-        findMany: async () => [1, 2, 3, 4, 5].map((id) => ({ id, activity: `Activity ${id}` })),
+        findMany: async () =>
+          [1, 2, 3, 4, 5].map((id) => ({ id, activity: `Activity ${id}` })),
       },
       category: { findMany: async () => [] },
     },
@@ -119,7 +164,11 @@ test("read-only overview uses the same whole-list average, including verb forms 
   assert.deepEqual(review.words[0].readings, ["まなぶ", "がく"]);
   assert.deepEqual(review.words[1].readings, ["まなべば"]);
   assert.deepEqual(review.selectedCategories, []);
-  assert.deepEqual(vocabulary, before, "preview must not mutate progress or the supplied records");
+  assert.deepEqual(
+    vocabulary,
+    before,
+    "preview must not mutate progress or the supplied records",
+  );
 });
 
 test("kanji sessions rate only base words and reject links from other activities", async () => {
@@ -186,7 +235,10 @@ test("practice XP reflects ratings and gold follows completed word count", async
       xpEarned: 2 * words,
       goldEarned: gold,
     });
-    assert.deepEqual(sessions.practiceRewards(words, 0, 0), { xpEarned: 0, goldEarned: gold });
+    assert.deepEqual(sessions.practiceRewards(words, 0, 0), {
+      xpEarned: 0,
+      goldEarned: gold,
+    });
   }
   const { db } = fixture();
   const review = await buildPracticeReview(db, input());
